@@ -19,7 +19,6 @@ package com.hazelcast.config;
 import com.hazelcast.config.matcher.MatchingPointConfigPatternMatcher;
 import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.ManagedContext;
-import com.hazelcast.instance.HazelcastProperty;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
 
@@ -36,6 +35,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import static com.hazelcast.config.NearCacheConfigAccessor.initDefaultMaxSizeForOnHeapMaps;
 import static com.hazelcast.partition.strategy.StringPartitioningStrategy.getBaseName;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 import static java.text.MessageFormat.format;
@@ -78,6 +78,8 @@ public class Config {
 
     private final Map<String, QueueConfig> queueConfigs = new ConcurrentHashMap<String, QueueConfig>();
 
+    private final Map<String, LockConfig> lockConfigs = new ConcurrentHashMap<String, LockConfig>();
+
     private final Map<String, MultiMapConfig> multiMapConfigs = new ConcurrentHashMap<String, MultiMapConfig>();
 
     private final Map<String, ListConfig> listConfigs = new ConcurrentHashMap<String, ListConfig>();
@@ -85,6 +87,12 @@ public class Config {
     private final Map<String, SetConfig> setConfigs = new ConcurrentHashMap<String, SetConfig>();
 
     private final Map<String, ExecutorConfig> executorConfigs = new ConcurrentHashMap<String, ExecutorConfig>();
+
+    private final Map<String, DurableExecutorConfig> durableExecutorConfigs
+            = new ConcurrentHashMap<String, DurableExecutorConfig>();
+
+    private final Map<String, ScheduledExecutorConfig> scheduledExecutorConfigs
+            = new ConcurrentHashMap<String, ScheduledExecutorConfig>();
 
     private final Map<String, SemaphoreConfig> semaphoreConfigs = new ConcurrentHashMap<String, SemaphoreConfig>();
 
@@ -119,6 +127,8 @@ public class Config {
     private NativeMemoryConfig nativeMemoryConfig = new NativeMemoryConfig();
 
     private HotRestartPersistenceConfig hotRestartPersistenceConfig = new HotRestartPersistenceConfig();
+
+    private DistributedClassloadingConfig distributedClassloadingConfig = new DistributedClassloadingConfig();
 
     private String licenseKey;
 
@@ -194,35 +204,6 @@ public class Config {
         return this;
     }
 
-    /**
-     * Gets a {@link HazelcastProperty} already set or from system properties if not exists.
-     *
-     * Deprecated since Hazelcast 3.7, use {@link #getProperty(String)} instead.
-     *
-     * @param property {@link HazelcastProperty} to get
-     * @return value of the property
-     * @deprecated since Hazelcast 3.7
-     */
-    @Deprecated
-    public String getProperty(HazelcastProperty property) {
-        return getProperty(property.getName());
-    }
-
-    /**
-     * Sets the value of a {@link HazelcastProperty}.
-     *
-     * Deprecated since Hazelcast 3.7, use {@link #setProperty(String, String)} instead.
-     *
-     * @param property {@link HazelcastProperty} to set
-     * @param value    value of the property
-     * @return configured {@link Config} for chaining
-     * @deprecated since Hazelcast 3.7
-     */
-    @Deprecated
-    public Config setProperty(HazelcastProperty property, String value) {
-        return setProperty(property.getName(), value);
-    }
-
     public MemberAttributeConfig getMemberAttributeConfig() {
         return memberAttributeConfig;
     }
@@ -271,6 +252,7 @@ public class Config {
         String baseName = getBaseName(name);
         MapConfig config = lookupByPattern(mapConfigs, baseName);
         if (config != null) {
+            initDefaultMaxSizeForOnHeapMaps(config.getNearCacheConfig());
             return config.getAsReadOnly();
         }
         return getMapConfig("default").getAsReadOnly();
@@ -286,6 +268,7 @@ public class Config {
         if (defConfig == null) {
             defConfig = new MapConfig();
             defConfig.setName("default");
+            initDefaultMaxSizeForOnHeapMaps(defConfig.getNearCacheConfig());
             addMapConfig(defConfig);
         }
         config = new MapConfig(defConfig);
@@ -317,7 +300,6 @@ public class Config {
         }
         return this;
     }
-
 
     public CacheSimpleConfig findCacheConfig(String name) {
         name = getBaseName(name);
@@ -406,6 +388,51 @@ public class Config {
         this.queueConfigs.clear();
         this.queueConfigs.putAll(queueConfigs);
         for (Entry<String, QueueConfig> entry : queueConfigs.entrySet()) {
+            entry.getValue().setName(entry.getKey());
+        }
+        return this;
+    }
+
+    public LockConfig findLockConfig(String name) {
+        final String baseName = getBaseName(name);
+        final LockConfig config = lookupByPattern(lockConfigs, baseName);
+        if (config != null) {
+            return config.getAsReadOnly();
+        }
+        return getLockConfig("default").getAsReadOnly();
+    }
+
+    public LockConfig getLockConfig(String name) {
+        final String baseName = getBaseName(name);
+        LockConfig config = lookupByPattern(lockConfigs, baseName);
+        if (config != null) {
+            return config;
+        }
+        LockConfig defConfig = lockConfigs.get("default");
+        if (defConfig == null) {
+            defConfig = new LockConfig();
+            defConfig.setName("default");
+            addLockConfig(defConfig);
+        }
+        config = new LockConfig(defConfig);
+        config.setName(name);
+        addLockConfig(config);
+        return config;
+    }
+
+    public Config addLockConfig(LockConfig lockConfig) {
+        lockConfigs.put(lockConfig.getName(), lockConfig);
+        return this;
+    }
+
+    public Map<String, LockConfig> getLockConfigs() {
+        return lockConfigs;
+    }
+
+    public Config setLockConfigs(Map<String, LockConfig> lockConfigs) {
+        this.lockConfigs.clear();
+        this.lockConfigs.putAll(lockConfigs);
+        for (Entry<String, LockConfig> entry : lockConfigs.entrySet()) {
             entry.getValue().setName(entry.getKey());
         }
         return this;
@@ -623,6 +650,15 @@ public class Config {
         return ringbufferConfigs;
     }
 
+    public Config setRingbufferConfigs(Map<String, RingbufferConfig> ringbufferConfigs) {
+        this.ringbufferConfigs.clear();
+        this.ringbufferConfigs.putAll(ringbufferConfigs);
+        for (Entry<String, RingbufferConfig> entry : ringbufferConfigs.entrySet()) {
+            entry.getValue().setName(entry.getKey());
+        }
+        return this;
+    }
+
     public TopicConfig findTopicConfig(String name) {
         String baseName = getBaseName(name);
         TopicConfig config = lookupByPattern(topicConfigs, baseName);
@@ -692,6 +728,15 @@ public class Config {
         return this;
     }
 
+    public Config setReliableTopicConfigs(Map<String, ReliableTopicConfig> reliableTopicConfigs) {
+        this.reliableTopicConfigs.clear();
+        this.reliableTopicConfigs.putAll(reliableTopicConfigs);
+        for (Entry<String, ReliableTopicConfig> entry : reliableTopicConfigs.entrySet()) {
+            entry.getValue().setName(entry.getKey());
+        }
+        return this;
+    }
+
 
     /**
      * @return the topicConfigs
@@ -721,6 +766,23 @@ public class Config {
         return getExecutorConfig("default").getAsReadOnly();
     }
 
+    public DurableExecutorConfig findDurableExecutorConfig(String name) {
+        String baseName = getBaseName(name);
+        DurableExecutorConfig config = lookupByPattern(durableExecutorConfigs, baseName);
+        if (config != null) {
+            return config.getAsReadOnly();
+        }
+        return getDurableExecutorConfig("default").getAsReadOnly();
+    }
+
+    public ScheduledExecutorConfig findScheduledExecutorConfig(String name) {
+        String baseName = getBaseName(name);
+        ScheduledExecutorConfig config = lookupByPattern(scheduledExecutorConfigs, baseName);
+        if (config != null) {
+            return config.getAsReadOnly();
+        }
+        return getScheduledExecutorConfig("default").getAsReadOnly();
+    }
     /**
      * Returns the ExecutorConfig for the given name
      *
@@ -746,6 +808,54 @@ public class Config {
     }
 
     /**
+     * Returns the DurableExecutorConfig for the given name
+     *
+     * @param name name of the durable executor config
+     * @return DurableExecutorConfig
+     */
+    public DurableExecutorConfig getDurableExecutorConfig(String name) {
+        String baseName = getBaseName(name);
+        DurableExecutorConfig config = lookupByPattern(durableExecutorConfigs, baseName);
+        if (config != null) {
+            return config;
+        }
+        DurableExecutorConfig defConfig = durableExecutorConfigs.get("default");
+        if (defConfig == null) {
+            defConfig = new DurableExecutorConfig();
+            defConfig.setName("default");
+            addDurableExecutorConfig(defConfig);
+        }
+        config = new DurableExecutorConfig(defConfig);
+        config.setName(name);
+        addDurableExecutorConfig(config);
+        return config;
+    }
+
+    /**
+     * Returns the ScheduledExecutorConfig for the given name
+     *
+     * @param name name of the scheduled executor config
+     * @return ScheduledExecutorConfig
+     */
+    public ScheduledExecutorConfig getScheduledExecutorConfig(String name) {
+        String baseName = getBaseName(name);
+        ScheduledExecutorConfig config = lookupByPattern(scheduledExecutorConfigs, baseName);
+        if (config != null) {
+            return config;
+        }
+        ScheduledExecutorConfig defConfig = scheduledExecutorConfigs.get("default");
+        if (defConfig == null) {
+            defConfig = new ScheduledExecutorConfig();
+            defConfig.setName("default");
+            addScheduledExecutorConfig(defConfig);
+        }
+        config = new ScheduledExecutorConfig(defConfig);
+        config.setName(name);
+        addScheduledExecutorConfig(config);
+        return config;
+    }
+
+    /**
      * Adds a new ExecutorConfig by name
      *
      * @param executorConfig executor config to add
@@ -753,6 +863,28 @@ public class Config {
      */
     public Config addExecutorConfig(ExecutorConfig executorConfig) {
         this.executorConfigs.put(executorConfig.getName(), executorConfig);
+        return this;
+    }
+
+    /**
+     * Adds a new DurableExecutorConfig by name
+     *
+     * @param durableExecutorConfig executor config to add
+     * @return this config instance
+     */
+    public Config addDurableExecutorConfig(DurableExecutorConfig durableExecutorConfig) {
+        this.durableExecutorConfigs.put(durableExecutorConfig.getName(), durableExecutorConfig);
+        return this;
+    }
+
+    /**
+     * Adds a new ScheduledExecutorConfig by name
+     *
+     * @param scheduledExecutorConfig executor config to add
+     * @return this config instance
+     */
+    public Config addScheduledExecutorConfig(ScheduledExecutorConfig scheduledExecutorConfig) {
+        this.scheduledExecutorConfigs.put(scheduledExecutorConfig.getName(), scheduledExecutorConfig);
         return this;
     }
 
@@ -764,6 +896,32 @@ public class Config {
         this.executorConfigs.clear();
         this.executorConfigs.putAll(executorConfigs);
         for (Entry<String, ExecutorConfig> entry : executorConfigs.entrySet()) {
+            entry.getValue().setName(entry.getKey());
+        }
+        return this;
+    }
+
+    public Map<String, DurableExecutorConfig> getDurableExecutorConfigs() {
+        return durableExecutorConfigs;
+    }
+
+    public Config setDurableExecutorConfigs(Map<String, DurableExecutorConfig> durableExecutorConfigs) {
+        this.durableExecutorConfigs.clear();
+        this.durableExecutorConfigs.putAll(durableExecutorConfigs);
+        for (Entry<String, DurableExecutorConfig> entry : durableExecutorConfigs.entrySet()) {
+            entry.getValue().setName(entry.getKey());
+        }
+        return this;
+    }
+
+    public Map<String, ScheduledExecutorConfig> getScheduledExecutorConfigs() {
+        return scheduledExecutorConfigs;
+    }
+
+    public Config setScheduledExecutorConfigs(Map<String, ScheduledExecutorConfig> scheduledExecutorConfigs) {
+        this.scheduledExecutorConfigs.clear();
+        this.scheduledExecutorConfigs.putAll(scheduledExecutorConfigs);
+        for (Entry<String, ScheduledExecutorConfig> entry : scheduledExecutorConfigs.entrySet()) {
             entry.getValue().setName(entry.getKey());
         }
         return this;
@@ -830,7 +988,6 @@ public class Config {
         }
         return this;
     }
-
 
     public WanReplicationConfig getWanReplicationConfig(String name) {
         return wanReplicationConfigs.get(name);
@@ -926,7 +1083,6 @@ public class Config {
         }
         return getQuorumConfig("default");
     }
-
 
     public Config setQuorumConfigs(Map<String, QuorumConfig> quorumConfigs) {
         this.quorumConfigs.clear();
@@ -1108,6 +1264,28 @@ public class Config {
         return this;
     }
 
+    /**
+     * Get current configuration of distributed classloading.
+     *
+     * @since 3.8
+     *
+     */
+    public DistributedClassloadingConfig getDistributedClassloadingConfig() {
+        return distributedClassloadingConfig;
+    }
+
+    /**
+     * Set distributed classloading configuration
+     *
+     * @param distributedClassloadingConfig
+     * @since 3.8
+     * @return distributed classloading configuration
+     */
+    public Config setDistributedClassloadingConfig(DistributedClassloadingConfig distributedClassloadingConfig) {
+        this.distributedClassloadingConfig = distributedClassloadingConfig;
+        return this;
+    }
+
     private <T> T lookupByPattern(Map<String, T> configPatterns, String itemName) {
         T candidate = configPatterns.get(itemName);
         if (candidate != null) {
@@ -1127,9 +1305,10 @@ public class Config {
     // See {@link ConfigCheck} for more information.
 
     /**
-     * @param config
-     * @return true if config is compatible with this one,
-     * false if config belongs to another group
+     * Checks if a {@link Config} matches the group configuration.
+     *
+     * @param config the {@link Config} to check
+     * @return {@code true} if config is compatible with this one, {@code false} if config belongs to another group
      * @throws RuntimeException if map, queue, topic configs are incompatible
      */
     public boolean isCompatible(final Config config) {

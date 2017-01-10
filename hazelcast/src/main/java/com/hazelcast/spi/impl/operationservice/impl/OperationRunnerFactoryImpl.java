@@ -16,9 +16,11 @@
 
 package com.hazelcast.spi.impl.operationservice.impl;
 
-import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.operationexecutor.OperationRunner;
 import com.hazelcast.spi.impl.operationexecutor.OperationRunnerFactory;
+
+import static com.hazelcast.spi.Operation.GENERIC_PARTITION_ID;
+import static com.hazelcast.spi.impl.operationservice.impl.OperationRunnerImpl.AD_HOC_PARTITION_ID;
 
 class OperationRunnerFactoryImpl implements OperationRunnerFactory {
     private OperationServiceImpl operationService;
@@ -29,16 +31,16 @@ class OperationRunnerFactoryImpl implements OperationRunnerFactory {
 
     @Override
     public OperationRunner createAdHocRunner() {
-        return new OperationRunnerImpl(operationService, OperationRunnerImpl.AD_HOC_PARTITION_ID);
+        return new OperationRunnerImpl(operationService, AD_HOC_PARTITION_ID, null);
     }
 
     @Override
     public OperationRunner createPartitionRunner(int partitionId) {
-        return new OperationRunnerImpl(operationService, partitionId);
+        return new OperationRunnerImpl(operationService, partitionId, operationService.failedBackupsCount);
     }
 
     @Override
     public OperationRunner createGenericRunner() {
-        return new OperationRunnerImpl(operationService, Operation.GENERIC_PARTITION_ID);
+        return new OperationRunnerImpl(operationService, GENERIC_PARTITION_ID, null);
     }
 }

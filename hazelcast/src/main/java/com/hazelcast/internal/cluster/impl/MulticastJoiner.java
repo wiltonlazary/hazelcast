@@ -24,8 +24,8 @@ import com.hazelcast.util.Clock;
 import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.RandomPicker;
 
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -40,9 +40,14 @@ public class MulticastJoiner extends AbstractJoiner {
     private final AtomicInteger currentTryCount = new AtomicInteger(0);
     private final AtomicInteger maxTryCount;
 
+    // this deque is used as a stack, the SplitBrainMulticastListener adds to its head and the periodic split brain handler job
+    // also polls from its head.
+    private final BlockingDeque<SplitBrainJoinMessage> splitBrainJoinMessages = new LinkedBlockingDeque<SplitBrainJoinMessage>();
+
     public MulticastJoiner(Node node) {
         super(node);
         maxTryCount = new AtomicInteger(calculateTryCount());
+        node.multicastService.addMulticastListener(new SplitBrainMulticastListener(node, splitBrainJoinMessages));
     }
 
     @Override
@@ -51,20 +56,19 @@ public class MulticastJoiner extends AbstractJoiner {
         long maxJoinMillis = getMaxJoinMillis();
         Address thisAddress = node.getThisAddress();
 
-        while (node.isRunning() && !node.joined()
-                && (Clock.currentTimeMillis() - joinStartTime < maxJoinMillis)) {
+        while (shouldRetry() && (Clock.currentTimeMillis() - joinStartTime < maxJoinMillis)) {
 
             // clear master node
-            node.setMasterAddress(null);
+            clusterJoinManager.setMasterAddress(null);
 
             Address masterAddress = getTargetAddress();
             if (masterAddress == null) {
                 masterAddress = findMasterWithMulticast();
             }
-            node.setMasterAddress(masterAddress);
+            clusterJoinManager.setMasterAddress(masterAddress);
 
             if (masterAddress == null || thisAddress.equals(masterAddress)) {
-                node.setAsMaster();
+                clusterJoinManager.setAsMaster();
                 return;
             }
 
@@ -77,13 +81,12 @@ public class MulticastJoiner extends AbstractJoiner {
         long maxMasterJoinTime = getMaxJoinTimeToMasterNode();
         long start = Clock.currentTimeMillis();
 
-        while (node.isRunning() && !node.joined()
-                && Clock.currentTimeMillis() - start < maxMasterJoinTime) {
+        while (shouldRetry() && Clock.currentTimeMillis() - start < maxMasterJoinTime) {
 
             Address master = node.getMasterAddress();
             if (master != null) {
-                if (logger.isFinestEnabled()) {
-                    logger.finest("Joining to master " + master);
+                if (logger.isFineEnabled()) {
+                    logger.fine("Joining to master " + master);
                 }
                 clusterJoinManager.sendJoinRequest(master, true);
             } else {
@@ -97,7 +100,7 @@ public class MulticastJoiner extends AbstractJoiner {
             }
 
             if (isBlacklisted(master)) {
-                node.setMasterAddress(null);
+                clusterJoinManager.setMasterAddress(null);
                 return;
             }
         }
@@ -105,50 +108,38 @@ public class MulticastJoiner extends AbstractJoiner {
 
     @Override
     public void searchForOtherClusters() {
-        final BlockingQueue<JoinMessage> q = new LinkedBlockingQueue<JoinMessage>();
-        MulticastListener listener = new MulticastListener() {
-            public void onMessage(Object msg) {
-                if (msg != null && msg instanceof JoinMessage) {
-                    JoinMessage joinRequest = (JoinMessage) msg;
-                    if (node.getThisAddress() != null && !node.getThisAddress().equals(joinRequest.getAddress())) {
-                        q.add(joinRequest);
-                    }
-                }
-            }
-        };
-        node.multicastService.addMulticastListener(listener);
-        node.multicastService.send(node.createJoinRequest(false));
+        node.multicastService.send(node.createSplitBrainJoinMessage());
+        SplitBrainJoinMessage joinInfo;
         try {
-            JoinMessage joinInfo = q.poll(3, TimeUnit.SECONDS);
-            if (joinInfo != null) {
-                if (node.clusterService.getMember(joinInfo.getAddress()) != null) {
-                    if (logger.isFinestEnabled()) {
-                        logger.finest("Ignoring merge join response, since " + joinInfo.getAddress()
-                                + " is already a member.");
+            while ((joinInfo = splitBrainJoinMessages.poll(3, TimeUnit.SECONDS)) != null) {
+                try {
+                    if (node.clusterService.getMember(joinInfo.getAddress()) != null) {
+                        if (logger.isFineEnabled()) {
+                            logger.fine("Ignoring merge join response, since " + joinInfo.getAddress()
+                                    + " is already a member.");
+                        }
+                        return;
                     }
-                    return;
-                }
 
-                if (joinInfo.getMemberCount() == 1) {
-                    // if the other cluster has just single member, that may be a newly starting node instead of a split node
-                    // wait 2 times 'WAIT_SECONDS_BEFORE_JOIN' seconds before processing merge JoinRequest
-                    Thread.sleep(2 * node.getProperties().getMillis(GroupProperty.WAIT_SECONDS_BEFORE_JOIN));
-                }
+                    if (joinInfo.getMemberCount() == 1) {
+                        // if the other cluster has just single member, that may be a newly starting node instead of a split node
+                        // wait 2 times 'WAIT_SECONDS_BEFORE_JOIN' seconds before processing merge JoinRequest
+                        Thread.sleep(2 * node.getProperties().getMillis(GroupProperty.WAIT_SECONDS_BEFORE_JOIN));
+                    }
 
-                JoinMessage response = sendSplitBrainJoinMessage(joinInfo.getAddress());
-                if (shouldMerge(response)) {
-                    logger.warning(node.getThisAddress() + " is merging [multicast] to " + joinInfo.getAddress());
-                    startClusterMerge(joinInfo.getAddress());
+                    SplitBrainJoinMessage response = sendSplitBrainJoinMessage(joinInfo.getAddress());
+                    if (shouldMerge(response)) {
+                        logger.warning(node.getThisAddress() + " is merging [multicast] to " + joinInfo.getAddress());
+                        startClusterMerge(joinInfo.getAddress());
+                    }
+                } catch (Exception e) {
+                    if (logger != null) {
+                        logger.warning(e);
+                    }
                 }
             }
         } catch (InterruptedException ignored) {
             EmptyStatement.ignore(ignored);
-        } catch (Exception e) {
-            if (logger != null) {
-                logger.warning(e);
-            }
-        } finally {
-            node.multicastService.removeMulticastListener(listener);
         }
     }
 
@@ -158,15 +149,15 @@ public class MulticastJoiner extends AbstractJoiner {
     }
 
     void onReceivedJoinRequest(JoinRequest joinRequest) {
-        if (joinRequest.getUuid().compareTo(node.localMember.getUuid()) < 0) {
+        if (joinRequest.getUuid().compareTo(node.getThisUuid()) < 0) {
             maxTryCount.incrementAndGet();
         }
     }
 
     private Address findMasterWithMulticast() {
         try {
-            if (logger.isFinestEnabled()) {
-                logger.finest("Searching for master node. Max tries: " + maxTryCount.get());
+            if (logger.isFineEnabled()) {
+                logger.fine("Searching for master node. Max tries: " + maxTryCount.get());
             }
             JoinRequest joinRequest = node.createJoinRequest(false);
             while (node.isRunning() && currentTryCount.incrementAndGet() <= maxTryCount.get()) {

@@ -17,6 +17,7 @@
 package com.hazelcast.spi;
 
 import com.hazelcast.config.Config;
+import com.hazelcast.core.Cluster;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.Member;
 import com.hazelcast.internal.cluster.ClusterService;
@@ -28,6 +29,7 @@ import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.transaction.TransactionManagerService;
+import com.hazelcast.version.MemberVersion;
 import com.hazelcast.wan.WanReplicationService;
 
 /**
@@ -147,7 +149,8 @@ public interface NodeEngine {
     Config getConfig();
 
     /**
-     * Returns the Config ClassLoader.
+     * Returns the Config ClassLoader. This class loader will be used for instantiation of all classes defined by the
+     * configuration (e.g. listeners, policies, stores, partitioning strategies, quorum functions, ...)
      * <p/>
      * todo: add more documentation what the purpose is of the config classloader.
      *
@@ -214,6 +217,21 @@ public interface NodeEngine {
     <T> T toObject(Object object);
 
     /**
+     * Deserializes an object.
+     * <p/>
+     * This method can safely be called on an object that is already deserialized. In that case, that instance
+     * is returned.
+     * <p/>
+     * If this method is called with null, null is returned.
+     *
+     * @param object the object to deserialize.
+     * @param klazz The class to instantiate when deserializing the object.
+     * @return the deserialized object.
+     * @throws com.hazelcast.nio.serialization.HazelcastSerializationException when deserialization fails.
+     */
+    <T> T toObject(Object object, Class klazz);
+
+    /**
      * Checks if the HazelcastInstance that this {@link NodeEngine} belongs to is still active.
      * <p/>
      * A HazelcastInstance is not active when it is shutting down or already shut down.
@@ -257,4 +275,14 @@ public interface NodeEngine {
      * @deprecated since 3.7. Use {@link #getService(String)} instead.
      */
     <T extends SharedService> T getSharedService(String serviceName);
+
+    /**
+     * Returns the codebase version of the node. For example, when running on hazelcast-3.8.jar, this would resolve
+     * to {@code Version.of(3,8,0)}. A node's codebase version may be different than cluster version.
+     *
+     * @return codebase version of the node.
+     * @see Cluster#getClusterVersion()
+     * @since 3.8
+     */
+    MemberVersion getVersion();
 }

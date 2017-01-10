@@ -16,8 +16,8 @@
 
 package com.hazelcast.map.impl;
 
+import com.hazelcast.config.Config;
 import com.hazelcast.config.MapConfig;
-import com.hazelcast.config.PartitioningStrategyConfig;
 import com.hazelcast.config.WanReplicationRef;
 import com.hazelcast.core.IFunction;
 import com.hazelcast.core.PartitioningStrategy;
@@ -27,6 +27,7 @@ import com.hazelcast.map.impl.eviction.EvictionChecker;
 import com.hazelcast.map.impl.eviction.Evictor;
 import com.hazelcast.map.impl.eviction.EvictorImpl;
 import com.hazelcast.map.impl.mapstore.MapStoreContext;
+import com.hazelcast.map.impl.nearcache.invalidation.InvalidationListener;
 import com.hazelcast.map.impl.query.QueryEntryFactory;
 import com.hazelcast.map.impl.record.DataRecordFactory;
 import com.hazelcast.map.impl.record.ObjectRecordFactory;
@@ -42,15 +43,16 @@ import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.ConstructorFunction;
 import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.util.MemoryInfoAccessor;
 import com.hazelcast.util.RuntimeMemoryInfoAccessor;
 import com.hazelcast.wan.WanReplicationPublisher;
 import com.hazelcast.wan.WanReplicationService;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.hazelcast.map.impl.SizeEstimators.createNearCacheSizeEstimator;
 import static com.hazelcast.map.impl.eviction.Evictor.NULL_EVICTOR;
 import static com.hazelcast.map.impl.mapstore.MapStoreContextFactory.createMapStoreContext;
+import static java.lang.System.getProperty;
 
 /**
  * Map container.
@@ -62,7 +64,6 @@ public class MapContainer {
     protected final MapServiceContext mapServiceContext;
     protected final Indexes indexes;
     protected final Extractors extractors;
-    protected final SizeEstimator nearCacheSizeEstimator;
     protected final PartitioningStrategy partitioningStrategy;
     protected final MapStoreContext mapStoreContext;
     protected final SerializationService serializationService;
@@ -76,9 +77,8 @@ public class MapContainer {
         }
     };
     protected final ConstructorFunction<Void, RecordFactory> recordFactoryConstructor;
-    protected final boolean memberNearCacheInvalidationEnabled;
     /**
-     * Holds number of registered {@link com.hazelcast.map.impl.nearcache.InvalidationListener} from clients.
+     * Holds number of registered {@link InvalidationListener} from clients.
      */
     protected final AtomicInteger invalidationListenerCount = new AtomicInteger();
 
@@ -94,9 +94,9 @@ public class MapContainer {
      * in the method comment {@link com.hazelcast.spi.PostJoinAwareService#getPostJoinOperation()}
      * Otherwise undesired situations, like deadlocks, may appear.
      */
-    public MapContainer(final String name, final MapConfig mapConfig, final MapServiceContext mapServiceContext) {
+    public MapContainer(final String name, final Config config, final MapServiceContext mapServiceContext) {
         this.name = name;
-        this.mapConfig = mapConfig;
+        this.mapConfig = config.findMapConfig(name);
         this.mapServiceContext = mapServiceContext;
         NodeEngine nodeEngine = mapServiceContext.getNodeEngine();
         this.partitioningStrategy = createPartitioningStrategy();
@@ -105,10 +105,8 @@ public class MapContainer {
         this.recordFactoryConstructor = createRecordFactoryConstructor(serializationService);
         this.queryEntryFactory = new QueryEntryFactory(mapConfig.getCacheDeserializedValues());
         initWanReplication(nodeEngine);
-        this.nearCacheSizeEstimator = createNearCacheSizeEstimator(mapConfig.getNearCacheConfig());
-        this.extractors = new Extractors(mapConfig.getMapAttributeConfigs());
+        this.extractors = new Extractors(mapConfig.getMapAttributeConfigs(), config.getClassLoader());
         this.indexes = new Indexes((InternalSerializationService) serializationService, extractors);
-        this.memberNearCacheInvalidationEnabled = hasMemberNearCache() && mapConfig.getNearCacheConfig().isInvalidateOnChange();
         this.mapStoreContext = createMapStoreContext(this);
         this.mapStoreContext.start();
         initEvictor();
@@ -120,9 +118,28 @@ public class MapContainer {
         if (mapEvictionPolicy == null) {
             evictor = NULL_EVICTOR;
         } else {
-            EvictionChecker evictionChecker = new EvictionChecker(new RuntimeMemoryInfoAccessor(), mapServiceContext);
+            MemoryInfoAccessor memoryInfoAccessor = getMemoryInfoAccessor();
+            EvictionChecker evictionChecker = new EvictionChecker(memoryInfoAccessor, mapServiceContext);
             IPartitionService partitionService = mapServiceContext.getNodeEngine().getPartitionService();
             evictor = new EvictorImpl(mapEvictionPolicy, evictionChecker, partitionService);
+        }
+    }
+
+    protected static MemoryInfoAccessor getMemoryInfoAccessor() {
+        MemoryInfoAccessor pluggedMemoryInfoAccessor = getPluggedMemoryInfoAccessor();
+        return pluggedMemoryInfoAccessor != null ? pluggedMemoryInfoAccessor : new RuntimeMemoryInfoAccessor();
+    }
+
+    private static MemoryInfoAccessor getPluggedMemoryInfoAccessor() {
+        String memoryInfoAccessorImpl = getProperty("hazelcast.memory.info.accessor.impl");
+        if (memoryInfoAccessorImpl == null) {
+            return null;
+        }
+
+        try {
+            return ClassLoaderUtil.newInstance(null, memoryInfoAccessorImpl);
+        } catch (Exception e) {
+            throw ExceptionUtil.rethrow(e);
         }
     }
 
@@ -156,20 +173,7 @@ public class MapContainer {
     }
 
     private PartitioningStrategy createPartitioningStrategy() {
-        PartitioningStrategy strategy = null;
-        PartitioningStrategyConfig partitioningStrategyConfig = mapConfig.getPartitioningStrategyConfig();
-        if (partitioningStrategyConfig != null) {
-            strategy = partitioningStrategyConfig.getPartitioningStrategy();
-            if (strategy == null && partitioningStrategyConfig.getPartitioningStrategyClass() != null) {
-                try {
-                    strategy = ClassLoaderUtil.newInstance(mapServiceContext.getNodeEngine().getConfigClassLoader(),
-                            partitioningStrategyConfig.getPartitioningStrategyClass());
-                } catch (Exception e) {
-                    throw ExceptionUtil.rethrow(e);
-                }
-            }
-        }
-        return strategy;
+        return mapServiceContext.getPartitioningStrategy(mapConfig.getName(), mapConfig.getPartitioningStrategyConfig());
     }
 
     public Indexes getIndexes() {
@@ -197,10 +201,6 @@ public class MapContainer {
         }
     }
 
-    public boolean hasMemberNearCache() {
-        return mapConfig.isNearCacheEnabled();
-    }
-
     public int getTotalBackupCount() {
         return getBackupCount() + getAsyncBackupCount();
     }
@@ -215,10 +215,6 @@ public class MapContainer {
 
     public PartitioningStrategy getPartitioningStrategy() {
         return partitioningStrategy;
-    }
-
-    public SizeEstimator getNearCacheSizeEstimator() {
-        return nearCacheSizeEstimator;
     }
 
     public MapServiceContext getMapServiceContext() {
@@ -270,10 +266,6 @@ public class MapContainer {
         return extractors;
     }
 
-    public boolean isMemberNearCacheInvalidationEnabled() {
-        return memberNearCacheInvalidationEnabled;
-    }
-
     public boolean hasInvalidationListener() {
         return invalidationListenerCount.get() > 0;
     }
@@ -286,12 +278,12 @@ public class MapContainer {
         invalidationListenerCount.decrementAndGet();
     }
 
-    public boolean isInvalidationEnabled() {
-        return isMemberNearCacheInvalidationEnabled() || hasInvalidationListener();
-    }
-
     public InterceptorRegistry getInterceptorRegistry() {
         return interceptorRegistry;
+    }
+
+    // callback called when the MapContainer is de-registered from MapService and destroyed - basically on map-destroy
+    public void onDestroy() {
     }
 }
 

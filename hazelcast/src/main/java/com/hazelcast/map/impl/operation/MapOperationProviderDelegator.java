@@ -33,7 +33,7 @@ import java.util.Set;
  * <p/>
  * See {@link WANAwareOperationProvider} for an example.
  */
-public abstract class MapOperationProviderDelegator implements MapOperationProvider {
+abstract class MapOperationProviderDelegator implements MapOperationProvider {
 
     abstract MapOperationProvider getDelegate();
 
@@ -138,8 +138,8 @@ public abstract class MapOperationProviderDelegator implements MapOperationProvi
     }
 
     @Override
-    public MapOperation createPutAllPerMemberOperation(String name, int[] partitions, MapEntries[] mapEntries) {
-        return getDelegate().createPutAllPerMemberOperation(name, partitions, mapEntries);
+    public OperationFactory createPutAllOperationFactory(String name, int[] partitions, MapEntries[] mapEntries) {
+        return getDelegate().createPutAllOperationFactory(name, partitions, mapEntries);
     }
 
     @Override
@@ -149,8 +149,7 @@ public abstract class MapOperationProviderDelegator implements MapOperationProvi
 
     @Override
     public MapOperation createTxnDeleteOperation(String name, Data dataKey, long version) {
-        return getDelegate()
-                .createTxnDeleteOperation(name, dataKey, version);
+        return getDelegate().createTxnDeleteOperation(name, dataKey, version);
     }
 
     @Override
@@ -167,8 +166,7 @@ public abstract class MapOperationProviderDelegator implements MapOperationProvi
     @Override
     public MapOperation createMergeOperation(String name, Data dataKey, EntryView<Data, Data> entryView,
                                              MapMergePolicy policy, boolean disableWanReplicationEvent) {
-        return getDelegate()
-                .createMergeOperation(name, dataKey, entryView, policy, disableWanReplicationEvent);
+        return getDelegate().createMergeOperation(name, dataKey, entryView, policy, disableWanReplicationEvent);
     }
 
     @Override
@@ -180,8 +178,7 @@ public abstract class MapOperationProviderDelegator implements MapOperationProvi
     public OperationFactory createPartitionWideEntryWithPredicateOperationFactory(String name,
                                                                                   EntryProcessor entryProcessor,
                                                                                   Predicate predicate) {
-        return getDelegate()
-                .createPartitionWideEntryWithPredicateOperationFactory(name, entryProcessor, predicate);
+        return getDelegate().createPartitionWideEntryWithPredicateOperationFactory(name, entryProcessor, predicate);
     }
 
     @Override
@@ -232,5 +229,15 @@ public abstract class MapOperationProviderDelegator implements MapOperationProvi
     @Override
     public MapOperation createLoadMapOperation(String name, boolean replaceExistingValues) {
         return getDelegate().createLoadMapOperation(name, replaceExistingValues);
+    }
+
+    @Override
+    public MapOperation createFetchKeysOperation(String name, int lastTableIndex, int fetchSize) {
+        return getDelegate().createFetchKeysOperation(name, lastTableIndex, fetchSize);
+    }
+
+    @Override
+    public MapOperation createFetchEntriesOperation(String name, int lastTableIndex, int fetchSize) {
+        return getDelegate().createFetchEntriesOperation(name, lastTableIndex, fetchSize);
     }
 }

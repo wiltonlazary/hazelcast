@@ -23,11 +23,13 @@ import com.hazelcast.config.ConfigLoader;
 import com.hazelcast.config.DiscoveryConfig;
 import com.hazelcast.config.DiscoveryStrategyConfig;
 import com.hazelcast.config.EvictionConfig;
+import com.hazelcast.config.EvictionConfig.MaxSizePolicy;
 import com.hazelcast.config.EvictionPolicy;
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.InvalidConfigurationException;
 import com.hazelcast.config.ListenerConfig;
 import com.hazelcast.config.NearCacheConfig;
+import com.hazelcast.config.NearCachePreloaderConfig;
 import com.hazelcast.config.SSLConfig;
 import com.hazelcast.config.SerializationConfig;
 import com.hazelcast.config.SocketInterceptorConfig;
@@ -243,18 +245,20 @@ public class XmlClientConfigBuilder extends AbstractConfigBuilder {
 
     private void handleNearCache(Node node) {
         String name = getAttribute(node, "name");
-        NearCacheConfig nearCacheConfig = new NearCacheConfig();
+        NearCacheConfig nearCacheConfig = new NearCacheConfig(name);
         for (Node child : childElements(node)) {
             String nodeName = cleanNodeName(child);
             String value = getTextContent(child).trim();
             if ("max-size".equals(nodeName)) {
                 nearCacheConfig.setMaxSize(Integer.parseInt(value));
+                LOGGER.warning("The element <max-size/> for <near-cache/> is deprecated, please use <eviction/> instead!");
             } else if ("time-to-live-seconds".equals(nodeName)) {
                 nearCacheConfig.setTimeToLiveSeconds(Integer.parseInt(value));
             } else if ("max-idle-seconds".equals(nodeName)) {
                 nearCacheConfig.setMaxIdleSeconds(Integer.parseInt(value));
             } else if ("eviction-policy".equals(nodeName)) {
                 nearCacheConfig.setEvictionPolicy(value);
+                LOGGER.warning("The element <eviction-policy/> for <near-cache/> is deprecated, please use <eviction/> instead!");
             } else if ("in-memory-format".equals(nodeName)) {
                 nearCacheConfig.setInMemoryFormat(InMemoryFormat.valueOf(upperCaseInternal(value)));
             } else if ("invalidate-on-change".equals(nodeName)) {
@@ -262,13 +266,14 @@ public class XmlClientConfigBuilder extends AbstractConfigBuilder {
             } else if ("cache-local-entries".equals(nodeName)) {
                 nearCacheConfig.setCacheLocalEntries(Boolean.parseBoolean(value));
             } else if ("local-update-policy".equals(nodeName)) {
-                NearCacheConfig.LocalUpdatePolicy policy = NearCacheConfig.LocalUpdatePolicy.valueOf(value);
-                nearCacheConfig.setLocalUpdatePolicy(policy);
+                nearCacheConfig.setLocalUpdatePolicy(NearCacheConfig.LocalUpdatePolicy.valueOf(value));
             } else if ("eviction".equals(nodeName)) {
                 nearCacheConfig.setEvictionConfig(getEvictionConfig(child));
+            } else if ("preloader".equals(nodeName)) {
+                nearCacheConfig.setPreloaderConfig(getNearCachePreloaderConfig(child));
             }
         }
-        clientConfig.addNearCacheConfig(name, nearCacheConfig);
+        clientConfig.addNearCacheConfig(nearCacheConfig);
     }
 
     private EvictionConfig getEvictionConfig(Node node) {
@@ -280,18 +285,36 @@ public class XmlClientConfigBuilder extends AbstractConfigBuilder {
             evictionConfig.setSize(Integer.parseInt(getTextContent(size)));
         }
         if (maxSizePolicy != null) {
-            evictionConfig.setMaximumSizePolicy(
-                    EvictionConfig.MaxSizePolicy.valueOf(
-                            upperCaseInternal(getTextContent(maxSizePolicy)))
+            evictionConfig.setMaximumSizePolicy(MaxSizePolicy.valueOf(upperCaseInternal(getTextContent(maxSizePolicy)))
             );
         }
         if (evictionPolicy != null) {
-            evictionConfig.setEvictionPolicy(
-                    EvictionPolicy.valueOf(
-                            upperCaseInternal(getTextContent(evictionPolicy)))
+            evictionConfig.setEvictionPolicy(EvictionPolicy.valueOf(upperCaseInternal(getTextContent(evictionPolicy)))
             );
         }
         return evictionConfig;
+    }
+
+    private NearCachePreloaderConfig getNearCachePreloaderConfig(Node node) {
+        NearCachePreloaderConfig preloaderConfig = new NearCachePreloaderConfig();
+        String enabled = getAttribute(node, "enabled");
+        String filename = getAttribute(node, "filename");
+        String storeInitialDelaySeconds = getAttribute(node, "store-initial-delay-seconds");
+        String storeIntervalSeconds = getAttribute(node, "store-interval-seconds");
+        if (enabled != null) {
+            preloaderConfig.setEnabled(getBooleanValue(enabled));
+        }
+        if (filename != null) {
+            preloaderConfig.setFilename(filename);
+        }
+        if (storeInitialDelaySeconds != null) {
+            preloaderConfig.setStoreInitialDelaySeconds(getIntegerValue("storage-initial-delay-seconds",
+                    storeInitialDelaySeconds));
+        }
+        if (storeIntervalSeconds != null) {
+            preloaderConfig.setStoreIntervalSeconds(getIntegerValue("storage-interval-seconds", storeIntervalSeconds));
+        }
+        return preloaderConfig;
     }
 
     private void handleLoadBalancer(Node node) {
@@ -348,7 +371,6 @@ public class XmlClientConfigBuilder extends AbstractConfigBuilder {
 
     private void handleDiscoveryNodeFilter(Node node, DiscoveryConfig discoveryConfig) {
         NamedNodeMap atts = node.getAttributes();
-
         Node att = atts.getNamedItem("class");
         if (att != null) {
             discoveryConfig.setNodeFilterClass(getTextContent(att).trim());

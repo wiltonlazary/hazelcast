@@ -22,7 +22,8 @@ import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.Locale;
+
+import static com.hazelcast.util.StringUtil.LOCALE_INTERNAL;
 
 final class DateHelper {
 
@@ -44,25 +45,28 @@ final class DateHelper {
 
     static Timestamp parseTimeStamp(final String value) {
         try {
-            return new Timestamp(getTimestampFormat().parse(value).getTime());
-        } catch (ParseException e) {
-            return throwRuntimeParseException(value, e, TIMESTAMP_FORMAT);
+            // JDK format in Timestamp.valueOf is compatible with TIMESTAMP_FORMAT
+            return Timestamp.valueOf(value);
+        } catch (IllegalArgumentException e) {
+            return throwRuntimeParseException(value, new ParseException(e.getMessage(), 0), TIMESTAMP_FORMAT);
         }
     }
 
     static java.sql.Date parseSqlDate(final String value) {
         try {
-            return new java.sql.Date(getSqlDateFormat().parse(value).getTime());
-        } catch (ParseException e) {
-            return throwRuntimeParseException(value, e, SQL_DATE_FORMAT);
+            // JDK format in Date.valueOf is compatible with DATE_FORMAT
+            return java.sql.Date.valueOf(value);
+        } catch (IllegalArgumentException e) {
+            return throwRuntimeParseException(value, new ParseException(value, 0), SQL_DATE_FORMAT);
         }
     }
 
     static java.sql.Time parseSqlTime(final String value) {
         try {
-            return new Time(getSqlTimeFormat().parse(value).getTime());
-        } catch (ParseException e) {
-            return throwRuntimeParseException(value, e, SQL_TIME_FORMAT);
+            // JDK format in Time.valueOf is compatible with DATE_FORMAT
+            return Time.valueOf(value);
+        } catch (IllegalArgumentException e) {
+            return throwRuntimeParseException(value, new ParseException(value, 0), SQL_TIME_FORMAT);
         }
     }
 
@@ -79,19 +83,19 @@ final class DateHelper {
     }
 
     private static DateFormat getTimestampFormat() {
-        return new SimpleDateFormat(TIMESTAMP_FORMAT, Locale.US);
+        return new SimpleDateFormat(TIMESTAMP_FORMAT, LOCALE_INTERNAL);
     }
 
     private static DateFormat getSqlDateFormat() {
-        return new SimpleDateFormat(SQL_DATE_FORMAT, Locale.US);
+        return new SimpleDateFormat(SQL_DATE_FORMAT, LOCALE_INTERNAL);
     }
 
     private static DateFormat getUtilDateFormat() {
-        return new SimpleDateFormat(DATE_FORMAT, Locale.US);
+        return new SimpleDateFormat(DATE_FORMAT, LOCALE_INTERNAL);
     }
 
     private static DateFormat getSqlTimeFormat() {
-        return new SimpleDateFormat(SQL_TIME_FORMAT, Locale.US);
+        return new SimpleDateFormat(SQL_TIME_FORMAT, LOCALE_INTERNAL);
     }
 
 }

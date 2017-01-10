@@ -16,11 +16,12 @@
 
 package com.hazelcast.client.spi;
 
+import com.hazelcast.client.connection.nio.ClientConnection;
 import com.hazelcast.client.spi.impl.ListenerMessageCodec;
 
 /**
  * Client service to add/remove remote listeners.
- * <p/>
+ *
  * For smart client, it registers local  listeners to all nodes in cluster.
  * For dummy client, it registers global listener to one node.
  */
@@ -29,4 +30,10 @@ public interface ClientListenerService {
     String registerListener(ListenerMessageCodec listenerMessageCodec, EventHandler handler);
 
     boolean deregisterListener(String registrationId);
+
+    /**
+     * Do the appropriate action based on connection to the cluster
+     * @param clientConnection The connection that the client is using for cluster connection.
+     */
+    void onClusterConnect(ClientConnection clientConnection);
 }

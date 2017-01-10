@@ -23,11 +23,12 @@ import com.hazelcast.core.Member;
 import com.hazelcast.core.MemberSelector;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
-import com.hazelcast.internal.cluster.MemberInfo;
+import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.partition.InternalPartition;
 import com.hazelcast.internal.partition.PartitionListener;
 import com.hazelcast.internal.partition.PartitionStateGenerator;
+import com.hazelcast.internal.partition.PartitionTableView;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.partition.membergroup.MemberGroup;
@@ -35,10 +36,6 @@ import com.hazelcast.partition.membergroup.MemberGroupFactory;
 import com.hazelcast.partition.membergroup.MemberGroupFactoryFactory;
 
 import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -52,12 +49,10 @@ import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_S
 public class PartitionStateManager {
 
     private final Node node;
-    private final InternalPartitionServiceImpl partitionService;
     private final ILogger logger;
 
     private final int partitionCount;
     private final InternalPartitionImpl[] partitions;
-    private final Map<Address, String> memberUuidMap = new HashMap<Address, String>();
 
     @Probe
     private final AtomicInteger stateVersion = new AtomicInteger();
@@ -73,9 +68,8 @@ public class PartitionStateManager {
     // can be read and written concurrently...
     private volatile int memberGroupsSize;
 
-    public PartitionStateManager(Node node, InternalPartitionServiceImpl service, PartitionListener listener) {
+    public PartitionStateManager(Node node, InternalPartitionServiceImpl partitionService, PartitionListener listener) {
         this.node = node;
-        this.partitionService = service;
         this.logger = node.getLogger(getClass());
 
         partitionCount = partitionService.getPartitionCount();
@@ -150,18 +144,16 @@ public class PartitionStateManager {
             return false;
         }
 
-        updateMemberUuidMap();
-
         for (int partitionId = 0; partitionId < partitionCount; partitionId++) {
             InternalPartitionImpl partition = partitions[partitionId];
             Address[] replicas = newState[partitionId];
             partition.setReplicaAddresses(replicas);
         }
-        initialized = true;
+        setInitialized();
         return true;
     }
 
-    void setInitialState(Address[][] newState, int partitionStateVersion) {
+    void setInitialState(PartitionTableView partitionTable) {
         if (initialized) {
             throw new IllegalStateException("Partition table is already initialized!");
         }
@@ -169,7 +161,7 @@ public class PartitionStateManager {
         boolean foundReplica = false;
         for (int partitionId = 0; partitionId < partitionCount; partitionId++) {
             InternalPartitionImpl partition = partitions[partitionId];
-            Address[] replicas = newState[partitionId];
+            Address[] replicas = partitionTable.getAddresses(partitionId);
             if (!foundReplica && replicas != null) {
                 for (int i = 0; i < InternalPartition.MAX_REPLICA_COUNT; i++) {
                     foundReplica |= replicas[i] != null;
@@ -177,43 +169,10 @@ public class PartitionStateManager {
             }
             partition.setInitialReplicaAddresses(replicas);
         }
-        updateMemberUuidMap();
-        stateVersion.set(partitionStateVersion);
-        initialized = foundReplica;
-    }
-
-    void updateMemberUuidMap() {
-        List<MemberImpl> members = partitionService.getCurrentMembersAndMembersRemovedWhileClusterNotActive();
-        memberUuidMap.clear();
-        for (MemberImpl member : members) {
-            memberUuidMap.put(member.getAddress(), member.getUuid());
+        stateVersion.set(partitionTable.getVersion());
+        if (foundReplica) {
+            setInitialized();
         }
-    }
-
-    void updateMemberUuidMap(MemberInfo[] members) {
-        memberUuidMap.clear();
-        for (MemberInfo member : members) {
-            memberUuidMap.put(member.getAddress(), member.getUuid());
-        }
-    }
-
-    String getMemberUuid(Address address) {
-        return address != null ? memberUuidMap.get(address) : null;
-    }
-
-    boolean isKnownMemberUuid(Address address, String uuid) {
-        String currentUuid = memberUuidMap.get(address);
-        assert currentUuid != null : "Unknown Member! " + address + " - " + uuid;
-        return uuid.equals(currentUuid);
-    }
-
-    MemberInfo[] getPartitionTableMembers() {
-        MemberInfo[] members = new MemberInfo[memberUuidMap.size()];
-        int ix = 0;
-        for (Map.Entry<Address, String> entry : memberUuidMap.entrySet()) {
-            members[ix++] = new MemberInfo(entry.getKey(), entry.getValue(), Collections.<String, Object>emptyMap());
-        }
-        return members;
     }
 
     void updateMemberGroupsSize() {
@@ -238,19 +197,39 @@ public class PartitionStateManager {
         return node.isLiteMember() ? 0 : 1;
     }
 
-    void removeDeadAddress(Address address) {
-        for (InternalPartitionImpl partition : partitions) {
-            int index = partition.removeAddress(address);
+    void removeUnknownAddresses() {
+        ClusterServiceImpl clusterService = node.getClusterService();
 
-            // address is not replica of this partition
-            if (index == -1) {
-                continue;
-            }
-            if (logger.isFinestEnabled()) {
-                logger.finest("partitionId=" + partition.getPartitionId() + " " + address
-                        + " is removed from replica index: " + index + " partition: " + partition);
+        for (InternalPartitionImpl partition : partitions) {
+            for (int i = 0; i < InternalPartition.MAX_REPLICA_COUNT; i++) {
+                Address address = partition.getReplicaAddress(i);
+                if (address == null) {
+                    continue;
+                }
+
+                MemberImpl member = clusterService.getMember(address);
+                if (member == null) {
+                    partition.setReplicaAddress(i, null);
+                    if (logger.isFinestEnabled()) {
+                        logger.finest("PartitionId=" + partition.getPartitionId() + " " + address
+                                + " is removed from replica index: " + i + ", partition: " + partition);
+                    }
+                }
             }
         }
+    }
+
+    boolean isAbsentInPartitionTable(Address address) {
+        for (InternalPartitionImpl partition : partitions) {
+            if (partition.isOwnerOrBackup(address)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    boolean isPresentInPartitionTable(Address address) {
+        return !isAbsentInPartitionTable(address);
     }
 
     InternalPartition[] getPartitions() {
@@ -286,8 +265,18 @@ public class PartitionStateManager {
         return newState;
     }
 
-    void setMigrating(int partitionId, boolean migrating) {
-        partitions[partitionId].setMigrating(migrating);
+    public void setMigratingFlag(int partitionId) {
+        if (logger.isFinestEnabled()) {
+            logger.finest("Setting partition-migrating flag. partitionId=" + partitionId);
+        }
+        partitions[partitionId].setMigrating(true);
+    }
+
+    public void clearMigratingFlag(int partitionId) {
+        if (logger.isFinestEnabled()) {
+            logger.finest("Clearing partition-migrating flag. partitionId=" + partitionId);
+        }
+        partitions[partitionId].setMigrating(false);
     }
 
     void updateReplicaAddresses(int partitionId, Address[] replicaAddresses) {
@@ -312,12 +301,17 @@ public class PartitionStateManager {
         }
     }
 
-    void incrementVersion() {
+    public void incrementVersion() {
         stateVersion.incrementAndGet();
     }
 
-    void setInitialized() {
-        initialized = true;
+    boolean setInitialized() {
+        if (!initialized) {
+            initialized = true;
+            node.getNodeExtension().onPartitionStateChange();
+            return true;
+        }
+        return false;
     }
 
     public boolean isInitialized() {
@@ -330,5 +324,30 @@ public class PartitionStateManager {
         for (InternalPartitionImpl partition : partitions) {
             partition.reset();
         }
+    }
+
+    int replaceAddress(Address oldAddress, Address newAddress) {
+        if (!initialized) {
+            return 0;
+        }
+        int count = 0;
+        for (InternalPartitionImpl partition : partitions) {
+            if (partition.replaceAddress(oldAddress, newAddress) > -1) {
+                count++;
+            }
+        }
+        if (count > 0) {
+            node.getNodeExtension().onPartitionStateChange();
+            logger.info("Replaced " + oldAddress + " with " + newAddress + " in partition table in "
+                    + count + " partitions.");
+        }
+        return count;
+    }
+
+    PartitionTableView getPartitionTable() {
+        if (!initialized) {
+            return new PartitionTableView(new Address[partitions.length][InternalPartition.MAX_REPLICA_COUNT], 0);
+        }
+        return new PartitionTableView(partitions, stateVersion.get());
     }
 }

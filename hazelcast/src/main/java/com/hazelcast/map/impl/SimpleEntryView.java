@@ -16,6 +16,7 @@
 
 package com.hazelcast.map.impl;
 
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import com.hazelcast.core.EntryView;
 import com.hazelcast.nio.IOUtil;
 import com.hazelcast.nio.ObjectDataInput;
@@ -30,6 +31,8 @@ import java.io.IOException;
  * @param <K> the type of key.
  * @param <V> the type of value.
  */
+@BinaryInterface
+@SuppressWarnings("checkstyle:methodcount")
 public class SimpleEntryView<K, V> implements EntryView<K, V>, IdentifiedDataSerializable {
 
     private K key;
@@ -266,5 +269,22 @@ public class SimpleEntryView<K, V> implements EntryView<K, V>, IdentifiedDataSer
         result = 31 * result + (int) (version ^ (version >>> 32));
         result = 31 * result + (int) (ttl ^ (ttl >>> 32));
         return result;
+    }
+
+    @Override
+    public String toString() {
+        return "EntryView{"
+                + "key=" + key
+                + ", value=" + value
+                + ", cost=" + cost
+                + ", creationTime=" + creationTime
+                + ", expirationTime=" + expirationTime
+                + ", hits=" + hits
+                + ", lastAccessTime=" + lastAccessTime
+                + ", lastStoredTime=" + lastStoredTime
+                + ", lastUpdateTime=" + lastUpdateTime
+                + ", version=" + version
+                + ", ttl=" + ttl
+                + '}';
     }
 }

@@ -24,13 +24,14 @@ import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.Notifier;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.util.Map;
 
 /**
  * Clears items stored by Queue.
  */
-public class ClearOperation extends QueueBackupAwareOperation implements Notifier {
+public class ClearOperation extends QueueBackupAwareOperation implements Notifier, MutatingOperation {
 
     private Map<Long, Data> dataMap;
 
@@ -43,7 +44,7 @@ public class ClearOperation extends QueueBackupAwareOperation implements Notifie
 
     @Override
     public void run() {
-        QueueContainer queueContainer = getOrCreateContainer();
+        QueueContainer queueContainer = getContainer();
         dataMap = queueContainer.clear();
         response = true;
     }
@@ -74,7 +75,7 @@ public class ClearOperation extends QueueBackupAwareOperation implements Notifie
 
     @Override
     public WaitNotifyKey getNotifiedKey() {
-        return getOrCreateContainer().getOfferWaitNotifyKey();
+        return getContainer().getOfferWaitNotifyKey();
     }
 
     @Override

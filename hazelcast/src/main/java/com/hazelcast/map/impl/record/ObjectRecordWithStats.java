@@ -42,4 +42,22 @@ class ObjectRecordWithStats extends AbstractRecordWithStats<Object> {
     public long getCost() {
         return 0L;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (!super.equals(o)) {
+            return false;
+        }
+
+        ObjectRecordWithStats that = (ObjectRecordWithStats) o;
+
+        return value.equals(that.value);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = super.hashCode();
+        result = 31 * result + value.hashCode();
+        return result;
+    }
 }

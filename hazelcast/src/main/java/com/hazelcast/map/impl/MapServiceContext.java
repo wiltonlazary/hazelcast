@@ -16,18 +16,26 @@
 
 package com.hazelcast.map.impl;
 
+import com.hazelcast.cluster.ClusterState;
+import com.hazelcast.config.MapConfig;
+import com.hazelcast.config.PartitioningStrategyConfig;
 import com.hazelcast.core.PartitioningStrategy;
 import com.hazelcast.map.impl.event.MapEventPublisher;
 import com.hazelcast.map.impl.eviction.ExpirationManager;
-import com.hazelcast.map.impl.nearcache.NearCacheProvider;
+import com.hazelcast.map.impl.nearcache.MapNearCacheManager;
 import com.hazelcast.map.impl.operation.MapOperationProvider;
 import com.hazelcast.map.impl.query.MapQueryEngine;
+import com.hazelcast.map.impl.query.PartitionScanRunner;
+import com.hazelcast.map.impl.query.QueryRunner;
+import com.hazelcast.map.impl.query.ResultProcessorRegistry;
+import com.hazelcast.map.impl.querycache.QueryCacheContext;
 import com.hazelcast.map.impl.recordstore.RecordStore;
 import com.hazelcast.map.merge.MergePolicyProvider;
 import com.hazelcast.monitor.impl.LocalMapStatsImpl;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.impl.getters.Extractors;
 import com.hazelcast.query.impl.predicates.QueryOptimizer;
+import com.hazelcast.spi.EventFilter;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
 
@@ -101,8 +109,6 @@ public interface MapServiceContext extends MapServiceContextInterceptorSupport, 
      */
     void shutdown();
 
-    NearCacheProvider getNearCacheProvider();
-
     RecordStore createRecordStore(MapContainer mapContainer, int partitionId, MapKeyLoader keyLoader);
 
     RecordStore getRecordStore(int partitionId, String mapName);
@@ -129,16 +135,41 @@ public interface MapServiceContext extends MapServiceContextInterceptorSupport, 
 
     MapQueryEngine getMapQueryEngine(String name);
 
+    QueryRunner getMapQueryRunner(String name);
+
     QueryOptimizer getQueryOptimizer();
 
     LocalMapStatsProvider getLocalMapStatsProvider();
 
     MapOperationProvider getMapOperationProvider(String name);
 
+    MapOperationProvider getMapOperationProvider(MapConfig mapConfig);
+
     Extractors getExtractors(String mapName);
 
     void incrementOperationStats(long startTime, LocalMapStatsImpl localMapStats, String mapName, Operation operation);
 
-    void removeMapContainer(MapContainer mapContainer);
+    boolean removeMapContainer(MapContainer mapContainer);
 
+    PartitioningStrategy getPartitioningStrategy(String mapName, PartitioningStrategyConfig config);
+
+    void removePartitioningStrategyFromCache(String mapName);
+
+    PartitionContainer[] getPartitionContainers();
+
+    void onClusterStateChange(ClusterState newState);
+
+    PartitionScanRunner getPartitionScanRunner();
+
+    ResultProcessorRegistry getResultProcessorRegistry();
+
+    MapNearCacheManager getMapNearCacheManager();
+
+    QueryCacheContext getQueryCacheContext();
+
+    String addListenerAdapter(String cacheName, ListenerAdapter listenerAdaptor);
+
+    String addListenerAdapter(ListenerAdapter listenerAdaptor, EventFilter eventFilter, String mapName);
+
+    String addLocalListenerAdapter(ListenerAdapter listenerAdaptor, String mapName);
 }

@@ -20,6 +20,7 @@ import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.Clock;
 
@@ -28,8 +29,8 @@ import java.io.IOException;
 /**
  * Default implementation of {@link QueryCacheEventData} which is sent to subscriber.
  */
-public class DefaultQueryCacheEventData
-        implements QueryCacheEventData {
+@BinaryInterface
+public class DefaultQueryCacheEventData implements QueryCacheEventData {
 
     private Object key;
     private Object value;
@@ -44,6 +45,19 @@ public class DefaultQueryCacheEventData
 
     public DefaultQueryCacheEventData() {
         creationTime = Clock.currentTimeMillis();
+    }
+
+    public DefaultQueryCacheEventData(DefaultQueryCacheEventData other) {
+        this.key = other.key;
+        this.value = other.value;
+        this.dataKey = other.dataKey;
+        this.dataNewValue = other.dataNewValue;
+        this.dataOldValue = other.dataOldValue;
+        this.sequence = other.sequence;
+        this.serializationService = other.serializationService;
+        this.creationTime = other.creationTime;
+        this.eventType = other.eventType;
+        this.partitionId = other.partitionId;
     }
 
     @Override
@@ -215,7 +229,6 @@ public class DefaultQueryCacheEventData
         }
         return serializationService != null ? serializationService.equals(that.serializationService)
                 : that.serializationService == null;
-
     }
 
     @Override

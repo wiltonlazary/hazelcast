@@ -23,6 +23,7 @@ import com.hazelcast.monitor.impl.LocalQueueStatsImpl;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.spi.BlockingOperation;
+import com.hazelcast.spi.ReadonlyOperation;
 import com.hazelcast.spi.WaitNotifyKey;
 
 import java.io.IOException;
@@ -30,7 +31,7 @@ import java.io.IOException;
 /**
  * Peek operation for the transactional queue.
  */
-public class TxnPeekOperation extends QueueOperation implements BlockingOperation {
+public class TxnPeekOperation extends QueueOperation implements BlockingOperation, ReadonlyOperation {
 
     private long itemId;
     private String transactionId;
@@ -46,7 +47,7 @@ public class TxnPeekOperation extends QueueOperation implements BlockingOperatio
 
     @Override
     public void run() throws Exception {
-        QueueContainer queueContainer = getOrCreateContainer();
+        QueueContainer queueContainer = getContainer();
         response = queueContainer.txnPeek(itemId, transactionId);
     }
 
@@ -79,14 +80,14 @@ public class TxnPeekOperation extends QueueOperation implements BlockingOperatio
 
     @Override
     public WaitNotifyKey getWaitKey() {
-        QueueContainer queueContainer = getOrCreateContainer();
+        QueueContainer queueContainer = getContainer();
         return queueContainer.getPollWaitNotifyKey();
     }
 
 
     @Override
     public boolean shouldWait() {
-        final QueueContainer queueContainer = getOrCreateContainer();
+        final QueueContainer queueContainer = getContainer();
         return getWaitTimeout() != 0 && itemId == -1 && queueContainer.size() == 0;
     }
 

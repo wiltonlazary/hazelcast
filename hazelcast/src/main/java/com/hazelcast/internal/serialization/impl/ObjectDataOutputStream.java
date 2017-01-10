@@ -29,7 +29,8 @@ import java.nio.ByteOrder;
 
 import static com.hazelcast.nio.Bits.NULL_ARRAY_LENGTH;
 
-public class ObjectDataOutputStream extends OutputStream implements ObjectDataOutput, Closeable {
+@SuppressWarnings("checkstyle:methodcount")
+public class ObjectDataOutputStream extends VersionedObjectDataOutput implements ObjectDataOutput, Closeable {
 
     private final InternalSerializationService serializationService;
     private final DataOutputStream dataOut;
@@ -232,8 +233,8 @@ public class ObjectDataOutputStream extends OutputStream implements ObjectDataOu
         int len = str != null ? str.length() : NULL_ARRAY_LENGTH;
         writeInt(len);
         if (len > 0) {
+            final byte[] buffer = new byte[3];
             for (int i = 0; i < len; i++) {
-                byte[] buffer = new byte[3];
                 int count = Bits.writeUtf8Char(buffer, 0, str.charAt(i));
                 dataOut.write(buffer, 0, count);
             }
@@ -258,6 +259,11 @@ public class ObjectDataOutputStream extends OutputStream implements ObjectDataOu
 
     @Override
     public byte[] toByteArray() {
+        return toByteArray(0);
+    }
+
+    @Override
+    public byte[] toByteArray(int padding) {
         throw new UnsupportedOperationException();
     }
 
@@ -279,4 +285,5 @@ public class ObjectDataOutputStream extends OutputStream implements ObjectDataOu
     private boolean bigEndian() {
         return byteOrder == ByteOrder.BIG_ENDIAN;
     }
+
 }

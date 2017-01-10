@@ -19,6 +19,7 @@ package com.hazelcast.query.impl.predicates;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import com.hazelcast.query.IndexAwarePredicate;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.VisitablePredicate;
@@ -26,6 +27,7 @@ import com.hazelcast.query.impl.AndResultSet;
 import com.hazelcast.query.impl.Indexes;
 import com.hazelcast.query.impl.QueryContext;
 import com.hazelcast.query.impl.QueryableEntry;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.io.IOException;
 import java.util.LinkedList;
@@ -38,8 +40,9 @@ import static com.hazelcast.internal.serialization.impl.FactoryIdHelper.PREDICAT
 /**
  * And Predicate
  */
+@BinaryInterface
 public final class AndPredicate
-        implements IndexAwarePredicate, IdentifiedDataSerializable, VisitablePredicate, NegatablePredicate {
+        implements IndexAwarePredicate, IdentifiedDataSerializable, VisitablePredicate, NegatablePredicate, CompoundPredicate {
 
     protected Predicate[] predicates;
 
@@ -177,5 +180,31 @@ public final class AndPredicate
     @Override
     public int getId() {
         return PredicateDataSerializerHook.AND_PREDICATE;
+    }
+
+    /**
+     * Visitable predicates are treated as effectively immutable, therefore callers should not make any changes to
+     * the returned array.
+     */
+    @Override
+    @SuppressFBWarnings("EI_EXPOSE_REP")
+    public <K, V> Predicate<K, V>[] getPredicates() {
+        return predicates;
+    }
+
+    /**
+     * Visitable predicates are treated as effectively immutable, therefore callers should not make any changes to
+     * the array passed as argument after is has been set.
+     * @param predicates    the array of sub-predicates for this {@code And} operator. It is not safe to make any changes to
+     *                      this array after it has been set.
+     */
+    @Override
+    @SuppressFBWarnings("EI_EXPOSE_REP")
+    public <K, V> void setPredicates(Predicate<K, V>[] predicates) {
+        if (this.predicates == null) {
+            this.predicates = predicates;
+        } else {
+            throw new IllegalStateException("Cannot reset predicates in an AndPredicate after they have been already set.");
+        }
     }
 }

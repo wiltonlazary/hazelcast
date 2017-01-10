@@ -21,7 +21,7 @@ import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.transaction.TransactionException;
 
@@ -34,7 +34,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public abstract class CollectionContainer implements DataSerializable {
+@SuppressWarnings("checkstyle:methodcount")
+public abstract class CollectionContainer implements IdentifiedDataSerializable {
 
     protected final Map<Long, TxCollectionItem> txMap = new HashMap<Long, TxCollectionItem>();
     protected String name;
@@ -362,5 +363,10 @@ public abstract class CollectionContainer implements DataSerializable {
             txMap.put(txCollectionItem.getItemId(), txCollectionItem);
             setId(txCollectionItem.itemId);
         }
+    }
+
+    @Override
+    public int getFactoryId() {
+        return CollectionDataSerializerHook.F_ID;
     }
 }

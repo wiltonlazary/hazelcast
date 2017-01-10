@@ -18,14 +18,13 @@ package com.hazelcast.internal.cluster.impl.operations;
 
 import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.instance.Node;
+import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.spi.impl.AllowedDuringPassiveState;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 
-public class ShutdownNodeOperation
-        extends AbstractClusterOperation
-        implements AllowedDuringPassiveState {
+public class ShutdownNodeOperation extends AbstractClusterOperation implements AllowedDuringPassiveState {
 
     public ShutdownNodeOperation() {
     }
@@ -47,7 +46,7 @@ public class ShutdownNodeOperation
                         final Node node = nodeEngine.getNode();
                         node.hazelcastInstance.getLifecycleService().shutdown();
                     }
-                }).start();
+                }, nodeEngine.getHazelcastThreadGroup().getThreadNamePrefix(".clusterShutdown")).start();
             } else {
                 logger.info("Node is already shutting down. NodeState: " + nodeEngine.getNode().getState());
             }
@@ -55,5 +54,10 @@ public class ShutdownNodeOperation
             logger.severe("Can not shut down node because cluster is in " + clusterState + " state. Requested by: "
                     + getCallerAddress());
         }
+    }
+
+    @Override
+    public int getId() {
+        return ClusterDataSerializerHook.SHUTDOWN_NODE;
     }
 }

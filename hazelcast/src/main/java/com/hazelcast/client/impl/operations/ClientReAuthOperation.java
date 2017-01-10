@@ -16,49 +16,62 @@
 
 package com.hazelcast.client.impl.operations;
 
+import com.hazelcast.client.AuthenticationException;
 import com.hazelcast.client.ClientEndpoint;
+import com.hazelcast.client.impl.ClientDataSerializerHook;
 import com.hazelcast.client.impl.ClientEngineImpl;
 import com.hazelcast.client.impl.client.ClientPrincipal;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.UrgentSystemOperation;
+import com.hazelcast.spi.impl.AllowedDuringPassiveState;
 
 import java.io.IOException;
 import java.util.Set;
 
-public class ClientReAuthOperation extends AbstractOperation implements UrgentSystemOperation {
+public class ClientReAuthOperation
+        extends AbstractClientOperation
+        implements UrgentSystemOperation, AllowedDuringPassiveState {
 
     private String clientUuid;
+    private long authCorrelationId;
+    private boolean clientDisconnectOperationRun;
 
     public ClientReAuthOperation() {
     }
 
-    public ClientReAuthOperation(String clientUuid) {
+    public ClientReAuthOperation(String clientUuid, long authCorrelationId) {
         this.clientUuid = clientUuid;
+        this.authCorrelationId = authCorrelationId;
     }
 
     @Override
     public void run() throws Exception {
-        ClientEngineImpl service = getService();
-        String memberUuid = getCallerUuid();
         ClientEngineImpl engine = getService();
+        String memberUuid = getCallerUuid();
+        if (!engine.trySetLastAuthenticationCorrelationId(clientUuid, authCorrelationId)) {
+            String message = "Server already processed a newer authentication from client with uuid " + clientUuid
+                    + ". Not applying requested ownership change to " + memberUuid;
+            getLogger().info(message);
+            throw new AuthenticationException(message);
+        }
         Set<ClientEndpoint> endpoints = engine.getEndpointManager().getEndpoints(clientUuid);
         for (ClientEndpoint endpoint : endpoints) {
             ClientPrincipal principal = new ClientPrincipal(clientUuid, memberUuid);
             endpoint.authenticated(principal);
         }
-        service.addOwnershipMapping(clientUuid, memberUuid);
+        String previousMemberUuid = engine.addOwnershipMapping(clientUuid, memberUuid);
+        clientDisconnectOperationRun = previousMemberUuid == null;
     }
 
     @Override
     public boolean returnsResponse() {
-        return false;
+        return Boolean.TRUE;
     }
 
     @Override
     public Object getResponse() {
-        return Boolean.TRUE;
+        return clientDisconnectOperationRun;
     }
 
     @Override
@@ -70,11 +83,18 @@ public class ClientReAuthOperation extends AbstractOperation implements UrgentSy
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
         out.writeUTF(clientUuid);
+        out.writeLong(authCorrelationId);
     }
 
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
         clientUuid = in.readUTF();
+        authCorrelationId = in.readLong();
+    }
+
+    @Override
+    public int getId() {
+        return ClientDataSerializerHook.RE_AUTH;
     }
 }

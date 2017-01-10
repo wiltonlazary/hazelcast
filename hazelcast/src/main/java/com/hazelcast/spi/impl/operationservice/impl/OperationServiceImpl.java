@@ -26,6 +26,7 @@ import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.internal.serialization.InternalSerializationService;
+import com.hazelcast.internal.util.counters.Counter;
 import com.hazelcast.internal.util.counters.MwCounter;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
@@ -47,7 +48,6 @@ import com.hazelcast.spi.impl.operationexecutor.OperationExecutor;
 import com.hazelcast.spi.impl.operationexecutor.impl.OperationExecutorImpl;
 import com.hazelcast.spi.impl.operationexecutor.slowoperationdetector.SlowOperationDetector;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
-import com.hazelcast.spi.impl.operationservice.impl.responses.Response;
 import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.executor.ExecutorType;
 import com.hazelcast.util.executor.ManagedExecutorService;
@@ -57,12 +57,12 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.hazelcast.internal.metrics.ProbeLevel.MANDATORY;
-import static com.hazelcast.nio.Packet.FLAG_OP;
-import static com.hazelcast.nio.Packet.FLAG_RESPONSE;
+import static com.hazelcast.internal.util.counters.MwCounter.newMwCounter;
 import static com.hazelcast.nio.Packet.FLAG_URGENT;
 import static com.hazelcast.spi.InvocationBuilder.DEFAULT_CALL_TIMEOUT;
 import static com.hazelcast.spi.InvocationBuilder.DEFAULT_DESERIALIZE_RESULT;
@@ -71,8 +71,11 @@ import static com.hazelcast.spi.InvocationBuilder.DEFAULT_TRY_COUNT;
 import static com.hazelcast.spi.InvocationBuilder.DEFAULT_TRY_PAUSE_MILLIS;
 import static com.hazelcast.spi.impl.operationutil.Operations.isJoinOperation;
 import static com.hazelcast.spi.properties.GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS;
+import static com.hazelcast.util.CollectionUtil.toIntegerList;
 import static com.hazelcast.util.Preconditions.checkNotNegative;
 import static com.hazelcast.util.Preconditions.checkNotNull;
+import static java.util.Collections.newSetFromMap;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
  * This is the implementation of the {@link com.hazelcast.spi.impl.operationservice.InternalOperationService}.
@@ -95,11 +98,8 @@ import static com.hazelcast.util.Preconditions.checkNotNull;
  */
 public final class OperationServiceImpl implements InternalOperationService, MetricsProvider, LiveOperationsTracker {
 
-    private static final int CORE_SIZE_CHECK = 8;
-    private static final int CORE_SIZE_FACTOR = 4;
-    private static final int CONCURRENCY_LEVEL = 16;
     private static final int ASYNC_QUEUE_CAPACITY = 100000;
-    private static final long TERMINATION_TIMEOUT_MILLIS = TimeUnit.SECONDS.toMillis(10);
+    private static final long TERMINATION_TIMEOUT_MILLIS = SECONDS.toMillis(10);
 
     final InvocationRegistry invocationRegistry;
     final OperationExecutor operationExecutor;
@@ -108,27 +108,37 @@ public final class OperationServiceImpl implements InternalOperationService, Met
     final AtomicLong completedOperationsCount = new AtomicLong();
 
     @Probe(name = "operationTimeoutCount", level = MANDATORY)
-    final MwCounter operationTimeoutCount = MwCounter.newMwCounter();
+    final MwCounter operationTimeoutCount = newMwCounter();
 
     @Probe(name = "callTimeoutCount", level = MANDATORY)
-    final MwCounter callTimeoutCount = MwCounter.newMwCounter();
+    final MwCounter callTimeoutCount = newMwCounter();
 
     @Probe(name = "retryCount", level = MANDATORY)
-    final MwCounter retryCount = MwCounter.newMwCounter();
+    final MwCounter retryCount = newMwCounter();
+
+    @Probe(name = "failedBackups", level = MANDATORY)
+    final Counter failedBackupsCount = newMwCounter();
 
     final NodeEngineImpl nodeEngine;
     final Node node;
     final ILogger logger;
-    final OperationBackupHandler operationBackupHandler;
+    final OperationBackupHandler backupHandler;
     final BackpressureRegulator backpressureRegulator;
+    final OutboundResponseHandler outboundResponseHandler;
     volatile Invocation.Context invocationContext;
 
     private final InvocationMonitor invocationMonitor;
     private final SlowOperationDetector slowOperationDetector;
-    private final AsyncResponseHandler asyncResponseHandler;
+    private final AsyncInboundResponseHandler asyncInboundResponseHandler;
     private final InternalSerializationService serializationService;
-    private final ResponseHandler responseHandler;
+    private final InboundResponseHandler inboundResponseHandler;
     private final Address thisAddress;
+
+    // contains the current executing asyncOperations. This information is needed for the operation-ping.
+    // this is a temporary solution till we found a better async operation abstraction
+    @Probe
+    private final Set<Operation> asyncOperations
+            = newSetFromMap(new ConcurrentHashMap<Operation, Boolean>());
 
     public OperationServiceImpl(NodeEngineImpl nodeEngine) {
         this.nodeEngine = nodeEngine;
@@ -137,24 +147,26 @@ public final class OperationServiceImpl implements InternalOperationService, Met
         this.logger = node.getLogger(OperationService.class);
         this.serializationService = (InternalSerializationService) nodeEngine.getSerializationService();
 
-        this.backpressureRegulator = new BackpressureRegulator(node.getProperties(), logger);
+        this.backpressureRegulator = new BackpressureRegulator(
+                node.getProperties(), node.getLogger(BackpressureRegulator.class));
 
-        int coreSize = Runtime.getRuntime().availableProcessors();
-        boolean reallyMultiCore = coreSize >= CORE_SIZE_CHECK;
-        int concurrencyLevel = reallyMultiCore ? coreSize * CORE_SIZE_FACTOR : CONCURRENCY_LEVEL;
+        this.outboundResponseHandler = new OutboundResponseHandler(
+                thisAddress, serializationService, node, node.getLogger(OutboundResponseHandler.class));
 
-        this.invocationRegistry = new InvocationRegistry(logger, backpressureRegulator.newCallIdSequence(), concurrencyLevel);
+        this.invocationRegistry = new InvocationRegistry(
+                node.getLogger(OperationServiceImpl.class), backpressureRegulator.newCallIdSequence());
 
         this.invocationMonitor = new InvocationMonitor(
-                nodeEngine, thisAddress, node.getHazelcastThreadGroup(), node.getProperties(),
-                invocationRegistry, logger, (InternalSerializationService) nodeEngine.getSerializationService(),
-                nodeEngine.getServiceManager());
+                nodeEngine, thisAddress, node.getHazelcastThreadGroup(), node.getProperties(), invocationRegistry,
+                node.getLogger(InvocationMonitor.class), serializationService, nodeEngine.getServiceManager());
 
-        this.operationBackupHandler = new OperationBackupHandler(this);
+        this.backupHandler = new OperationBackupHandler(this);
 
-        this.responseHandler = new ResponseHandler(logger, node.getSerializationService(), invocationRegistry, nodeEngine);
-        this.asyncResponseHandler = new AsyncResponseHandler(
-                node.getHazelcastThreadGroup(), logger, responseHandler, node.getProperties());
+        this.inboundResponseHandler = new InboundResponseHandler(
+                node.getLogger(InboundResponseHandler.class), node.getSerializationService(), invocationRegistry, nodeEngine);
+        this.asyncInboundResponseHandler = new AsyncInboundResponseHandler(
+                node.getHazelcastThreadGroup(), node.getLogger(AsyncInboundResponseHandler.class),
+                inboundResponseHandler, node.getProperties());
 
         this.operationExecutor = new OperationExecutorImpl(
                 node.getProperties(), node.loggingService, thisAddress, new OperationRunnerFactoryImpl(this),
@@ -165,14 +177,12 @@ public final class OperationServiceImpl implements InternalOperationService, Met
                 node.getProperties(), node.getHazelcastThreadGroup());
     }
 
-    @Override
-    public void populate(LiveOperations result) {
-        operationExecutor.scan(result);
+    public OutboundResponseHandler getOutboundResponseHandler() {
+        return outboundResponseHandler;
     }
 
-
-    public PacketHandler getAsyncResponseHandler() {
-        return asyncResponseHandler;
+    public PacketHandler getAsyncInboundResponseHandler() {
+        return asyncInboundResponseHandler;
     }
 
     public InvocationMonitor getInvocationMonitor() {
@@ -188,8 +198,8 @@ public final class OperationServiceImpl implements InternalOperationService, Met
         return invocationRegistry;
     }
 
-    public ResponseHandler getResponseHandler() {
-        return responseHandler;
+    public InboundResponseHandler getInboundResponseHandler() {
+        return inboundResponseHandler;
     }
 
     @Override
@@ -233,7 +243,16 @@ public final class OperationServiceImpl implements InternalOperationService, Met
 
     @Override
     public int getResponseQueueSize() {
-        return asyncResponseHandler.getQueueSize();
+        return asyncInboundResponseHandler.getQueueSize();
+    }
+
+    @Override
+    public void populate(LiveOperations liveOperations) {
+        operationExecutor.scan(liveOperations);
+
+        for (Operation op : asyncOperations) {
+            liveOperations.add(op.getCallerAddress(), op.getCallId());
+        }
     }
 
     @Override
@@ -254,12 +273,12 @@ public final class OperationServiceImpl implements InternalOperationService, Met
     }
 
     @Override
-    public void runOperationOnCallingThread(Operation op) {
+    public void run(Operation op) {
         operationExecutor.run(op);
     }
 
     @Override
-    public void executeOperation(Operation op) {
+    public void execute(Operation op) {
         operationExecutor.execute(op);
     }
 
@@ -310,14 +329,21 @@ public final class OperationServiceImpl implements InternalOperationService, Met
         }
     }
 
+    public void onStartAsyncOperation(Operation op) {
+        asyncOperations.add(op);
+    }
+
+    public void onCompletionAsyncOperation(Operation op) {
+        asyncOperations.remove(op);
+    }
+
     // =============================== processing operation  ===============================
 
     @Override
     public boolean isCallTimedOut(Operation op) {
-        // Join operations should not be checked for timeout
-        // because caller is not member of this cluster
+        // Join operations should not be checked for timeout because caller is not member of this cluster
         // and can have a different clock.
-        if (!op.returnsResponse() || isJoinOperation(op)) {
+        if (isJoinOperation(op)) {
             return false;
         }
 
@@ -348,6 +374,7 @@ public final class OperationServiceImpl implements InternalOperationService, Met
     @Override
     public Map<Integer, Object> invokeOnPartitions(String serviceName, OperationFactory operationFactory,
                                                    Collection<Integer> partitions) throws Exception {
+
         Map<Address, List<Integer>> memberPartitions = new HashMap<Address, List<Integer>>(3);
         InternalPartitionService partitionService = nodeEngine.getPartitionService();
         for (int partition : partitions) {
@@ -364,6 +391,12 @@ public final class OperationServiceImpl implements InternalOperationService, Met
     }
 
     @Override
+    public Map<Integer, Object> invokeOnPartitions(String serviceName, OperationFactory operationFactory, int[] partitions)
+            throws Exception {
+        return invokeOnPartitions(serviceName, operationFactory, toIntegerList(partitions));
+    }
+
+    @Override
     public boolean send(Operation op, Address target) {
         checkNotNull(target, "Target is required!");
 
@@ -373,31 +406,10 @@ public final class OperationServiceImpl implements InternalOperationService, Met
 
         byte[] bytes = serializationService.toBytes(op);
         int partitionId = op.getPartitionId();
-        Packet packet = new Packet(bytes, partitionId)
-                .setFlag(FLAG_OP);
+        Packet packet = new Packet(bytes, partitionId).setPacketType(Packet.Type.OPERATION);
 
         if (op.isUrgent()) {
-            packet.setFlag(FLAG_URGENT);
-        }
-
-        ConnectionManager connectionManager = node.getConnectionManager();
-        Connection connection = connectionManager.getOrConnect(target);
-        return connectionManager.transmit(packet, connection);
-    }
-
-    public boolean send(Response response, Address target) {
-        checkNotNull(target, "Target is required!");
-
-        if (thisAddress.equals(target)) {
-            throw new IllegalArgumentException("Target is this node! -> " + target + ", response: " + response);
-        }
-
-        byte[] bytes = serializationService.toBytes(response);
-        Packet packet = new Packet(bytes, -1)
-                .setAllFlags(FLAG_OP | FLAG_RESPONSE);
-
-        if (response.isUrgent()) {
-            packet.setFlag(FLAG_URGENT);
+            packet.raiseFlags(FLAG_URGENT);
         }
 
         ConnectionManager connectionManager = node.getConnectionManager();
@@ -414,18 +426,36 @@ public final class OperationServiceImpl implements InternalOperationService, Met
     }
 
     @Override
-    public void provideMetrics(MetricsRegistry metricsRegistry) {
-        metricsRegistry.scanAndRegister(this, "operation");
-        metricsRegistry.collectMetrics(invocationRegistry, invocationMonitor, responseHandler, asyncResponseHandler,
+    public void provideMetrics(MetricsRegistry registry) {
+        registry.scanAndRegister(this, "operation");
+        registry.collectMetrics(invocationRegistry, invocationMonitor, inboundResponseHandler, asyncInboundResponseHandler,
                 operationExecutor);
     }
 
     public void start() {
         logger.finest("Starting OperationService");
 
-        ManagedExecutorService asyncExecutor = nodeEngine.getExecutionService().register(
-                ExecutionService.ASYNC_EXECUTOR, Runtime.getRuntime().availableProcessors(),
-                ASYNC_QUEUE_CAPACITY, ExecutorType.CONCRETE);
+        initInvocationContext();
+
+        invocationMonitor.start();
+        operationExecutor.start();
+        asyncInboundResponseHandler.start();
+        slowOperationDetector.start();
+    }
+
+    /**
+     * Initializes the invocation context to use most recent uuid of the local member. We have this method because the local
+     * member can change its uuid when the cluster has performed partial start and invocations should be done with the new uuid.
+     */
+    public void initInvocationContext() {
+        ManagedExecutorService asyncExecutor;
+        if (this.invocationContext != null) {
+            asyncExecutor = this.invocationContext.asyncExecutor;
+        } else {
+            asyncExecutor = nodeEngine.getExecutionService().register(
+                    ExecutionService.ASYNC_EXECUTOR, Runtime.getRuntime().availableProcessors(),
+                    ASYNC_QUEUE_CAPACITY, ExecutorType.CONCRETE);
+        }
 
         this.invocationContext = new Invocation.Context(
                 asyncExecutor,
@@ -436,7 +466,7 @@ public final class OperationServiceImpl implements InternalOperationService, Met
                 nodeEngine.getProperties().getMillis(OPERATION_CALL_TIMEOUT_MILLIS),
                 invocationRegistry,
                 invocationMonitor,
-                nodeEngine.getLocalMember().getUuid(),
+                node.getThisUuid(),
                 nodeEngine.getLogger(Invocation.class),
                 node,
                 nodeEngine,
@@ -446,21 +476,19 @@ public final class OperationServiceImpl implements InternalOperationService, Met
                 retryCount,
                 serializationService,
                 nodeEngine.getThisAddress());
-
-        invocationMonitor.start();
-        operationExecutor.start();
-        asyncResponseHandler.start();
-        slowOperationDetector.start();
     }
 
-    public void shutdown() {
-        logger.finest("Shutting down OperationService");
+    /**
+     * Shuts down invocation infrastructure.
+     * New invocation requests will be rejected after shutdown and all pending invocations
+     * will be notified with a failure response.
+     */
+    public void shutdownInvocations() {
+        logger.finest("Shutting down invocations");
 
         invocationRegistry.shutdown();
         invocationMonitor.shutdown();
-        operationExecutor.shutdown();
-        asyncResponseHandler.shutdown();
-        slowOperationDetector.shutdown();
+        asyncInboundResponseHandler.shutdown();
 
         try {
             invocationMonitor.awaitTermination(TERMINATION_TIMEOUT_MILLIS);
@@ -470,5 +498,12 @@ public final class OperationServiceImpl implements InternalOperationService, Met
             Thread.currentThread().interrupt();
             EmptyStatement.ignore(e);
         }
+    }
+
+    public void shutdownOperationExecutor() {
+        logger.finest("Shutting down operation executors");
+
+        operationExecutor.shutdown();
+        slowOperationDetector.shutdown();
     }
 }

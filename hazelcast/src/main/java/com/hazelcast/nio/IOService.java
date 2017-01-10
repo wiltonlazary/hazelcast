@@ -20,14 +20,15 @@ import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.config.SSLConfig;
 import com.hazelcast.config.SocketInterceptorConfig;
 import com.hazelcast.config.SymmetricEncryptionConfig;
+import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.internal.ascii.TextCommandService;
 import com.hazelcast.internal.serialization.InternalSerializationService;
-import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.nio.tcp.ReadHandler;
-import com.hazelcast.nio.tcp.SocketChannelWrapperFactory;
+import com.hazelcast.logging.LoggingService;
+import com.hazelcast.internal.networking.IOOutOfMemoryHandler;
+import com.hazelcast.internal.networking.ReadHandler;
+import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
 import com.hazelcast.nio.tcp.TcpIpConnection;
-import com.hazelcast.nio.tcp.WriteHandler;
+import com.hazelcast.internal.networking.WriteHandler;
 import com.hazelcast.spi.EventService;
 import com.hazelcast.spi.annotation.PrivateApi;
 
@@ -40,9 +41,11 @@ public interface IOService {
 
     boolean isActive();
 
-    ILogger getLogger(String name);
+    HazelcastThreadGroup getHazelcastThreadGroup();
 
-    void onOutOfMemory(OutOfMemoryError oom);
+    LoggingService getLoggingService();
+
+    IOOutOfMemoryHandler getIoOutOfMemoryHandler();
 
     Address getThisAddress();
 
@@ -62,11 +65,9 @@ public interface IOService {
 
     boolean isRestEnabled();
 
+    boolean isHealthcheckEnabled();
+
     void removeEndpoint(Address endpoint);
-
-    String getThreadPrefix();
-
-    ThreadGroup getThreadGroup();
 
     void onSuccessfulConnection(Address address);
 
@@ -119,7 +120,7 @@ public interface IOService {
      */
     int getBalancerIntervalSeconds();
 
-    void onDisconnect(Address endpoint);
+    void onDisconnect(Address endpoint, Throwable cause);
 
     boolean isClient();
 
@@ -128,10 +129,6 @@ public interface IOService {
     EventService getEventService();
 
     Collection<Integer> getOutboundPorts();
-
-    Data toData(Object obj);
-
-    Object toObject(Data data);
 
     InternalSerializationService getSerializationService();
 

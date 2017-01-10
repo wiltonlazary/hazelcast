@@ -72,4 +72,6 @@ public interface BufferObjectDataOutput extends ObjectDataOutput, Closeable {
     void position(int newPos);
 
     void clear();
+
+    void setVersion(Version version);
 }

@@ -17,14 +17,16 @@
 package com.hazelcast.nio;
 
 import com.hazelcast.core.HazelcastException;
-import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.annotation.PrivateApi;
 
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
+import java.io.EOFException;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
@@ -32,10 +34,15 @@ import java.io.ObjectStreamClass;
 import java.io.OutputStream;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
+import java.net.URL;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.Inflater;
+
+import static com.hazelcast.util.EmptyStatement.ignore;
+import static java.lang.String.format;
 
 @PrivateApi
 public final class IOUtil {
@@ -58,28 +65,6 @@ public final class IOUtil {
         } else {
             return ByteBuffer.allocate(bufferSize);
         }
-    }
-
-    /**
-     * This method has a direct dependency on how objects are serialized in
-     * {@link com.hazelcast.internal.serialization.impl.DataSerializableSerializer}. If the stream
-     * format is changed, this extraction method must be changed as well.
-     */
-    public static long extractOperationCallId(Data data, InternalSerializationService serializationService)
-    throws IOException {
-        ObjectDataInput input = serializationService.createObjectDataInput(data);
-        boolean identified = input.readBoolean();
-        if (identified) {
-            // read factoryId
-            input.readInt();
-            // read typeId
-            input.readInt();
-        } else {
-            // read classname
-            input.readUTF();
-        }
-        // read callId
-        return input.readLong();
     }
 
     public static void writeByteArray(ObjectDataOutput out, byte[] value) throws IOException {
@@ -120,58 +105,45 @@ public final class IOUtil {
         return in.readObject();
     }
 
-    public static ObjectInputStream newObjectInputStream(final ClassLoader classLoader, InputStream in) throws IOException {
-        return new ClassLoaderAwareObjectInputStream(classLoader, in);
+    /**
+     * Fills a buffer from an {@link InputStream}.
+     *
+     * @param in     the {@link InputStream} to read from
+     * @param buffer the buffer to fill
+     * @return {@code true} if the buffer could be filled completely,
+     * {@code false} if there was no data in the {@link InputStream}
+     * @throws IOException if there was not enough data in the {@link InputStream} to fill the buffer
+     */
+    public static boolean readFullyOrNothing(InputStream in, byte[] buffer) throws IOException {
+        int bytesRead = 0;
+        do {
+            int count = in.read(buffer, bytesRead, buffer.length - bytesRead);
+            if (count < 0) {
+                if (bytesRead == 0) {
+                    return false;
+                }
+                throw new EOFException();
+            }
+            bytesRead += count;
+        } while (bytesRead < buffer.length);
+        return true;
     }
 
-    private static final class ClassLoaderAwareObjectInputStream extends ObjectInputStream {
-
-        private final ClassLoader classLoader;
-
-        private ClassLoaderAwareObjectInputStream(final ClassLoader classLoader, final InputStream in) throws IOException {
-            super(in);
-            this.classLoader = classLoader;
+    /**
+     * Fills a buffer from an {@link InputStream} unless it doesn't contain enough data.
+     *
+     * @param in     the {@link InputStream} to read from
+     * @param buffer the buffer to fill
+     * @throws IOException if there was no data or not enough data in the {@link InputStream} to fill the buffer
+     */
+    public static void readFully(InputStream in, byte[] buffer) throws IOException {
+        if (!readFullyOrNothing(in, buffer)) {
+            throw new EOFException();
         }
+    }
 
-        protected Class<?> resolveClass(ObjectStreamClass desc) throws ClassNotFoundException {
-            return ClassLoaderUtil.loadClass(classLoader, desc.getName());
-        }
-
-        protected Class<?> resolveProxyClass(String[] interfaces) throws IOException, ClassNotFoundException {
-            ClassLoader theClassLoader = getClassLoader();
-            if (theClassLoader == null) {
-                return super.resolveProxyClass(interfaces);
-            }
-            ClassLoader nonPublicLoader = null;
-            Class<?>[] classObjs = new Class<?>[interfaces.length];
-            for (int i = 0; i < interfaces.length; i++) {
-                Class<?> cl = ClassLoaderUtil.loadClass(theClassLoader, interfaces[i]);
-                if ((cl.getModifiers() & Modifier.PUBLIC) == 0) {
-                    if (nonPublicLoader != null) {
-                        if (nonPublicLoader != cl.getClassLoader()) {
-                            throw new IllegalAccessError("conflicting non-public interface class loaders");
-                        }
-                    } else {
-                        nonPublicLoader = cl.getClassLoader();
-                    }
-                }
-                classObjs[i] = cl;
-            }
-            try {
-                return Proxy.getProxyClass(nonPublicLoader != null ? nonPublicLoader : theClassLoader, classObjs);
-            } catch (IllegalArgumentException e) {
-                throw new ClassNotFoundException(null, e);
-            }
-        }
-
-        private ClassLoader getClassLoader() {
-            ClassLoader theClassLoader = this.classLoader;
-            if (theClassLoader == null) {
-                theClassLoader = Thread.currentThread().getContextClassLoader();
-            }
-            return theClassLoader;
-        }
-
+    public static ObjectInputStream newObjectInputStream(final ClassLoader classLoader, InputStream in) throws IOException {
+        return new ClassLoaderAwareObjectInputStream(classLoader, in);
     }
 
     public static OutputStream newOutputStream(final ByteBuffer dst) {
@@ -324,6 +296,7 @@ public final class IOUtil {
 
     /**
      * Quietly attempts to close a {@link Closeable} resource, swallowing any exception.
+     *
      * @param closeable the resource to close. If {@code null}, no action is taken.
      */
     public static void closeResource(Closeable closeable) {
@@ -334,6 +307,20 @@ public final class IOUtil {
             closeable.close();
         } catch (IOException e) {
             Logger.getLogger(IOUtil.class).finest("closeResource failed", e);
+        }
+    }
+
+    /**
+     * Ensures that the file described by the supplied parameter does not exist
+     * after the method returns. If the file didn't exist, returns silently.
+     * If the file could not be deleted, returns silently.
+     * If the file is a directory, its children are recursively deleted.
+     */
+    public static void deleteQuietly(File f) {
+        try {
+            delete(f);
+        } catch (Exception e) {
+            ignore(e);
         }
     }
 
@@ -358,7 +345,189 @@ public final class IOUtil {
         }
     }
 
+    /**
+     * Ensures that the file described by {@code fileNow} is renamed to file described by {@code fileToBe}.
+     * First attempts to perform a direct, atomic rename; if that fails, checks whether the target exists,
+     * deletes it, and retries. Throws an exception in each case where the rename failed.
+     *
+     * @param fileNow  describes an existing file
+     * @param fileToBe describes the desired pathname for the file
+     */
+    public static void rename(File fileNow, File fileToBe) {
+        if (fileNow.renameTo(fileToBe)) {
+            return;
+        }
+        if (!fileNow.exists()) {
+            throw new HazelcastException(format("Failed to rename %s to %s because %s doesn't exist.",
+                    fileNow, fileToBe, fileNow));
+        }
+        if (!fileToBe.exists()) {
+            throw new HazelcastException(format("Failed to rename %s to %s even though %s doesn't exist.",
+                    fileNow, fileToBe, fileToBe));
+        }
+        if (!fileToBe.delete()) {
+            throw new HazelcastException(format("Failed to rename %s to %s. %s exists and could not be deleted.",
+                    fileNow, fileToBe, fileToBe));
+        }
+        if (!fileNow.renameTo(fileToBe)) {
+            throw new HazelcastException(format("Failed to rename %s to %s even after deleting %s.",
+                    fileNow, fileToBe, fileToBe));
+        }
+    }
+
     public static String toFileName(String name) {
         return name.replaceAll("[:\\\\/*\"?|<>',]", "_");
+    }
+
+    public static File getFileFromResources(String resourceFileName) {
+        try {
+            URL resource = IOUtil.class.getClassLoader().getResource(resourceFileName);
+            //noinspection ConstantConditions
+            return new File(resource.toURI());
+        } catch (Exception e) {
+            throw new HazelcastException("Could not find resource file " + resourceFileName, e);
+        }
+    }
+
+    /**
+     * Deep copies source to target and creates the target if necessary. Source can be a directory or a file and the target
+     * can be a directory or file. If the source is a directory, expects that the target is a directory (or that it doesn't exist)
+     * and nests the copied source under the target directory.
+     *
+     * @param source the source
+     * @param target the destination
+     * @throws IllegalArgumentException if the source was not found or the source is a directory and the target is a file
+     * @throws HazelcastException       if there was any exception while creating directories or copying
+     */
+    public static void copy(File source, File target) {
+        if (!source.exists()) {
+            throw new IllegalArgumentException("Source does not exist");
+        }
+        if (source.isDirectory()) {
+            copyDirectory(source, target);
+        } else {
+            copyFile(source, target, -1);
+        }
+    }
+
+    /**
+     * Copies source file to target and creates the target if necessary. The target can be a directory or file. If the target
+     * is a file, nests the new file under the target directory, otherwise copies to the given target.
+     *
+     * @param source      the source file
+     * @param target      the destination file or directory
+     * @param sourceCount The maximum number of bytes to be transferred. If negative transfers the entire source file.
+     * @throws IllegalArgumentException if the source was not found or the source not a file
+     * @throws HazelcastException       if there was any exception while creating directories or copying
+     */
+    public static void copyFile(File source, File target, long sourceCount) {
+        if (!source.exists()) {
+            throw new IllegalArgumentException("Source does not exist");
+        }
+        if (!source.isFile()) {
+            throw new IllegalArgumentException("Source is not a file");
+        }
+        if (!target.exists() && !target.mkdirs()) {
+            throw new HazelcastException("Could not create the target directory " + target);
+        }
+        final File destination = target.isDirectory() ? new File(target, source.getName()) : target;
+        FileInputStream in = null;
+        FileOutputStream out = null;
+        try {
+            in = new FileInputStream(source);
+            out = new FileOutputStream(destination);
+            final FileChannel inChannel = in.getChannel();
+            final FileChannel outChannel = out.getChannel();
+            final long transferCount = sourceCount > 0 ? sourceCount : inChannel.size();
+            inChannel.transferTo(0, transferCount, outChannel);
+        } catch (Exception e) {
+            throw new HazelcastException("Error occurred while copying", e);
+        } finally {
+            closeResource(in);
+            closeResource(out);
+        }
+    }
+
+    private static void copyDirectory(File source, File target) {
+        if (target.exists() && !target.isDirectory()) {
+            throw new IllegalArgumentException("Cannot copy source directory since the target already exists "
+                    + "but it is not a directory");
+        }
+        final File targetSubDir = new File(target, source.getName());
+        if (!targetSubDir.exists() && !targetSubDir.mkdirs()) {
+            throw new HazelcastException("Could not create the target directory " + target);
+        }
+        final File[] sourceFiles = source.listFiles();
+        if (sourceFiles == null) {
+            throw new HazelcastException("Error occurred while listing directory contents for copy");
+        }
+        for (File file : sourceFiles) {
+            copy(file, targetSubDir);
+        }
+    }
+
+    public static byte[] toByteArray(InputStream is) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        drainTo(is, baos);
+        return baos.toByteArray();
+    }
+
+    public static void drainTo(InputStream input, OutputStream output) throws IOException {
+        byte[] buffer = new byte[1024];
+        int n;
+        while (-1 != (n = input.read(buffer))) {
+            output.write(buffer, 0, n);
+        }
+    }
+
+    private static final class ClassLoaderAwareObjectInputStream extends ObjectInputStream {
+
+        private final ClassLoader classLoader;
+
+        private ClassLoaderAwareObjectInputStream(final ClassLoader classLoader, final InputStream in) throws IOException {
+            super(in);
+            this.classLoader = classLoader;
+        }
+
+        @Override
+        protected Class<?> resolveClass(ObjectStreamClass desc) throws ClassNotFoundException {
+            return ClassLoaderUtil.loadClass(classLoader, desc.getName());
+        }
+
+        @Override
+        protected Class<?> resolveProxyClass(String[] interfaces) throws IOException, ClassNotFoundException {
+            ClassLoader theClassLoader = getClassLoader();
+            if (theClassLoader == null) {
+                return super.resolveProxyClass(interfaces);
+            }
+            ClassLoader nonPublicLoader = null;
+            Class<?>[] classObjs = new Class<?>[interfaces.length];
+            for (int i = 0; i < interfaces.length; i++) {
+                Class<?> cl = ClassLoaderUtil.loadClass(theClassLoader, interfaces[i]);
+                if ((cl.getModifiers() & Modifier.PUBLIC) == 0) {
+                    if (nonPublicLoader != null) {
+                        if (nonPublicLoader != cl.getClassLoader()) {
+                            throw new IllegalAccessError("conflicting non-public interface class loaders");
+                        }
+                    } else {
+                        nonPublicLoader = cl.getClassLoader();
+                    }
+                }
+                classObjs[i] = cl;
+            }
+            try {
+                return Proxy.getProxyClass(nonPublicLoader != null ? nonPublicLoader : theClassLoader, classObjs);
+            } catch (IllegalArgumentException e) {
+                throw new ClassNotFoundException(null, e);
+            }
+        }
+
+        private ClassLoader getClassLoader() {
+            ClassLoader theClassLoader = this.classLoader;
+            if (theClassLoader == null) {
+                theClassLoader = Thread.currentThread().getContextClassLoader();
+            }
+            return theClassLoader;
+        }
     }
 }

@@ -26,7 +26,6 @@ import com.hazelcast.config.InvalidConfigurationException;
 import com.hazelcast.config.SerializationConfig;
 import com.hazelcast.config.SerializerConfig;
 import com.hazelcast.config.SocketInterceptorConfig;
-import com.hazelcast.internal.eviction.impl.EvictionConfigHelper;
 import com.hazelcast.spring.context.SpringManagedContext;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.RuntimeBeanReference;
@@ -44,6 +43,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 
+import static com.hazelcast.internal.config.ConfigValidator.checkEvictionConfig;
 import static com.hazelcast.util.StringUtil.upperCaseInternal;
 
 /**
@@ -112,16 +112,15 @@ public abstract class AbstractHazelcastBeanDefinitionParser extends AbstractBean
             return builder;
         }
 
-        protected void createAndFillListedBean(Node node,
+        protected void createAndFillListedBean(final Node node,
                                                final Class clazz,
                                                final String propertyName,
-                                               final ManagedMap managedMap,
-                                               String... excludeNames) {
-            BeanDefinitionBuilder builder = createBeanBuilder(clazz);
+                                               final ManagedMap<String, AbstractBeanDefinition> managedMap,
+                                               final String... excludeNames) {
+            final BeanDefinitionBuilder builder = createBeanBuilder(clazz);
             final AbstractBeanDefinition beanDefinition = builder.getBeanDefinition();
             //"name"
-            final Node attName = node.getAttributes().getNamedItem(propertyName);
-            final String name = getTextContent(attName);
+            final String name = getAttribute(node, propertyName);
             builder.addPropertyValue("name", name);
             fillValues(node, builder, excludeNames);
             managedMap.put(name, beanDefinition);
@@ -398,7 +397,7 @@ public abstract class AbstractHazelcastBeanDefinitionParser extends AbstractBean
             }
 
             try {
-                EvictionConfigHelper.checkEvictionConfig(evictionPolicyValue, comparatorClassNameValue, comparatorBean);
+                checkEvictionConfig(evictionPolicyValue, comparatorClassNameValue, comparatorBean, false);
             } catch (IllegalArgumentException e) {
                 throw new InvalidConfigurationException(e.getMessage());
             }

@@ -16,7 +16,7 @@
 
 package com.hazelcast.map.impl.operation;
 
-import com.hazelcast.core.EntryEventType;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.spi.BackupAwareOperation;
@@ -26,11 +26,12 @@ import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
+import static com.hazelcast.core.EntryEventType.EVICT_ALL;
+
 /**
  * Operation which evicts all keys except locked ones.
  */
-public class EvictAllOperation extends MapOperation implements BackupAwareOperation,
-        MutatingOperation, PartitionAwareOperation {
+public class EvictAllOperation extends MapOperation implements BackupAwareOperation, MutatingOperation, PartitionAwareOperation {
 
     private boolean shouldRunOnBackup;
     private int numberOfEvictedEntries;
@@ -46,10 +47,6 @@ public class EvictAllOperation extends MapOperation implements BackupAwareOperat
 
     @Override
     public void run() throws Exception {
-
-        // TODO this also clears locked keys from near cache which should be preserved.
-        clearNearCache(true);
-
         if (recordStore == null) {
             return;
         }
@@ -61,11 +58,11 @@ public class EvictAllOperation extends MapOperation implements BackupAwareOperat
     public void afterRun() throws Exception {
         super.afterRun();
         hintMapEvent();
+        invalidateAllKeysInNearCaches();
     }
 
     private void hintMapEvent() {
-        mapEventPublisher.hintMapEvent(getCallerAddress(), name,
-                EntryEventType.EVICT_ALL, numberOfEvictedEntries, getPartitionId());
+        mapEventPublisher.hintMapEvent(getCallerAddress(), name, EVICT_ALL, numberOfEvictedEntries, getPartitionId());
     }
 
     @Override
@@ -111,5 +108,10 @@ public class EvictAllOperation extends MapOperation implements BackupAwareOperat
 
         sb.append(", shouldRunOnBackup=").append(shouldRunOnBackup);
         sb.append(", numberOfEvictedEntries=").append(numberOfEvictedEntries);
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.EVICT_ALL;
     }
 }

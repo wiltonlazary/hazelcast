@@ -89,4 +89,9 @@ public class PutOperation extends AbstractReplicatedMapOperation implements Part
         value = in.readData();
         ttl = in.readLong();
     }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.PUT;
+    }
 }

@@ -47,7 +47,7 @@ public class AntiEntropyCorrectnessTest extends PartitionCorrectnessTestSupport 
 
     @Parameterized.Parameters(name = "backups:{0},nodes:{1}")
     public static Collection<Object[]> parameters() {
-        return Arrays.asList(new Object[][] {
+        return Arrays.asList(new Object[][]{
                 {1, 2},
                 {1, InternalPartition.MAX_REPLICA_COUNT},
                 {2, 3},
@@ -72,10 +72,10 @@ public class AntiEntropyCorrectnessTest extends PartitionCorrectnessTestSupport 
         assertSizeAndDataEventually();
     }
 
-    static void setBackupPacketDropFilter(HazelcastInstance instance, float blockRatio) {
+    public static void setBackupPacketDropFilter(HazelcastInstance instance, float blockRatio) {
         Node node = getNode(instance);
         FirewallingMockConnectionManager cm = (FirewallingMockConnectionManager) node.getConnectionManager();
-        cm.setPacketFilter(new BackupPacketDropFilter(node.getSerializationService(), blockRatio));
+        cm.setDroppingPacketFilter(new BackupPacketDropFilter(node.getSerializationService(), blockRatio));
     }
 
     private static class BackupPacketDropFilter implements PacketFilter {
@@ -89,16 +89,18 @@ public class AntiEntropyCorrectnessTest extends PartitionCorrectnessTestSupport 
 
         @Override
         public boolean allow(Packet packet, Address endpoint) {
-            return !packet.isFlagSet(Packet.FLAG_OP) || allowOperation(packet);
+            return packet.getPacketType() != Packet.Type.OPERATION || allowOperation(packet);
         }
 
         private boolean allowOperation(Packet packet) {
             try {
                 ObjectDataInput input = serializationService.createObjectDataInput(packet);
-                boolean identified = input.readBoolean();
+                byte header = input.readByte();
+                boolean identified = (header & 1 << 0) != 0;
                 if (identified) {
-                    int factory = input.readInt();
-                    int type = input.readInt();
+                    boolean compressed = (header & 1 << 2) != 0;
+                    int factory = compressed ? input.readByte() : input.readInt();
+                    int type = compressed ? input.readByte() : input.readInt();
                     boolean isBackup = factory == SpiDataSerializerHook.F_ID && type == SpiDataSerializerHook.BACKUP;
                     return !isBackup || Math.random() > blockRatio;
                 }

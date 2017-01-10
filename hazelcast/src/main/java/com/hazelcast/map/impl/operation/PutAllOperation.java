@@ -18,6 +18,7 @@ package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.core.EntryEventType;
 import com.hazelcast.core.EntryView;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.map.impl.record.RecordInfo;
@@ -57,7 +58,6 @@ public class PutAllOperation extends MapOperation implements PartitionAwareOpera
     private List<RecordInfo> backupRecordInfos;
     private List<Data> invalidationKeys;
 
-    @SuppressWarnings("unused")
     public PutAllOperation() {
     }
 
@@ -71,7 +71,7 @@ public class PutAllOperation extends MapOperation implements PartitionAwareOpera
         hasMapListener = mapEventPublisher.hasEventListener(name);
         hasWanReplication = hasWanReplication();
         hasBackups = hasBackups();
-        hasInvalidation = mapContainer.isInvalidationEnabled();
+        hasInvalidation = mapContainer.hasInvalidationListener();
 
         if (hasBackups) {
             backupRecordInfos = new ArrayList<RecordInfo>(mapEntries.size());
@@ -113,7 +113,7 @@ public class PutAllOperation extends MapOperation implements PartitionAwareOpera
             backupRecordInfos.add(replicationInfo);
         }
 
-        evict();
+        evict(dataKey);
         if (hasInvalidation) {
             invalidationKeys.add(dataKey);
         }
@@ -183,5 +183,10 @@ public class PutAllOperation extends MapOperation implements PartitionAwareOpera
         super.readInternal(in);
         mapEntries = new MapEntries();
         mapEntries.readData(in);
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.PUT_ALL;
     }
 }

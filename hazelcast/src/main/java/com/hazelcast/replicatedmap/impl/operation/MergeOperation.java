@@ -68,4 +68,9 @@ public class MergeOperation extends AbstractReplicatedMapOperation {
         entryView = in.readObject();
         policy = in.readObject();
     }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.MERGE;
+    }
 }

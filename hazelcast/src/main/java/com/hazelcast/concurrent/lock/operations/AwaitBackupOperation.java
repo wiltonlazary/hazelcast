@@ -24,11 +24,12 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BackupOperation;
 import com.hazelcast.spi.ObjectNamespace;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
 public class AwaitBackupOperation extends AbstractLockOperation
-        implements BackupOperation {
+        implements BackupOperation, MutatingOperation {
 
     private String originalCaller;
     private String conditionId;
@@ -47,7 +48,7 @@ public class AwaitBackupOperation extends AbstractLockOperation
     public void run() throws Exception {
         LockStoreImpl lockStore = getLockStore();
         lockStore.lock(key, originalCaller, threadId, getReferenceCallId(), leaseTime);
-        ConditionKey conditionKey = new ConditionKey(namespace.getObjectName(), key, conditionId);
+        ConditionKey conditionKey = new ConditionKey(namespace.getObjectName(), key, conditionId, originalCaller, threadId);
         lockStore.removeSignalKey(conditionKey);
         lockStore.removeAwait(key, conditionId, originalCaller, threadId);
         response = true;

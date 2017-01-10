@@ -16,10 +16,16 @@
 
 package com.hazelcast.internal.ascii.rest;
 
+import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.instance.Node;
+import com.hazelcast.instance.NodeState;
 import com.hazelcast.internal.ascii.TextCommandService;
+import com.hazelcast.internal.cluster.ClusterService;
+import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
+import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.nio.ConnectionManager;
 
+import static com.hazelcast.internal.ascii.TextCommandConstants.MIME_TEXT_PLAIN;
 import static com.hazelcast.internal.ascii.rest.HttpCommand.CONTENT_TYPE_BINARY;
 import static com.hazelcast.internal.ascii.rest.HttpCommand.CONTENT_TYPE_PLAIN_TEXT;
 import static com.hazelcast.util.StringUtil.stringToBytes;
@@ -41,10 +47,45 @@ public class HttpGetCommandProcessor extends HttpCommandProcessor<HttpGetCommand
             handleQueue(command, uri);
         } else if (uri.startsWith(URI_CLUSTER)) {
             handleCluster(command);
+        } else if (uri.startsWith(URI_HEALTH_URL)) {
+            handleHealthcheck(command);
+        } else if (uri.startsWith(URI_CLUSTER_VERSION_URL)) {
+            handleGetClusterVersion(command);
         } else {
             command.send400();
         }
         textCommandService.sendResponse(command);
+    }
+
+    private void handleHealthcheck(HttpGetCommand command) {
+        Node node = textCommandService.getNode();
+        NodeState nodeState = node.getState();
+
+        ClusterServiceImpl clusterService = node.getClusterService();
+        ClusterState clusterState = clusterService.getClusterState();
+        int clusterSize = clusterService.getMembers().size();
+
+        InternalPartitionService partitionService = node.getPartitionService();
+        boolean memberStateSafe = partitionService.isMemberStateSafe();
+        boolean clusterSafe = memberStateSafe && !partitionService.hasOnGoingMigration();
+        long migrationQueueSize = partitionService.getMigrationQueueSize();
+
+        StringBuilder res = new StringBuilder();
+        res.append("Hazelcast::NodeState=").append(nodeState).append("\n");
+        res.append("Hazelcast::ClusterState=").append(clusterState).append("\n");
+        res.append("Hazelcast::ClusterSafe=").append(Boolean.toString(clusterSafe).toUpperCase()).append("\n");
+        res.append("Hazelcast::MigrationQueueSize=").append(migrationQueueSize).append("\n");
+        res.append("Hazelcast::ClusterSize=").append(clusterSize).append("\n");
+        command.setResponse(MIME_TEXT_PLAIN, stringToBytes(res.toString()));
+    }
+
+    private void handleGetClusterVersion(HttpGetCommand command) {
+        String res = "{\"status\":\"${STATUS}\",\"version\":\"${VERSION}\"}";
+        Node node = textCommandService.getNode();
+        ClusterService clusterService = node.getClusterService();
+        res = res.replace("${STATUS}", "success");
+        res = res.replace("${VERSION}", clusterService.getClusterVersion().toString());
+        command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(res));
     }
 
     private void handleCluster(HttpGetCommand command) {

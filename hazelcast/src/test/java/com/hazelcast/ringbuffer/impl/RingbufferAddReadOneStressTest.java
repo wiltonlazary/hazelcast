@@ -8,6 +8,7 @@ import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestThread;
 import com.hazelcast.test.annotation.NightlyTest;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -42,11 +43,12 @@ public class RingbufferAddReadOneStressTest extends HazelcastTestSupport {
     @Test
     public void whenLongTTLAndSmallBuffer() throws Exception {
         RingbufferConfig ringbufferConfig = new RingbufferConfig("foo")
-                .setCapacity(1000)
+                .setCapacity(3 * 1000)
                 .setTimeToLiveSeconds(30);
         test(ringbufferConfig);
     }
 
+    @Ignore //https://github.com/hazelcast/hazelcast/issues/6895
     @Test
     public void whenShortTTLAndBigBuffer() throws Exception {
         RingbufferConfig ringbufferConfig = new RingbufferConfig("foo")

@@ -239,6 +239,10 @@ public abstract class ConditionAbstractTest extends HazelcastTestSupport {
         allAwaited.await(1, TimeUnit.MINUTES);
 
         assertUnlockedEventually(lock, THIRTY_SECONDS);
+
+        // Make sure that all threads are waiting on condition await call
+        Thread.sleep(3000);
+
         signalAll(lock, condition);
         allFinished.await(1, TimeUnit.MINUTES);
         assertEquals(k * 2, count.get());
@@ -299,6 +303,83 @@ public abstract class ConditionAbstractTest extends HazelcastTestSupport {
         } finally {
             ex.shutdownNow();
         }
+    }
+
+    @Test
+    public void testAwaitExpiration_whenLockIsNotAcquired() throws InterruptedException {
+        String lockName = newName();
+        String conditionName = newName();
+        final ILock lock = callerInstance.getLock(lockName);
+        final ICondition condition = lock.newCondition(conditionName);
+        final AtomicInteger expires = new AtomicInteger(0);
+        final int awaitCount = 10;
+
+        final CountDownLatch awaitLatch = new CountDownLatch(awaitCount);
+        for (int i = 0; i < awaitCount; i++) {
+            new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        lock.lock();
+                        awaitLatch.countDown();
+                        boolean signalled = condition.await(1, TimeUnit.SECONDS);
+                        assertFalse(signalled);
+                        expires.incrementAndGet();
+                    } catch (InterruptedException ignored) {
+                    } finally {
+                        lock.unlock();
+                    }
+
+                }
+            }).start();
+        }
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals(awaitCount, expires.get());
+            }
+        });
+    }
+
+    @Test
+    public void testAwaitExpiration_whenLockIsAcquiredByAnotherThread() throws InterruptedException {
+        String lockName = newName();
+        String conditionName = newName();
+        final ILock lock = callerInstance.getLock(lockName);
+        final ICondition condition = lock.newCondition(conditionName);
+        final AtomicInteger expires = new AtomicInteger(0);
+        final int awaitCount = 10;
+
+        final CountDownLatch awaitLatch = new CountDownLatch(awaitCount);
+        for (int i = 0; i < awaitCount; i++) {
+            new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        lock.lock();
+                        awaitLatch.countDown();
+                        boolean signalled = condition.await(1, TimeUnit.SECONDS);
+                        assertFalse(signalled);
+                        expires.incrementAndGet();
+                    } catch (InterruptedException ignored) {
+                    } finally {
+                        lock.unlock();
+                    }
+
+                }
+            }).start();
+        }
+        awaitLatch.await(2, TimeUnit.MINUTES);
+
+        lock.lock();
+        sleepSeconds(2);
+        lock.unlock();
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals(awaitCount, expires.get());
+            }
+        });
     }
 
     //if there are multiple waiters, then only 1 waiter should be notified.
@@ -438,6 +519,17 @@ public abstract class ConditionAbstractTest extends HazelcastTestSupport {
         lock.lock();
 
         assertFalse(condition.awaitUntil(currentTimeAfterGivenMillis(1000)));
+    }
+
+
+    @Test(timeout = 60000)
+    public void testAwaitUntil_whenDeadLineInThePast() throws InterruptedException {
+        ILock lock = callerInstance.getLock(newName());
+        ICondition condition = lock.newCondition(newName());
+
+        lock.lock();
+
+        assertFalse(condition.awaitUntil(currentTimeAfterGivenMillis(-1000)));
     }
 
     // https://github.com/hazelcast/hazelcast/issues/3262

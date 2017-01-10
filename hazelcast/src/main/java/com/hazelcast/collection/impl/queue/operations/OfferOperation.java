@@ -28,6 +28,7 @@ import com.hazelcast.spi.BlockingOperation;
 import com.hazelcast.spi.Notifier;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
@@ -35,7 +36,7 @@ import java.io.IOException;
  * Contains offer operation for the Queue.
  */
 public final class OfferOperation extends QueueBackupAwareOperation
-        implements BlockingOperation, Notifier, IdentifiedDataSerializable {
+        implements BlockingOperation, Notifier, IdentifiedDataSerializable, MutatingOperation {
 
     private Data data;
     private long itemId;
@@ -50,7 +51,7 @@ public final class OfferOperation extends QueueBackupAwareOperation
 
     @Override
     public void run() {
-        QueueContainer queueContainer = getOrCreateContainer();
+        QueueContainer queueContainer = getContainer();
         if (queueContainer.hasEnoughCapacity()) {
             itemId = queueContainer.offer(data);
             response = true;
@@ -87,17 +88,17 @@ public final class OfferOperation extends QueueBackupAwareOperation
 
     @Override
     public WaitNotifyKey getNotifiedKey() {
-        return getOrCreateContainer().getPollWaitNotifyKey();
+        return getContainer().getPollWaitNotifyKey();
     }
 
     @Override
     public WaitNotifyKey getWaitKey() {
-        return getOrCreateContainer().getOfferWaitNotifyKey();
+        return getContainer().getOfferWaitNotifyKey();
     }
 
     @Override
     public boolean shouldWait() {
-        QueueContainer container = getOrCreateContainer();
+        QueueContainer container = getContainer();
         return getWaitTimeout() != 0 && !container.hasEnoughCapacity();
     }
 

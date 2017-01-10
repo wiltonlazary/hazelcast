@@ -16,7 +16,6 @@
 
 package com.hazelcast.client.impl;
 
-import com.hazelcast.cache.ICache;
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Client;
@@ -24,10 +23,12 @@ import com.hazelcast.core.ClientService;
 import com.hazelcast.core.Cluster;
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.core.DistributedObjectListener;
+import com.hazelcast.cardinality.CardinalityEstimator;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.IAtomicLong;
 import com.hazelcast.core.IAtomicReference;
+import com.hazelcast.core.ICacheManager;
 import com.hazelcast.core.ICountDownLatch;
 import com.hazelcast.core.IExecutorService;
 import com.hazelcast.core.IList;
@@ -42,11 +43,13 @@ import com.hazelcast.core.LifecycleService;
 import com.hazelcast.core.MultiMap;
 import com.hazelcast.core.PartitionService;
 import com.hazelcast.core.ReplicatedMap;
+import com.hazelcast.durableexecutor.DurableExecutorService;
 import com.hazelcast.instance.TerminatedLifecycleService;
 import com.hazelcast.logging.LoggingService;
 import com.hazelcast.mapreduce.JobTracker;
 import com.hazelcast.quorum.QuorumService;
 import com.hazelcast.ringbuffer.Ringbuffer;
+import com.hazelcast.scheduledexecutor.IScheduledExecutorService;
 import com.hazelcast.spi.impl.SerializationServiceSupport;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.transaction.HazelcastXAResource;
@@ -61,6 +64,7 @@ import java.util.concurrent.ConcurrentMap;
 /**
  * A client-side proxy {@link com.hazelcast.core.HazelcastInstance} instance.
  */
+@SuppressWarnings("checkstyle:classfanoutcomplexity")
 public class HazelcastClientProxy implements HazelcastInstance, SerializationServiceSupport {
 
     public volatile HazelcastClientInstanceImpl client;
@@ -135,8 +139,8 @@ public class HazelcastClientProxy implements HazelcastInstance, SerializationSer
     }
 
     @Override
-    public <K, V> ICache<K, V> getCache(String name) {
-        return getClient().getCache(name);
+    public ICacheManager getCacheManager() {
+        return getClient().getCacheManager();
     }
 
     @Override
@@ -152,6 +156,11 @@ public class HazelcastClientProxy implements HazelcastInstance, SerializationSer
     @Override
     public IExecutorService getExecutorService(String name) {
         return getClient().getExecutorService(name);
+    }
+
+    @Override
+    public DurableExecutorService getDurableExecutorService(String name) {
+        return getClient().getDurableExecutorService(name);
     }
 
     @Override
@@ -199,6 +208,16 @@ public class HazelcastClientProxy implements HazelcastInstance, SerializationSer
     @Override
     public ISemaphore getSemaphore(String name) {
         return getClient().getSemaphore(name);
+    }
+
+    @Override
+    public CardinalityEstimator getCardinalityEstimator(String name) {
+        return getClient().getCardinalityEstimator(name);
+    }
+
+    @Override
+    public IScheduledExecutorService getScheduledExecutorService(String name) {
+        return getClient().getScheduledExecutorService(name);
     }
 
     @Override
@@ -266,6 +285,7 @@ public class HazelcastClientProxy implements HazelcastInstance, SerializationSer
         getLifecycleService().shutdown();
     }
 
+    @Override
     public SerializationService getSerializationService() {
         return getClient().getSerializationService();
     }

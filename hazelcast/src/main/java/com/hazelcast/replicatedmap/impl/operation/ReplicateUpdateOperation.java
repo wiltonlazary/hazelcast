@@ -17,7 +17,6 @@
 package com.hazelcast.replicatedmap.impl.operation;
 
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.logging.Logger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -25,7 +24,6 @@ import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapEventPublishingService;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecordStore;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.PartitionAwareOperation;
 
 import java.io.IOException;
@@ -34,9 +32,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * Replicates the update happened on the partition owner to the other nodes.
  */
-public class ReplicateUpdateOperation extends AbstractOperation implements PartitionAwareOperation {
+public class ReplicateUpdateOperation extends AbstractSerializableOperation implements PartitionAwareOperation {
 
-    ILogger logger = Logger.getLogger(ReplicateUpdateOperation.class.getName());
     VersionResponsePair response;
     boolean isRemove;
     String name;
@@ -71,23 +68,20 @@ public class ReplicateUpdateOperation extends AbstractOperation implements Parti
         long currentVersion = store.getVersion();
         long updateVersion = response.getVersion();
         if (currentVersion >= updateVersion) {
-            logger.finest("Stale update received for replicated map -> " + name + ",  partitionId -> "
-                    + getPartitionId() + " , current version -> " + currentVersion + ", update version -> "
-                    + updateVersion + ", rejecting update!");
+            ILogger logger = getLogger();
+            if (logger.isFineEnabled()) {
+                logger.fine("Rejecting stale update received for replicated map: " + name + "  partitionId="
+                        + getPartitionId() + " current version: " + currentVersion + " update version: " + updateVersion);
+            }
             return;
         }
         Object key = store.marshall(dataKey);
         Object value = store.marshall(dataValue);
         if (isRemove) {
-            store.remove(key);
+            store.removeWithVersion(key, updateVersion);
         } else {
-            store.put(key, value, ttl, TimeUnit.MILLISECONDS, false);
+            store.putWithVersion(key, value, ttl, TimeUnit.MILLISECONDS, false, updateVersion);
         }
-        store.setVersion(updateVersion);
-    }
-
-    @Override
-    public void afterRun() throws Exception {
         publishEvent();
     }
 
@@ -101,7 +95,6 @@ public class ReplicateUpdateOperation extends AbstractOperation implements Parti
             eventPublishingService.fireEntryListenerEvent(dataKey, dataOldValue, dataValue, name, origin);
         }
     }
-
 
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
@@ -124,5 +117,10 @@ public class ReplicateUpdateOperation extends AbstractOperation implements Parti
         ttl = in.readLong();
         isRemove = in.readBoolean();
         origin = in.readObject();
+    }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.REPLICATE_UPDATE;
     }
 }

@@ -1,7 +1,7 @@
 package com.hazelcast.partition;
 
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.spi.AbstractOperation;
+import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.PartitionAwareOperation;
 import com.hazelcast.spi.UrgentSystemOperation;
@@ -35,10 +35,10 @@ public class SystemOperationPrecedenseTest extends HazelcastTestSupport {
 
         //we are going to fill up the partition first with tons of normal operations with take a lot of time
         for (int k = 0; k < pendingOperations; k++) {
-            opService.executeOperation(new NormalPartitionAwareOperation(partitionid));
+            opService.execute(new NormalPartitionAwareOperation(partitionid));
         }
 
-        opService.executeOperation(new UrgentPartitionAwareOperation(latch, partitionid));
+        opService.execute(new UrgentPartitionAwareOperation(latch, partitionid));
 
         //if the system operation would be given urgency, we should only wait for 1 operation to be processed before
         //our system operation is processed.
@@ -60,11 +60,11 @@ public class SystemOperationPrecedenseTest extends HazelcastTestSupport {
 
         //we are going to fill up the partition first with tons of normal operations with take a lot of time
         for (int k = 0; k < pendingOperations; k++) {
-            opService.executeOperation(new NormalPartitionUnawareOperation());
+            opService.execute(new NormalPartitionUnawareOperation());
         }
 
         //then we place the system operation
-        opService.executeOperation(new UrgentPartitionUnawareOperation(latch));
+        opService.execute(new UrgentPartitionUnawareOperation(latch));
 
         //if the system operation would be given urgency, we should only wait for 1 operation to be processed before
         //our system operation is processed.
@@ -76,7 +76,7 @@ public class SystemOperationPrecedenseTest extends HazelcastTestSupport {
         });
     }
 
-    public static class UrgentPartitionAwareOperation extends AbstractOperation
+    public static class UrgentPartitionAwareOperation extends Operation
             implements UrgentSystemOperation, PartitionAwareOperation {
 
         private final CountDownLatch latch;
@@ -92,8 +92,7 @@ public class SystemOperationPrecedenseTest extends HazelcastTestSupport {
         }
     }
 
-    public static class NormalPartitionAwareOperation extends AbstractOperation
-            implements PartitionAwareOperation {
+    public static class NormalPartitionAwareOperation extends Operation implements PartitionAwareOperation {
 
         public NormalPartitionAwareOperation(int partitionId) {
             setPartitionId(partitionId);
@@ -105,8 +104,7 @@ public class SystemOperationPrecedenseTest extends HazelcastTestSupport {
         }
     }
 
-    public static class UrgentPartitionUnawareOperation extends AbstractOperation
-            implements UrgentSystemOperation {
+    public static class UrgentPartitionUnawareOperation extends Operation implements UrgentSystemOperation {
 
         private final CountDownLatch latch;
 
@@ -120,7 +118,7 @@ public class SystemOperationPrecedenseTest extends HazelcastTestSupport {
         }
     }
 
-    public static class NormalPartitionUnawareOperation extends AbstractOperation {
+    public static class NormalPartitionUnawareOperation extends Operation {
         @Override
         public void run() throws Exception {
             Thread.sleep(1000);

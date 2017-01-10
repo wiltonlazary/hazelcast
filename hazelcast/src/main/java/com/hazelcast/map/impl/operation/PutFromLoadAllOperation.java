@@ -19,6 +19,7 @@ package com.hazelcast.map.impl.operation;
 import com.hazelcast.core.EntryEventType;
 import com.hazelcast.core.EntryView;
 import com.hazelcast.map.impl.EntryViews;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.event.MapEventPublisher;
 import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.nio.ObjectDataInput;
@@ -80,7 +81,7 @@ public class PutFromLoadAllOperation extends MapOperation implements PartitionAw
     }
 
     private void addInvalidation(Data key) {
-        if (!mapContainer.isInvalidationEnabled()) {
+        if (!mapContainer.hasInvalidationListener()) {
             return;
         }
 
@@ -115,9 +116,9 @@ public class PutFromLoadAllOperation extends MapOperation implements PartitionAw
     @Override
     public void afterRun() throws Exception {
         invalidateNearCache(invalidationKeys);
+        evict(null);
 
         super.afterRun();
-        evict();
     }
 
     @Override
@@ -170,5 +171,10 @@ public class PutFromLoadAllOperation extends MapOperation implements PartitionAw
             }
             keyValueSequence = tmpKeyValueSequence;
         }
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.PUT_FROM_LOAD_ALL;
     }
 }

@@ -21,15 +21,15 @@ import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.internal.partition.MigrationCycleOperation;
 import com.hazelcast.internal.partition.PartitionRuntimeState;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
+import com.hazelcast.internal.partition.impl.PartitionDataSerializerHook;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.AbstractOperation;
 
 import java.io.IOException;
 
-public final class PartitionStateOperation extends AbstractOperation
+public final class PartitionStateOperation extends AbstractPartitionOperation
         implements MigrationCycleOperation, JoinOperation {
 
     private PartitionRuntimeState partitionState;
@@ -57,8 +57,9 @@ public final class PartitionStateOperation extends AbstractOperation
 
         ILogger logger = getLogger();
         if (logger.isFineEnabled()) {
-            logger.fine("Applied new partition state: " + success + ". Version: " + partitionState.getVersion()
-                    + ", caller: " + callerAddress);
+            String message = (success ? "Applied" : "Rejected")
+                    + " new partition state. Version: " + partitionState.getVersion() + ", caller: " + callerAddress;
+            logger.fine(message);
         }
     }
 
@@ -90,5 +91,10 @@ public final class PartitionStateOperation extends AbstractOperation
         super.writeInternal(out);
         partitionState.writeData(out);
         out.writeBoolean(sync);
+    }
+
+    @Override
+    public int getId() {
+        return PartitionDataSerializerHook.PARTITION_STATE_OP;
     }
 }

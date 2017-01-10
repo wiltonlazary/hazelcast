@@ -26,6 +26,7 @@ import com.hazelcast.transaction.TransactionTimedOutException;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -91,6 +92,40 @@ public final class FutureUtil {
         }
     };
 
+    /**
+     * This ExceptionHandler rethrows {@link java.util.concurrent.ExecutionException}s and logs
+     * {@link com.hazelcast.core.MemberLeftException}s to the log.
+     */
+    public static final ExceptionHandler RETHROW_ALL_EXCEPT_MEMBER_LEFT = new ExceptionHandler() {
+        @Override
+        public void handleException(Throwable throwable) {
+            if (throwable instanceof MemberLeftException) {
+                if (LOGGER.isFinestEnabled()) {
+                    LOGGER.finest("Member left while waiting for futures...", throwable);
+                }
+            } else {
+                throw new HazelcastException(throwable);
+            }
+        }
+    };
+
+    private static final class CollectAllExceptionHandler implements ExceptionHandler {
+
+        private List<Throwable> throwables;
+
+        private CollectAllExceptionHandler(int count) {
+            this.throwables = Collections.synchronizedList(new ArrayList<Throwable>(count));
+        }
+
+        @Override
+        public void handleException(Throwable throwable) {
+            throwables.add(throwable);
+        }
+
+        public List<Throwable> getThrowables() {
+            return throwables;
+        }
+    }
 
     /**
      * Handler for transaction specific rethrown of exceptions.
@@ -246,6 +281,20 @@ public final class FutureUtil {
     }
 
     @PrivateApi
+    public static void waitUntilAllRespondedWithDeadline(Collection<Future> futures, long timeout, TimeUnit timeUnit,
+                                                         ExceptionHandler exceptionHandler) {
+        CollectAllExceptionHandler collector = new CollectAllExceptionHandler(futures.size());
+        waitWithDeadline(futures, timeout, timeUnit, collector);
+        final List<Throwable> throwables = collector.getThrowables();
+        // synchronized list does not provide thread-safety guarantee for iteration so we handle it ourselves.
+        synchronized (throwables) {
+            for (Throwable t : throwables) {
+                exceptionHandler.handleException(t);
+            }
+        }
+    }
+
+    @PrivateApi
     public static void waitWithDeadline(Collection<Future> futures, long timeout, TimeUnit timeUnit,
                                         ExceptionHandler exceptionHandler) {
 
@@ -323,11 +372,12 @@ public final class FutureUtil {
 
     /**
      * Check if all futures are done
+     *
      * @param futures
      * @return true if all futures are done. false otherwise
      */
     public static boolean allDone(Collection<Future> futures) {
-        for (Future f: futures) {
+        for (Future f : futures) {
             if (!f.isDone()) {
                 return false;
             }
@@ -337,11 +387,12 @@ public final class FutureUtil {
 
     /**
      * Rethrow exeception of the fist future that completed with an exception
+     *
      * @param futures
      * @throws Exception
      */
     public static void checkAllDone(Collection<Future> futures) throws Exception {
-        for (Future f: futures) {
+        for (Future f : futures) {
             if (f.isDone()) {
                 f.get();
             }
@@ -350,12 +401,13 @@ public final class FutureUtil {
 
     /**
      * Get all futures that are done
+     *
      * @param futures
      * @return list of completed futures
      */
     public static List<Future> getAllDone(Collection<Future> futures) {
         List<Future> doneFutures = new ArrayList<Future>();
-        for (Future f: futures) {
+        for (Future f : futures) {
             if (f.isDone()) {
                 doneFutures.add(f);
             }

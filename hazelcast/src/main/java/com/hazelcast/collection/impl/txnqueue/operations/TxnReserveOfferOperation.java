@@ -24,13 +24,14 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.spi.BlockingOperation;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
 /**
  * Reserve offer operation for the transactional queue.
  */
-public class TxnReserveOfferOperation extends QueueBackupAwareOperation implements BlockingOperation {
+public class TxnReserveOfferOperation extends QueueBackupAwareOperation implements BlockingOperation, MutatingOperation {
 
     private int txSize;
     private String transactionId;
@@ -46,7 +47,7 @@ public class TxnReserveOfferOperation extends QueueBackupAwareOperation implemen
 
     @Override
     public void run() throws Exception {
-        QueueContainer queueContainer = getOrCreateContainer();
+        QueueContainer queueContainer = getContainer();
         if (queueContainer.hasEnoughCapacity(txSize + 1)) {
             response = queueContainer.txnOfferReserve(transactionId);
         }
@@ -54,13 +55,13 @@ public class TxnReserveOfferOperation extends QueueBackupAwareOperation implemen
 
     @Override
     public WaitNotifyKey getWaitKey() {
-        QueueContainer queueContainer = getOrCreateContainer();
+        QueueContainer queueContainer = getContainer();
         return queueContainer.getOfferWaitNotifyKey();
     }
 
     @Override
     public boolean shouldWait() {
-        QueueContainer queueContainer = getOrCreateContainer();
+        QueueContainer queueContainer = getContainer();
         return getWaitTimeout() != 0 && !queueContainer.hasEnoughCapacity(txSize + 1);
     }
 

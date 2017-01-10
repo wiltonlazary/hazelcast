@@ -16,6 +16,8 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
+
 import javax.cache.configuration.CacheEntryListenerConfiguration;
 import javax.cache.configuration.Factory;
 import javax.cache.expiry.ExpiryPolicy;
@@ -31,23 +33,23 @@ import java.util.Set;
  * @param <K> type of the key
  * @param <V> type of the value
  *
- * @deprecated this class will be removed in 3.8; it is meant for internal usage only.git ch
+ * @deprecated this class will be removed in 3.8; it is meant for internal usage only.
  */
+@BinaryInterface
 public class CacheConfigReadOnly<K, V> extends CacheConfig<K, V> {
 
     CacheConfigReadOnly(CacheConfig config) {
         super(config);
     }
 
-    // TODO Change to "EvictionConfig" instead of "CacheEvictionConfig" in the future
-    // since "CacheEvictionConfig" is deprecated
+    // TODO: change to "EvictionConfig" in the future since "CacheEvictionConfig" is deprecated
     @Override
     public CacheEvictionConfig getEvictionConfig() {
         final CacheEvictionConfig evictionConfig = super.getEvictionConfig();
         if (evictionConfig == null) {
             return null;
         }
-        return (CacheEvictionConfig) evictionConfig.getAsReadOnly();
+        return evictionConfig.getAsReadOnly();
     }
 
     @Override
@@ -138,12 +140,12 @@ public class CacheConfigReadOnly<K, V> extends CacheConfig<K, V> {
     }
 
     @Override
-    public CacheConfig setWanReplicationRef(final WanReplicationRef wanReplicationRef) {
+    public CacheConfig<K, V> setWanReplicationRef(final WanReplicationRef wanReplicationRef) {
         throw new UnsupportedOperationException("This config is read-only cache: " + getName());
     }
 
     @Override
-    public CacheConfig setQuorumName(String quorumName) {
+    public CacheConfig<K, V> setQuorumName(String quorumName) {
         throw new UnsupportedOperationException("This config is read-only cache: " + getName());
     }
 
@@ -153,7 +155,7 @@ public class CacheConfigReadOnly<K, V> extends CacheConfig<K, V> {
     }
 
     @Override
-    public CacheConfig setPartitionLostListenerConfigs(
+    public CacheConfig<K, V> setPartitionLostListenerConfigs(
             List<CachePartitionLostListenerConfig> partitionLostListenerConfigs) {
         throw new UnsupportedOperationException("This config is read-only cache: " + getName());
     }
@@ -193,5 +195,4 @@ public class CacheConfigReadOnly<K, V> extends CacheConfig<K, V> {
     public void setDisablePerEntryInvalidationEvents(boolean disablePerEntryInvalidationEvents) {
         throw new UnsupportedOperationException("This config is read-only cache: " + getName());
     }
-
 }

@@ -19,10 +19,14 @@ package com.hazelcast.client.impl.protocol.task;
 import com.hazelcast.client.impl.client.ClientPrincipal;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.ClientAuthenticationCodec;
+import com.hazelcast.core.Member;
+import com.hazelcast.instance.BuildInfoProvider;
 import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.security.UsernamePasswordCredentials;
+
+import java.util.List;
 
 /**
  * Default Authentication with username password handling task
@@ -43,6 +47,9 @@ public class AuthenticationMessageTask extends AuthenticationBaseMessageTask<Cli
         }
         credentials = new UsernamePasswordCredentials(parameters.username, parameters.password);
         clientSerializationVersion = parameters.serializationVersion;
+        if (parameters.clientHazelcastVersionExist) {
+            clientVersion = parameters.clientHazelcastVersion;
+        }
         return parameters;
     }
 
@@ -52,8 +59,11 @@ public class AuthenticationMessageTask extends AuthenticationBaseMessageTask<Cli
     }
 
     @Override
-    protected ClientMessage encodeAuth(byte status, Address thisAddress, String uuid, String ownerUuid, byte version) {
-        return ClientAuthenticationCodec.encodeResponse(status, thisAddress, uuid, ownerUuid, version);
+    protected ClientMessage encodeAuth(byte status, Address thisAddress, String uuid, String ownerUuid, byte version,
+                                       List<Member> cleanedUpMembers) {
+        return ClientAuthenticationCodec
+                .encodeResponse(status, thisAddress, uuid, ownerUuid, version, BuildInfoProvider.getBuildInfo().getVersion(),
+                        cleanedUpMembers);
     }
 
     @Override

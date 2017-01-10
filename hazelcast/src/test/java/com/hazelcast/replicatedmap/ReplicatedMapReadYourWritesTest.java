@@ -35,7 +35,7 @@ import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category(value = {QuickTest.class, ParallelTest.class})
-public class ReplicatedMapReadYourWritesTest extends ReplicatedMapBaseTest {
+public class ReplicatedMapReadYourWritesTest extends ReplicatedMapAbstractTest {
 
     @Test
     public void testReadYourWritesBySize() throws Exception {
@@ -59,7 +59,7 @@ public class ReplicatedMapReadYourWritesTest extends ReplicatedMapBaseTest {
                 assertEquals(count, map1.size());
                 assertEquals(count, map2.size());
             }
-        }, 15);
+        });
     }
 
     @Test

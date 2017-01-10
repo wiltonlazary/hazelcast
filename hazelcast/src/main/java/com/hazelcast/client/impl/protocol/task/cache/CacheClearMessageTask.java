@@ -73,6 +73,7 @@ public class CacheClearMessageTask
                 throw (CacheException) response;
             }
         }
+
         return null;
     }
 

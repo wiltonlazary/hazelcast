@@ -16,17 +16,18 @@
 
 package com.hazelcast.osgi.impl;
 
-import com.hazelcast.cache.ICache;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.GroupConfig;
 import com.hazelcast.core.ClientService;
 import com.hazelcast.core.Cluster;
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.core.DistributedObjectListener;
+import com.hazelcast.cardinality.CardinalityEstimator;
 import com.hazelcast.core.Endpoint;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IAtomicLong;
 import com.hazelcast.core.IAtomicReference;
+import com.hazelcast.core.ICacheManager;
 import com.hazelcast.core.ICountDownLatch;
 import com.hazelcast.core.IExecutorService;
 import com.hazelcast.core.IList;
@@ -41,12 +42,14 @@ import com.hazelcast.core.LifecycleService;
 import com.hazelcast.core.MultiMap;
 import com.hazelcast.core.PartitionService;
 import com.hazelcast.core.ReplicatedMap;
+import com.hazelcast.durableexecutor.DurableExecutorService;
 import com.hazelcast.logging.LoggingService;
 import com.hazelcast.mapreduce.JobTracker;
 import com.hazelcast.osgi.HazelcastOSGiInstance;
 import com.hazelcast.osgi.HazelcastOSGiService;
 import com.hazelcast.quorum.QuorumService;
 import com.hazelcast.ringbuffer.Ringbuffer;
+import com.hazelcast.scheduledexecutor.IScheduledExecutorService;
 import com.hazelcast.transaction.HazelcastXAResource;
 import com.hazelcast.transaction.TransactionContext;
 import com.hazelcast.transaction.TransactionException;
@@ -134,8 +137,8 @@ class HazelcastOSGiInstanceImpl
     }
 
     @Override
-    public <K, V> ICache<K, V> getCache(String name) {
-        return delegatedInstance.getCache(name);
+    public ICacheManager getCacheManager() {
+        return delegatedInstance.getCacheManager();
     }
 
     @Override
@@ -151,6 +154,11 @@ class HazelcastOSGiInstanceImpl
     @Override
     public IExecutorService getExecutorService(String name) {
         return delegatedInstance.getExecutorService(name);
+    }
+
+    @Override
+    public DurableExecutorService getDurableExecutorService(String name) {
+        return delegatedInstance.getDurableExecutorService(name);
     }
 
     @Override
@@ -256,6 +264,16 @@ class HazelcastOSGiInstanceImpl
     @Override
     public HazelcastXAResource getXAResource() {
         return delegatedInstance.getXAResource();
+    }
+
+    @Override
+    public CardinalityEstimator getCardinalityEstimator(String name) {
+        return delegatedInstance.getCardinalityEstimator(name);
+    }
+
+    @Override
+    public IScheduledExecutorService getScheduledExecutorService(String name) {
+        return delegatedInstance.getScheduledExecutorService(name);
     }
 
     @Override

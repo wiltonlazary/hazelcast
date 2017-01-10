@@ -40,6 +40,7 @@
                 <xs:element name="network" type="network" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="partition-group" type="partition-group" minOccurs="0" maxOccurs="1"/>
                 <xs:element name="executor-service" type="executor-service" minOccurs="0" maxOccurs="unbounded"/>
+                <xs:element name="durable-executor-service" type="durable-executor-service" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="queue" type="queue" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="map" type="map" minOccurs="0" maxOccurs="unbounded"/>
                 <xs:element name="multimap" type="multimap" minOccurs="0" maxOccurs="unbounded"/>
@@ -1598,6 +1599,39 @@
         </xs:attribute>
     </xs:complexType>
 
+    <xs:complexType name="durable-executor-service">
+        <xs:all>
+            <xs:element name="pool-size" type="xs:unsignedShort" minOccurs="0" maxOccurs="1" default="8">
+                <xs:annotation>
+                    <xs:documentation>
+                        The number of executor threads per member for the executor.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="durability" type="xs:unsignedShort" minOccurs="0" maxOccurs="1" default="8">
+                <xs:annotation>
+                    <xs:documentation>
+                        The durability of the executor
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="capacity" type="xs:unsignedInt" minOccurs="0" maxOccurs="1" default="0">
+                <xs:annotation>
+                    <xs:documentation>
+                        Capacity of the executor task per partition.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:all>
+        <xs:attribute name="name" type="xs:string" use="optional" default="default">
+            <xs:annotation>
+                <xs:documentation>
+                    Name of the executor task.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
     <xs:simpleType name="backup-count">
         <xs:restriction base="xs:byte">
             <xs:minInclusive value="0"/>
@@ -1976,6 +2010,8 @@
                     <xs:enumeration value="HOST_AWARE"/>
                     <xs:enumeration value="CUSTOM"/>
                     <xs:enumeration value="PER_MEMBER"/>
+                    <xs:enumeration value="ZONE_AWARE"/>
+                    <xs:enumeration value="SPI"/>
                 </xs:restriction>
             </xs:simpleType>
         </xs:attribute>
@@ -2111,6 +2147,8 @@
             <xs:element name="id-generator-permission" type="instance-permission" minOccurs="0" maxOccurs="unbounded"/>
             <xs:element name="executor-service-permission" type="instance-permission" minOccurs="0"
                         maxOccurs="unbounded"/>
+            <xs:element name="durable-executor-service-permission" type="instance-permission" minOccurs="0"
+                        maxOccurs="unbounded"/>
             <xs:element name="transaction-permission" type="base-permission" minOccurs="0" maxOccurs="1"/>
         </xs:choice>
     </xs:complexType>
@@ -2228,7 +2266,7 @@
             <xs:element name="max-size" type="xs:unsignedInt" minOccurs="0" maxOccurs="1" default="0">
                 <xs:annotation>
                     <xs:documentation>
-                        Maximum size of the near cache. When max size is reached,
+                        Maximum size of the Near Cache. When max size is reached,
                         cache is evicted based on the policy defined.
                         Any integer between 0 and Integer.MAX_VALUE. 0 means
                         Integer.MAX_VALUE. Default is 0.
@@ -2238,8 +2276,8 @@
             <xs:element name="time-to-live-seconds" type="xs:unsignedInt" minOccurs="0" maxOccurs="1" default="0">
                 <xs:annotation>
                     <xs:documentation>
-                        Maximum number of seconds for each entry to stay in the near cache. Entries that are
-                        older than time-to-live-seconds will get automatically evicted from the near cache.
+                        Maximum number of seconds for each entry to stay in the Near Cache. Entries that are
+                        older than time-to-live-seconds will get automatically evicted from the Near Cache.
                         Any integer between 0 and Integer.MAX_VALUE. 0 means infinite. Default is 0.
                     </xs:documentation>
                 </xs:annotation>
@@ -2247,9 +2285,9 @@
             <xs:element name="max-idle-seconds" type="xs:unsignedInt" minOccurs="0" maxOccurs="1" default="0">
                 <xs:annotation>
                     <xs:documentation>
-                        Maximum number of seconds each entry can stay in the near cache as untouched (not-read).
+                        Maximum number of seconds each entry can stay in the Near Cache as untouched (not-read).
                         Entries that are not read (touched) more than max-idle-seconds value will get removed
-                        from the near cache.
+                        from the Near Cache.
                         Any integer between 0 and Integer.MAX_VALUE. 0 means Integer.MAX_VALUE. Default is 0.
                     </xs:documentation>
                 </xs:annotation>
@@ -2289,7 +2327,7 @@
                 <xs:annotation>
                     <xs:documentation>
                         True to cache local entries also.
-                        This is useful when in-memory-format for near cache is different than the map's one.
+                        This is useful when in-memory-format for Near Cache is different than the map's one.
                         Default value is false.
                     </xs:documentation>
                 </xs:annotation>

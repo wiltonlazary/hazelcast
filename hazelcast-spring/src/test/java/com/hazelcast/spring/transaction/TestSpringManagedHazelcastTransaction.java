@@ -8,7 +8,12 @@ import com.hazelcast.core.TransactionalMap;
 import com.hazelcast.spring.CustomSpringJUnit4ClassRunner;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.transaction.TransactionalTaskContext;
-import org.junit.*;
+import org.junit.AfterClass;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Rule;
+import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
@@ -30,6 +35,12 @@ public class TestSpringManagedHazelcastTransaction {
         Hazelcast.shutdownAll();
     }
 
+    @Before
+    public void setUp() {
+        //Clear all items from the dummyObjectMap used
+        //to test transactional object insertion
+        instance.getMap("dummyObjectMap").clear();
+    }
 
     @Rule
     public ExpectedException expectedException = ExpectedException.none();
@@ -42,7 +53,6 @@ public class TestSpringManagedHazelcastTransaction {
 
     @Autowired
     HazelcastInstance instance;
-
 
     /**
      * Tests that transactionalContext cannot be accessed when there is no transaction.
@@ -91,6 +101,50 @@ public class TestSpringManagedHazelcastTransaction {
 
         try {
             service.putWithException(new DummyObject(1L, "magic"));
+        } catch (RuntimeException ex) {
+            expectedEx = ex;
+        } finally {
+            // then
+            Assert.assertNotNull(expectedEx);
+            Assert.assertEquals(0L, instance.getMap("dummyObjectMap").size());
+        }
+    }
+
+    /**
+     * Tests that transaction will be rollbacked when putting one object each 
+     * via two beans, one nested within the other,
+     * if there is an exception in the nested bean, but no exception in our own bean.
+     */
+    @Test
+    public void transactionalServiceBeanInvocation_withNestedBeanThrowingException_rollback() {
+        // when
+        RuntimeException expectedEx = null;
+
+        try {
+            service.putUsingSameBean_thenOtherBeanThrowingException_sameTransaction(
+                    new DummyObject(1L, "magic"), new DummyObject(2L, "magic2"));
+        } catch (RuntimeException ex) {
+            expectedEx = ex;
+        } finally {
+            // then
+            Assert.assertNotNull(expectedEx);
+            Assert.assertEquals(0L, instance.getMap("dummyObjectMap").size());
+        }
+    }
+
+    /**
+     * Tests that transaction will be rollbacked when putting one object each 
+     * via two beans, one nested within the other,
+     * if there is an exception in our own bean, but no exception in the other bean.
+     */
+    @Test
+    public void transactionalServiceBeanInvocation_withOwnBeanThrowingException_rollback() {
+        // when
+        RuntimeException expectedEx = null;
+
+        try {
+            service.putUsingOtherBean_thenSameBeanThrowingException_sameTransaction(
+                    new DummyObject(1L, "magic"), new DummyObject(2L, "magic2"));
         } catch (RuntimeException ex) {
             expectedEx = ex;
         } finally {

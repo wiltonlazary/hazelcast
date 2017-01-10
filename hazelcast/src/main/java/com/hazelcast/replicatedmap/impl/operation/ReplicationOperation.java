@@ -17,16 +17,15 @@
 package com.hazelcast.replicatedmap.impl.operation;
 
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.logging.Logger;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.replicatedmap.impl.PartitionContainer;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
+import com.hazelcast.replicatedmap.impl.record.AbstractReplicatedRecordStore;
 import com.hazelcast.replicatedmap.impl.record.RecordMigrationInfo;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecord;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecordStore;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.serialization.SerializationService;
 
 import java.io.IOException;
@@ -39,9 +38,7 @@ import java.util.Set;
 /**
  * Carries all the partition data for replicated map from old owner to the new owner.
  */
-public class ReplicationOperation extends AbstractOperation {
-
-    private static ILogger logger = Logger.getLogger(ReplicationOperation.class.getName());
+public class ReplicationOperation extends AbstractSerializableOperation {
 
     private SerializationService serializationService;
     private Map<String, Set<RecordMigrationInfo>> data;
@@ -59,10 +56,11 @@ public class ReplicationOperation extends AbstractOperation {
 
     @Override
     public void run() throws Exception {
-        if (logger.isFinestEnabled()) {
-            logger.finest("Moving partition -> " + getPartitionId()
-                    + " to the new owner -> " + getNodeEngine().getThisAddress()
-                    + " from -> " + getCallerAddress());
+        ILogger logger = getLogger();
+        if (logger.isFineEnabled()) {
+            logger.fine("Moving partitionId=" + getPartitionId()
+                    + " to the new owner: " + getNodeEngine().getThisAddress()
+                    + " from: " + getCallerAddress());
         }
         ReplicatedMapService service = getService();
         if (data == null) {
@@ -108,12 +106,10 @@ public class ReplicationOperation extends AbstractOperation {
         for (Map.Entry<String, Set<RecordMigrationInfo>> dataEntry : data.entrySet()) {
             Set<RecordMigrationInfo> recordSet = dataEntry.getValue();
             String name = dataEntry.getKey();
-            ReplicatedRecordStore store = service.getReplicatedRecordStore(name, true, getPartitionId());
+            AbstractReplicatedRecordStore store =
+                    (AbstractReplicatedRecordStore) service.getReplicatedRecordStore(name, true, getPartitionId());
             long version = versions.get(name);
-            for (RecordMigrationInfo record : recordSet) {
-                store.putRecord(record);
-            }
-            store.setVersion(version);
+            store.putRecords(recordSet, version);
             store.setLoaded(true);
         }
     }
@@ -160,9 +156,13 @@ public class ReplicationOperation extends AbstractOperation {
         }
     }
 
-
     public boolean isEmpty() {
         return data == null || data.isEmpty();
+    }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.REPLICATION;
     }
 
 }

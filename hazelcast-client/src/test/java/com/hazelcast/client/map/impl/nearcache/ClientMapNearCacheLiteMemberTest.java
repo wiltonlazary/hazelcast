@@ -2,7 +2,7 @@ package com.hazelcast.client.map.impl.nearcache;
 
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.map.nearcache.NearCacheLiteMemberTest;
+import com.hazelcast.map.impl.nearcache.NearCacheLiteMemberTest;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
@@ -12,27 +12,29 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import static com.hazelcast.map.impl.nearcache.NearCacheLiteMemberTest.createNearCachedMapConfigWithMapStoreConfig;
 import static com.hazelcast.test.HazelcastTestSupport.randomMapName;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class ClientMapNearCacheLiteMemberTest {
 
-    private TestHazelcastFactory factory;
-
     private String mapName;
 
-    private HazelcastInstance client;
+    private TestHazelcastFactory factory;
 
+    private HazelcastInstance client;
     private HazelcastInstance lite;
 
     @Before
     public void init() {
         mapName = randomMapName();
+
         factory = new TestHazelcastFactory();
         factory.newHazelcastInstance(NearCacheLiteMemberTest.createConfig(mapName, false));
-        lite = factory.newHazelcastInstance(NearCacheLiteMemberTest.createConfig(mapName, true));
+
         client = factory.newHazelcastClient();
+        lite = factory.newHazelcastInstance(NearCacheLiteMemberTest.createConfig(mapName, true));
     }
 
     @After
@@ -41,26 +43,22 @@ public class ClientMapNearCacheLiteMemberTest {
     }
 
     @Test
-    public void testPut()
-            throws Exception {
+    public void testPut() {
         NearCacheLiteMemberTest.testPut(client, lite, mapName);
     }
 
     @Test
-    public void testPutAll()
-            throws Exception {
+    public void testPutAll() {
         NearCacheLiteMemberTest.testPutAll(client, lite, mapName);
     }
 
     @Test
-    public void testPutTransient()
-            throws Exception {
+    public void testPutTransient() {
         NearCacheLiteMemberTest.testPutTransient(client, lite, mapName);
     }
 
     @Test
-    public void testSet()
-            throws Exception {
+    public void testSet() {
         NearCacheLiteMemberTest.testSet(client, lite, mapName);
     }
 
@@ -75,8 +73,7 @@ public class ClientMapNearCacheLiteMemberTest {
     }
 
     @Test
-    public void testUpdateWithPutAll()
-            throws Exception {
+    public void testUpdateWithPutAll() {
         NearCacheLiteMemberTest.testUpdateWithPutAll(client, lite, mapName);
     }
 
@@ -101,8 +98,7 @@ public class ClientMapNearCacheLiteMemberTest {
     }
 
     @Test
-    public void testClear()
-            throws Exception {
+    public void testClear() {
         NearCacheLiteMemberTest.testClear(client, lite, mapName);
     }
 
@@ -121,4 +117,25 @@ public class ClientMapNearCacheLiteMemberTest {
         NearCacheLiteMemberTest.testExecuteOnKeys(client, lite, mapName);
     }
 
+    @Test
+    public void testLoadAll() {
+        initWithMapStore();
+
+        NearCacheLiteMemberTest.testLoadAll(client, lite, mapName);
+    }
+
+    @Test
+    public void testLoadAllWithKeySet() {
+        initWithMapStore();
+
+        NearCacheLiteMemberTest.testLoadAllWithKeySet(client, lite, mapName);
+    }
+
+    private void initWithMapStore() {
+        factory.terminateAll();
+        factory.newHazelcastInstance(createNearCachedMapConfigWithMapStoreConfig(mapName, false));
+
+        client = factory.newHazelcastClient();
+        lite = factory.newHazelcastInstance(createNearCachedMapConfigWithMapStoreConfig(mapName, true));
+    }
 }

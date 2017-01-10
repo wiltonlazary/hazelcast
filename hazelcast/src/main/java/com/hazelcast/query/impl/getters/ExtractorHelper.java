@@ -17,6 +17,7 @@
 package com.hazelcast.query.impl.getters;
 
 import com.hazelcast.config.MapAttributeConfig;
+import com.hazelcast.logging.Logger;
 import com.hazelcast.query.extractor.ValueExtractor;
 import com.hazelcast.util.StringUtil;
 
@@ -29,19 +30,56 @@ public final class ExtractorHelper {
     private ExtractorHelper() {
     }
 
-    static Map<String, ValueExtractor> instantiateExtractors(List<MapAttributeConfig> mapAttributeConfigs) {
+    static Map<String, ValueExtractor> instantiateExtractors(List<MapAttributeConfig> mapAttributeConfigs,
+                                                             ClassLoader classLoader) {
         Map<String, ValueExtractor> extractors = new HashMap<String, ValueExtractor>();
         for (MapAttributeConfig config : mapAttributeConfigs) {
             if (extractors.containsKey(config.getName())) {
                 throw new IllegalArgumentException("Could not add " + config
                         + ". Extractor for this attribute name already added.");
             }
-            extractors.put(config.getName(), instantiateExtractor(config));
+            extractors.put(config.getName(), instantiateExtractor(config, classLoader));
         }
         return extractors;
     }
 
-    static ValueExtractor instantiateExtractor(MapAttributeConfig config) {
+    static ValueExtractor instantiateExtractor(MapAttributeConfig config, ClassLoader classLoader) {
+        ValueExtractor extractor = null;
+        if (classLoader != null) {
+            try {
+                extractor = instantiateExtractorWithConfigClassLoader(config, classLoader);
+            } catch (IllegalArgumentException ex) {
+                // cached back-stage, initialised lazily since it's not a common case
+                Logger.getLogger(ExtractorHelper.class)
+                        .warning("Could not instantiate extractor with the config class loader", ex);
+            }
+        }
+
+        if (extractor == null) {
+            extractor = instantiateExtractorWithClassForName(config);
+        }
+        return extractor;
+    }
+
+    private static ValueExtractor instantiateExtractorWithConfigClassLoader(MapAttributeConfig config, ClassLoader classLoader) {
+        try {
+            Class<?> clazz = classLoader.loadClass(config.getExtractor());
+            Object extractor = clazz.newInstance();
+            if (extractor instanceof ValueExtractor) {
+                return (ValueExtractor) extractor;
+            } else {
+                throw new IllegalArgumentException("Extractor does not extend ValueExtractor class " + config);
+            }
+        } catch (IllegalAccessException ex) {
+            throw new IllegalArgumentException("Could not initialize extractor " + config, ex);
+        } catch (InstantiationException ex) {
+            throw new IllegalArgumentException("Could not initialize extractor " + config, ex);
+        } catch (ClassNotFoundException ex) {
+            throw new IllegalArgumentException("Could not initialize extractor " + config, ex);
+        }
+    }
+
+    private static ValueExtractor instantiateExtractorWithClassForName(MapAttributeConfig config) {
         try {
             Class<?> clazz = Class.forName(config.getExtractor());
             Object extractor = clazz.newInstance();
@@ -69,7 +107,6 @@ public final class ExtractorHelper {
             return attributeNameWithArguments;
         }
         throw new IllegalArgumentException("Wrong argument input passed " + attributeNameWithArguments);
-
     }
 
     public static String extractArgumentsFromAttributeName(String attributeNameWithArguments) {

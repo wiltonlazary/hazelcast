@@ -16,12 +16,22 @@
 
 package com.hazelcast.nio.tcp;
 
+import com.hazelcast.internal.metrics.DiscardableMetricsProvider;
+import com.hazelcast.internal.metrics.MetricsProvider;
+import com.hazelcast.internal.metrics.MetricsRegistry;
+import com.hazelcast.internal.metrics.Probe;
+import com.hazelcast.internal.networking.IOThreadingModel;
+import com.hazelcast.internal.networking.SocketChannelWrapper;
+import com.hazelcast.internal.networking.SocketConnection;
+import com.hazelcast.internal.networking.SocketReader;
+import com.hazelcast.internal.networking.SocketWriter;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
-import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.ConnectionType;
+import com.hazelcast.nio.IOService;
 import com.hazelcast.nio.OutboundFrame;
 
+import java.io.EOFException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -31,7 +41,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * The Tcp/Ip implementation of the {@link com.hazelcast.nio.Connection}.
- *
+ * <p>
  * A {@link TcpIpConnection} is not responsible for reading or writing data to a socket, this is done through:
  * <ol>
  * <li>{@link SocketReader}: which care of reading from the socket and feeding it into the system/li>
@@ -40,7 +50,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @see IOThreadingModel
  */
-public final class TcpIpConnection implements Connection {
+@SuppressWarnings("checkstyle:methodcount")
+public final class TcpIpConnection implements SocketConnection, MetricsProvider, DiscardableMetricsProvider {
 
     private final SocketChannelWrapper socketChannel;
 
@@ -55,6 +66,8 @@ public final class TcpIpConnection implements Connection {
     private final ILogger logger;
 
     private final int connectionId;
+
+    private final IOService ioService;
 
     private Address endPoint;
 
@@ -71,11 +84,28 @@ public final class TcpIpConnection implements Connection {
                            SocketChannelWrapper socketChannel,
                            IOThreadingModel ioThreadingModel) {
         this.connectionId = connectionId;
-        this.logger = connectionManager.getIoService().getLogger(TcpIpConnection.class.getName());
         this.connectionManager = connectionManager;
+        this.ioService = connectionManager.getIoService();
+        this.logger = ioService.getLoggingService().getLogger(TcpIpConnection.class);
         this.socketChannel = socketChannel;
         this.socketWriter = ioThreadingModel.newSocketWriter(this);
         this.socketReader = ioThreadingModel.newSocketReader(this);
+    }
+
+    @Override
+    public void provideMetrics(MetricsRegistry registry) {
+        Socket socket = socketChannel.socket();
+        SocketAddress localSocketAddress = socket != null ? socket.getLocalSocketAddress() : null;
+        SocketAddress remoteSocketAddress = socket != null ? socket.getRemoteSocketAddress() : null;
+        String metricsId = localSocketAddress + "->" + remoteSocketAddress;
+        registry.scanAndRegister(socketWriter, "tcp.connection[" + metricsId + "].out");
+        registry.scanAndRegister(socketReader, "tcp.connection[" + metricsId + "].in");
+    }
+
+    @Override
+    public void discardMetrics(MetricsRegistry registry) {
+        registry.deregister(socketReader);
+        registry.deregister(socketWriter);
     }
 
     public SocketReader getSocketReader() {
@@ -84,6 +114,11 @@ public final class TcpIpConnection implements Connection {
 
     public SocketWriter getSocketWriter() {
         return socketWriter;
+    }
+
+    @Override
+    public SocketChannelWrapper getSocketChannel() {
+        return socketChannel;
     }
 
     @Override
@@ -98,12 +133,14 @@ public final class TcpIpConnection implements Connection {
         }
     }
 
-    public TcpIpConnectionManager getConnectionManager() {
-        return connectionManager;
+    @Probe
+    private int getConnectionType() {
+        ConnectionType t = type;
+        return t == null ? -1 : t.ordinal();
     }
 
-    public SocketChannelWrapper getSocketChannelWrapper() {
-        return socketChannel;
+    public TcpIpConnectionManager getConnectionManager() {
+        return connectionManager;
     }
 
     @Override
@@ -128,12 +165,12 @@ public final class TcpIpConnection implements Connection {
 
     @Override
     public long lastWriteTimeMillis() {
-        return socketWriter.getLastWriteTimeMillis();
+        return socketWriter.lastWriteTimeMillis();
     }
 
     @Override
     public long lastReadTimeMillis() {
-        return socketReader.getLastReadTimeMillis();
+        return socketReader.lastReadTimeMillis();
     }
 
     @Override
@@ -157,17 +194,6 @@ public final class TcpIpConnection implements Connection {
         return connectionId;
     }
 
-    Object getConnectionAddress() {
-        return (endPoint == null) ? socketChannel.socket().getRemoteSocketAddress() : endPoint;
-    }
-
-    public Object getMetricsId() {
-        Socket socket = socketChannel.socket();
-        SocketAddress localSocketAddress = socket != null ? socket.getLocalSocketAddress() : null;
-        SocketAddress remoteSocketAddress = socket != null ? socket.getRemoteSocketAddress() : null;
-        return getType() + "#" + localSocketAddress + "->" + remoteSocketAddress;
-    }
-
     public void setSendBufferSize(int size) throws SocketException {
         socketChannel.socket().setSendBufferSize(size);
     }
@@ -178,13 +204,14 @@ public final class TcpIpConnection implements Connection {
 
     @Override
     public boolean isClient() {
-        final ConnectionType t = type;
+        ConnectionType t = type;
         return (t != null) && t != ConnectionType.NONE && t.isClient();
     }
 
+
     /**
      * Starts this connection.
-     *
+     * <p>
      * Starting means that the connection is going to register itself to listen to incoming traffic.
      */
     public void start() {
@@ -230,6 +257,8 @@ public final class TcpIpConnection implements Connection {
         this.closeCause = cause;
         this.closeReason = reason;
 
+        logClose();
+
         try {
             if (socketChannel != null && socketChannel.isOpen()) {
                 socketReader.close();
@@ -240,21 +269,35 @@ public final class TcpIpConnection implements Connection {
             logger.warning(e);
         }
 
-        Object connAddress = getConnectionAddress();
-        String message = "Connection [" + connAddress + "] lost. Reason: ";
-        if (closeReason != null) {
-            message = closeReason;
-        } else if (cause == null) {
-            message += "Socket explicitly closed";
-        } else {
-            message += cause.getClass().getName() + "[" + cause.getMessage() + "]";
-        }
-
-        logger.info(message);
         connectionManager.onClose(this);
-        connectionManager.getIoService().onDisconnect(endPoint);
+        ioService.onDisconnect(endPoint, cause);
         if (cause != null && monitor != null) {
             monitor.onError(cause);
+        }
+    }
+
+    private void logClose() {
+        String message = toString() + " closed. Reason: ";
+        if (closeReason != null) {
+            message += closeReason;
+        } else if (closeCause != null) {
+            message += closeCause.getClass().getName() + "[" + closeCause.getMessage() + "]";
+        } else {
+            message += "Socket explicitly closed";
+        }
+
+        if (ioService.isActive()) {
+            if (closeCause == null || closeCause instanceof EOFException) {
+                logger.info(message);
+            } else {
+                logger.warning(message, closeCause);
+            }
+        } else {
+            if (closeCause == null) {
+                logger.finest(message);
+            } else {
+                logger.finest(message, closeCause);
+            }
         }
     }
 
@@ -265,7 +308,11 @@ public final class TcpIpConnection implements Connection {
 
     @Override
     public String getCloseReason() {
-        return closeReason;
+        if (closeReason == null) {
+            return closeCause == null ? null : closeCause.getMessage();
+        } else {
+            return closeReason;
+        }
     }
 
     @Override

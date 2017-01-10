@@ -82,7 +82,7 @@ public class ConfigXmlGenerator {
                 .append("xmlns=\"http://www.hazelcast.com/schema/config\"\n")
                 .append("xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n")
                 .append("xsi:schemaLocation=\"http://www.hazelcast.com/schema/config ")
-                .append("http://www.hazelcast.com/schema/config/hazelcast-config-3.7.xsd\">");
+                .append("http://www.hazelcast.com/schema/config/hazelcast-config-3.8.xsd\">");
         xml.append("<group>");
         xml.append("<name>").append(config.getGroupConfig().getName()).append("</name>");
         xml.append("<password>").append("****").append("</password>");
@@ -116,9 +116,15 @@ public class ConfigXmlGenerator {
 
         semaphoreXmlGenerator(xml, config);
 
+        lockXmlGenerator(xml, config);
+
         ringbufferXmlGenerator(xml, config);
 
         executorXmlGenerator(xml, config);
+
+        durableExecutorXmlGenerator(xml, config);
+
+        scheduledExecutorXmlGenerator(xml, config);
 
         partitionGroupXmlGenerator(xml, config);
 
@@ -127,6 +133,8 @@ public class ConfigXmlGenerator {
         reliableTopicXmlGenerator(xml, config);
 
         liteMemberXmlGenerator(xml, config);
+
+        nativeMemoryXmlGenerator(xml, config);
 
         hotRestartXmlGenerator(xml, config);
 
@@ -189,6 +197,25 @@ public class ConfigXmlGenerator {
             xml.append("<pool-size>").append(ex.getPoolSize()).append("</pool-size>");
             xml.append("<queue-capacity>").append(ex.getQueueCapacity()).append("</queue-capacity>");
             xml.append("</executor-service>");
+        }
+    }
+
+    private void durableExecutorXmlGenerator(StringBuilder xml, Config config) {
+        for (DurableExecutorConfig ex : config.getDurableExecutorConfigs().values()) {
+            xml.append("<durable-executor-service name=\"").append(ex.getName()).append("\">");
+            appendNode(xml, "pool-size", ex.getPoolSize());
+            appendNode(xml, "durability", ex.getDurability());
+            appendNode(xml, "capacity", ex.getCapacity());
+            xml.append("</durable-executor-service>");
+        }
+    }
+
+    private void scheduledExecutorXmlGenerator(StringBuilder xml, Config config) {
+        for (ScheduledExecutorConfig ex : config.getScheduledExecutorConfigs().values()) {
+            xml.append("<scheduled-executor-service name=\"").append(ex.getName()).append("\">");
+            appendNode(xml, "pool-size", ex.getPoolSize());
+            appendNode(xml, "durability", ex.getDurability());
+            xml.append("</scheduled-executor-service>");
         }
     }
 
@@ -285,9 +312,11 @@ public class ConfigXmlGenerator {
         final Collection<QueueConfig> qCfgs = config.getQueueConfigs().values();
         for (QueueConfig q : qCfgs) {
             xml.append("<queue name=\"").append(q.getName()).append("\">");
+            xml.append("<statistics-enabled>").append(q.isStatisticsEnabled()).append("</statistics-enabled>");
             xml.append("<max-size>").append(q.getMaxSize()).append("</max-size>");
             xml.append("<backup-count>").append(q.getBackupCount()).append("</backup-count>");
             xml.append("<async-backup-count>").append(q.getAsyncBackupCount()).append("</async-backup-count>");
+            xml.append("<empty-queue-ttl>").append(q.getEmptyQueueTtl()).append("</empty-queue-ttl>");
             if (!q.getItemListenerConfigs().isEmpty()) {
                 xml.append("<item-listeners>");
                 for (ItemListenerConfig lc : q.getItemListenerConfigs()) {
@@ -297,7 +326,33 @@ public class ConfigXmlGenerator {
                 }
                 xml.append("</item-listeners>");
             }
+            final QueueStoreConfig storeConfig = q.getQueueStoreConfig();
+            if (storeConfig != null) {
+                xml.append("<queue-store enabled=\"").append(storeConfig.isEnabled()).append("\">");
+                if (storeConfig.getClassName() != null) {
+                    xml.append("<class-name>").append(storeConfig.getClassName()).append("</class-name>");
+                }
+                if (storeConfig.getFactoryClassName() != null) {
+                    xml.append("<factory-class-name>").append(storeConfig.getFactoryClassName()).append("</factory-class-name>");
+                }
+                appendProperties(xml, storeConfig.getProperties());
+                xml.append("</queue-store>");
+            }
+            if (q.getQuorumName() != null) {
+                xml.append("<quorum-ref>").append(q.getQuorumName()).append("</quorum-ref>");
+            }
             xml.append("</queue>");
+        }
+    }
+
+    private void lockXmlGenerator(StringBuilder xml, Config config) {
+        final Collection<LockConfig> configs = config.getLockConfigs().values();
+        for (LockConfig c : configs) {
+            xml.append("<lock name=\"").append(c.getName()).append("\">");
+            if (c.getQuorumName() != null) {
+                xml.append("<quorum-ref>").append(c.getQuorumName()).append("</quorum-ref>");
+            }
+            xml.append("</lock>");
         }
     }
 
@@ -306,10 +361,22 @@ public class ConfigXmlGenerator {
         for (RingbufferConfig rbConfig : configs) {
             xml.append("<ringbuffer name=\"").append(rbConfig.getName()).append("\">");
             xml.append("<capacity>").append(rbConfig.getCapacity()).append("</capacity>");
+            xml.append("<time-to-live-seconds>").append(rbConfig.getTimeToLiveSeconds()).append("</time-to-live-seconds>");
             xml.append("<backup-count>").append(rbConfig.getBackupCount()).append("</backup-count>");
             xml.append("<async-backup-count>").append(rbConfig.getAsyncBackupCount()).append("</async-backup-count>");
-            xml.append("<time-to-live-seconds>").append(rbConfig.getTimeToLiveSeconds()).append("</time-to-live-seconds>");
             xml.append("<in-memory-format>").append(rbConfig.getInMemoryFormat().toString()).append("</in-memory-format>");
+            final RingbufferStoreConfig storeConfig = rbConfig.getRingbufferStoreConfig();
+            if (storeConfig != null) {
+                xml.append("<ringbuffer-store enabled=\"").append(storeConfig.isEnabled()).append("\">");
+                if (storeConfig.getClassName() != null) {
+                    xml.append("<class-name>").append(storeConfig.getClassName()).append("</class-name>");
+                }
+                if (storeConfig.getFactoryClassName() != null) {
+                    xml.append("<factory-class-name>").append(storeConfig.getFactoryClassName()).append("</factory-class-name>");
+                }
+                appendProperties(xml, storeConfig.getProperties());
+                xml.append("</ringbuffer-store>");
+            }
             xml.append("</ringbuffer>");
         }
     }
@@ -403,6 +470,8 @@ public class ConfigXmlGenerator {
 
             mapStoreConfigXmlGenerator(xml, m);
 
+            mapNearCacheConfigXmlGenerator(xml, m.getNearCacheConfig());
+
             wanReplicationConfigXmlGenerator(xml, m.getWanReplicationRef());
 
             mapIndexConfigXmlGenerator(xml, m);
@@ -414,6 +483,8 @@ public class ConfigXmlGenerator {
             mapPartitionLostListenerConfigXmlGenerator(xml, m);
 
             mapPartitionStrategyConfigXmlGenerator(xml, m);
+
+            xml.append("</map>");
         }
     }
 
@@ -437,10 +508,11 @@ public class ConfigXmlGenerator {
             appendHotRestartConfig(xml, c.getHotRestartConfig());
             xml.append("<read-through>").append(c.isReadThrough()).append("</read-through>");
             xml.append("<write-through>").append(c.isWriteThrough()).append("</write-through>");
-            xml.append("<cache-loader-factory class-name=\"").append(c.getCacheLoaderFactory()).append("\"/>");
-            xml.append("<cache-writer-factory class-name=\"").append(c.getCacheWriterFactory()).append("\"/>");
-            ExpiryPolicyFactoryConfig expiryPolicyFactoryConfig = c.getExpiryPolicyFactoryConfig();
-            cacheExpiryPolicyFactoryConfigXmlGenerator(xml, expiryPolicyFactoryConfig);
+            checkAndFillCacheLoaderFactoryConfigXml(xml, c.getCacheLoaderFactory());
+            checkAndFillCacheLoaderConfigXml(xml, c.getCacheLoader());
+            checkAndFillCacheWriterFactoryConfigXml(xml, c.getCacheWriterFactory());
+            checkAndFillCacheWriterConfigXml(xml, c.getCacheWriter());
+            cacheExpiryPolicyFactoryConfigXmlGenerator(xml, c.getExpiryPolicyFactoryConfig());
             xml.append("<cache-entry-listeners>");
             for (CacheSimpleEntryListenerConfig el : c.getCacheEntryListeners()) {
                 xml.append("<cache-entry-listener")
@@ -469,10 +541,34 @@ public class ConfigXmlGenerator {
         }
     }
 
+    private void checkAndFillCacheWriterFactoryConfigXml(StringBuilder xml, String cacheWriter) {
+        if (!StringUtil.isNullOrEmpty(cacheWriter)) {
+            xml.append("<cache-writer-factory class-name=\"").append(cacheWriter).append("\"/>");
+        }
+    }
+
+    private void checkAndFillCacheWriterConfigXml(StringBuilder xml, String cacheWriter) {
+        if (!StringUtil.isNullOrEmpty(cacheWriter)) {
+            xml.append("<cache-writer class-name=\"").append(cacheWriter).append("\"/>");
+        }
+    }
+
+    private void checkAndFillCacheLoaderFactoryConfigXml(StringBuilder xml, String cacheLoader) {
+        if (!StringUtil.isNullOrEmpty(cacheLoader)) {
+            xml.append("<cache-loader-factory class-name=\"").append(cacheLoader).append("\"/>");
+        }
+    }
+
+    private void checkAndFillCacheLoaderConfigXml(StringBuilder xml, String cacheLoader) {
+        if (!StringUtil.isNullOrEmpty(cacheLoader)) {
+            xml.append("<cache-loader class-name=\"").append(cacheLoader).append("\"/>");
+        }
+    }
+
     private void cacheExpiryPolicyFactoryConfigXmlGenerator(StringBuilder xml,
-            ExpiryPolicyFactoryConfig expiryPolicyFactoryConfig) {
+                                                            ExpiryPolicyFactoryConfig expiryPolicyFactoryConfig) {
         if (expiryPolicyFactoryConfig != null) {
-            if (StringUtil.isNullOrEmpty(expiryPolicyFactoryConfig.getClassName())) {
+            if (!StringUtil.isNullOrEmpty(expiryPolicyFactoryConfig.getClassName())) {
                 xml.append("<expiry-policy-factory class-name=\"")
                         .append(expiryPolicyFactoryConfig.getClassName()).append("\"/>");
             } else {
@@ -485,8 +581,8 @@ public class ConfigXmlGenerator {
                     DurationConfig durationConfig = timedExpiryPolicyFactoryConfig.getDurationConfig();
                     xml.append("<expiry-policy-factory>");
                     xml.append("<timed-expiry-policy-factory")
-                            .append(" expiry-policy-type=\"").append(expiryPolicyType.name()).append("\"/>")
-                            .append(" duration-amount=\"").append(durationConfig.getDurationAmount()).append("\"/>")
+                            .append(" expiry-policy-type=\"").append(expiryPolicyType.name()).append("\"")
+                            .append(" duration-amount=\"").append(durationConfig.getDurationAmount()).append("\"")
                             .append(" time-unit=\"").append(durationConfig.getTimeUnit().name()).append("\"/>");
                     xml.append("</expiry-policy-factory>");
                 }
@@ -520,7 +616,6 @@ public class ConfigXmlGenerator {
             }
             xml.append("</partition-strategy>");
         }
-        xml.append("</map>");
     }
 
     private void mapEntryListenerConfigXmlGenerator(StringBuilder xml, MapConfig m) {
@@ -606,7 +701,7 @@ public class ConfigXmlGenerator {
         }
     }
 
-    private void nearCacheConfigXmlGenerator(StringBuilder xml, NearCacheConfig n) {
+    private void mapNearCacheConfigXmlGenerator(StringBuilder xml, NearCacheConfig n) {
         if (n != null) {
             xml.append("<near-cache>");
             xml.append("<max-size>").append(n.getMaxSize()).append("</max-size>");
@@ -614,7 +709,6 @@ public class ConfigXmlGenerator {
             xml.append("<max-idle-seconds>").append(n.getMaxIdleSeconds()).append("</max-idle-seconds>");
             xml.append("<eviction-policy>").append(n.getEvictionPolicy()).append("</eviction-policy>");
             xml.append("<invalidate-on-change>").append(n.isInvalidateOnChange()).append("</invalidate-on-change>");
-            xml.append("<local-update-policy>").append(n.getLocalUpdatePolicy()).append("</local-update-policy>");
             xml.append("<in-memory-format>").append(n.getInMemoryFormat()).append("</in-memory-format>");
             evictionConfigXmlGenerator(xml, n.getEvictionConfig());
             xml.append("</near-cache>");
@@ -735,16 +829,39 @@ public class ConfigXmlGenerator {
             return;
         }
         xml.append("<hot-restart-persistence enabled=\"").append(hrCfg.isEnabled()).append("\">");
-        xml.append("<base-dir>").append(hrCfg.getBaseDir().getAbsolutePath()).append("</base-dir>");
-        xml.append("<parallelism>").append(hrCfg.getParallelism()).append("</parallelism>");
-        xml.append("<validation-timeout-seconds>")
-                .append(hrCfg.getValidationTimeoutSeconds())
-                .append("</validation-timeout-seconds>");
-        xml.append("<data-load-timeout-seconds>")
-                .append(hrCfg.getDataLoadTimeoutSeconds())
-                .append("</data-load-timeout-seconds>");
+        appendNode(xml, "base-dir", hrCfg.getBaseDir().getAbsolutePath());
+        if (hrCfg.getBackupDir() != null) {
+            appendNode(xml, "backup-dir", hrCfg.getBackupDir().getAbsolutePath());
+        }
+        appendNode(xml, "parallelism", hrCfg.getParallelism());
+        appendNode(xml, "validation-timeout-seconds", hrCfg.getValidationTimeoutSeconds());
+        appendNode(xml, "data-load-timeout-seconds", hrCfg.getDataLoadTimeoutSeconds());
+        appendNode(xml, "cluster-data-recovery-policy", hrCfg.getClusterDataRecoveryPolicy());
         xml.append("</hot-restart-persistence>");
     }
+
+    private void nativeMemoryXmlGenerator(StringBuilder xml, Config config) {
+        NativeMemoryConfig nativeMemoryConfig = config.getNativeMemoryConfig();
+        if (nativeMemoryConfig == null) {
+            xml.append("<native-memory enabled=\"false\" />");
+            return;
+        }
+        xml.append("<native-memory enabled=\"").append(nativeMemoryConfig.isEnabled())
+                .append("\"")
+                .append(" allocator-type=\"").append(nativeMemoryConfig.getAllocatorType())
+                .append("\"")
+                .append(">");
+        xml.append("<size")
+                .append(" unit=\"").append(nativeMemoryConfig.getSize().getUnit()).append("\"")
+                .append(" value=\"").append(nativeMemoryConfig.getSize().getValue()).append("\"")
+                .append("/>");
+
+        appendNode(xml, "min-block-size", nativeMemoryConfig.getMinBlockSize());
+        appendNode(xml, "page-size", nativeMemoryConfig.getPageSize());
+        appendNode(xml, "metadata-space-percentage", nativeMemoryConfig.getMetadataSpacePercentage());
+        xml.append("</native-memory>");
+    }
+
 
     private void liteMemberXmlGenerator(StringBuilder xml, Config config) {
         xml.append("<lite-member enabled=\"").append(config.isLiteMember()).append("\"/>");
@@ -793,6 +910,14 @@ public class ConfigXmlGenerator {
             if (xmlOutput != null) {
                 closeResource(xmlOutput.getWriter());
             }
+        }
+    }
+
+    private static void appendNode(StringBuilder xml, String name, Object value) {
+        if (value != null) {
+            xml.append('<').append(name).append('>')
+                    .append(value)
+                    .append("</").append(name).append('>');
         }
     }
 

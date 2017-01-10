@@ -225,12 +225,23 @@ public class DefaultMapOperationProvider implements MapOperationProvider {
     }
 
     @Override
-    public MapOperation createPutAllPerMemberOperation(String name, int[] partitions, MapEntries[] mapEntries) {
-        return new PutAllPerMemberOperation(name, partitions, mapEntries);
+    public OperationFactory createPutAllOperationFactory(String name, int[] partitions, MapEntries[] mapEntries) {
+        return new PutAllPartitionAwareOperationFactory(name, partitions, mapEntries);
     }
 
     @Override
     public MapOperation createPutFromLoadAllOperation(String name, List<Data> keyValueSequence) {
         return new PutFromLoadAllOperation(name, keyValueSequence);
     }
+
+    @Override
+    public MapOperation createFetchKeysOperation(String name, int lastTableIndex, int fetchSize) {
+        return new MapFetchKeysOperation(name, lastTableIndex, fetchSize);
+    }
+
+    @Override
+    public MapOperation createFetchEntriesOperation(String name, int lastTableIndex, int fetchSize) {
+        return new MapFetchEntriesOperation(name, lastTableIndex, fetchSize);
+    }
+
 }

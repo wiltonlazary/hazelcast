@@ -20,27 +20,37 @@ import com.hazelcast.internal.cluster.MemberInfo;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.DataSerializable;
 import com.hazelcast.security.Credentials;
+import com.hazelcast.version.MemberVersion;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
-public class JoinRequest extends JoinMessage implements DataSerializable {
+import static java.util.Collections.unmodifiableSet;
+
+public class JoinRequest extends JoinMessage {
 
     private Credentials credentials;
     private int tryCount;
     private Map<String, Object> attributes;
+    private Set<String> excludedMemberUuids = Collections.emptySet();
 
     public JoinRequest() {
     }
 
-    public JoinRequest(byte packetVersion, int buildNumber, Address address, String uuid, boolean liteMember, ConfigCheck config,
-                       Credentials credentials, Map<String, Object> attributes) {
-        super(packetVersion, buildNumber, address, uuid, liteMember, config);
+    public JoinRequest(byte packetVersion, int buildNumber, MemberVersion version, Address address, String uuid,
+                       boolean liteMember, ConfigCheck config, Credentials credentials, Map<String, Object> attributes,
+                       Set<String> excludedMemberUuids) {
+        super(packetVersion, buildNumber, version, address, uuid, liteMember, config);
         this.credentials = credentials;
         this.attributes = attributes;
+        if (excludedMemberUuids != null) {
+            this.excludedMemberUuids = unmodifiableSet(new HashSet<String>(excludedMemberUuids));
+        }
     }
 
     public Credentials getCredentials() {
@@ -59,8 +69,12 @@ public class JoinRequest extends JoinMessage implements DataSerializable {
         return attributes;
     }
 
+    public Set<String> getExcludedMemberUuids() {
+        return excludedMemberUuids;
+    }
+
     public MemberInfo toMemberInfo() {
-        return new MemberInfo(address, uuid, attributes, liteMember);
+        return new MemberInfo(address, uuid, attributes, liteMember, version);
     }
 
     @Override
@@ -78,6 +92,13 @@ public class JoinRequest extends JoinMessage implements DataSerializable {
             Object value = in.readObject();
             attributes.put(key, value);
         }
+        size = in.readInt();
+        Set<String> excludedMemberUuids = new HashSet<String>();
+        for (int i = 0; i < size; i++) {
+            excludedMemberUuids.add(in.readUTF());
+        }
+
+        this.excludedMemberUuids = unmodifiableSet(excludedMemberUuids);
     }
 
     @Override
@@ -90,6 +111,10 @@ public class JoinRequest extends JoinMessage implements DataSerializable {
             out.writeUTF(entry.getKey());
             out.writeObject(entry.getValue());
         }
+        out.writeInt(excludedMemberUuids.size());
+        for (String uuid : excludedMemberUuids) {
+            out.writeUTF(uuid);
+        }
     }
 
     @Override
@@ -97,13 +122,19 @@ public class JoinRequest extends JoinMessage implements DataSerializable {
         return "JoinRequest{"
                 + "packetVersion=" + packetVersion
                 + ", buildNumber=" + buildNumber
+                + ", version=" + version
                 + ", address=" + address
                 + ", uuid='" + uuid + "'"
                 + ", liteMember=" + liteMember
                 + ", credentials=" + credentials
                 + ", memberCount=" + getMemberCount()
                 + ", tryCount=" + tryCount
+                + (excludedMemberUuids.size() > 0 ? ", excludedMemberUuids=" + excludedMemberUuids : "")
                 + '}';
     }
 
+    @Override
+    public int getId() {
+        return ClusterDataSerializerHook.JOIN_REQUEST;
+    }
 }

@@ -21,13 +21,13 @@ import static org.junit.Assert.assertTrue;
 public class ManagementCenterServiceTest extends HazelcastTestSupport {
 
     @Before
-    public void setUp() throws Exception {
+    public void setUp() {
         setLoggingLog4j();
         setLogLevel(Level.DEBUG);
     }
 
     @After
-    public void tearDown() throws Exception {
+    public void tearDown() {
         resetLogLevel();
 
         Hazelcast.shutdownAll();

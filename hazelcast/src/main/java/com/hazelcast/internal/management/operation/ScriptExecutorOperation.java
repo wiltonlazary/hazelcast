@@ -16,10 +16,10 @@
 
 package com.hazelcast.internal.management.operation;
 
+import com.hazelcast.internal.management.ManagementDataSerializerHook;
 import com.hazelcast.internal.management.ScriptEngineManagerContext;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.Operation;
 
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
@@ -32,13 +32,14 @@ import java.util.Set;
 /**
  *  Operation to execute script on the node.
  */
-public class ScriptExecutorOperation extends Operation {
+public class ScriptExecutorOperation extends AbstractManagementOperation {
 
     private String engineName;
     private String script;
     private Map<String, Object> bindings;
     private Object result;
 
+    @SuppressWarnings("unused")
     public ScriptExecutorOperation() {
     }
 
@@ -46,10 +47,6 @@ public class ScriptExecutorOperation extends Operation {
         this.engineName = engineName;
         this.script = script;
         this.bindings = bindings;
-    }
-
-    @Override
-    public void beforeRun() throws Exception {
     }
 
     @Override
@@ -71,15 +68,6 @@ public class ScriptExecutorOperation extends Operation {
         } catch (ScriptException e) {
             this.result = e.getMessage();
         }
-    }
-
-    @Override
-    public void afterRun() throws Exception {
-    }
-
-    @Override
-    public boolean returnsResponse() {
-        return true;
     }
 
     @Override
@@ -116,5 +104,10 @@ public class ScriptExecutorOperation extends Operation {
                 bindings.put(key, value);
             }
         }
+    }
+
+    @Override
+    public int getId() {
+        return ManagementDataSerializerHook.SCRIPT_EXECUTOR;
     }
 }

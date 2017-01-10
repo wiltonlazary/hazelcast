@@ -19,8 +19,10 @@ package com.hazelcast.client;
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.connection.ClientConnectionManager;
 import com.hazelcast.client.connection.nio.ClientConnection;
+import com.hazelcast.client.impl.ClientEngineImpl;
 import com.hazelcast.client.impl.ClientTestUtil;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
+import com.hazelcast.client.spi.impl.ClusterListenerSupport;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.ListenerConfig;
@@ -216,8 +218,8 @@ public class ClientServiceTest extends HazelcastTestSupport {
         client1.getLifecycleService().shutdown();
         client2.getLifecycleService().shutdown();
 
-        assertTrue(latchAdd.await(6, TimeUnit.SECONDS));
-        assertTrue(latchRemove.await(6, TimeUnit.SECONDS));
+        assertTrue(latchAdd.await(2 * ClientEngineImpl.ENDPOINT_REMOVE_DELAY_SECONDS, TimeUnit.SECONDS));
+        assertTrue(latchRemove.await(2 * ClientEngineImpl.ENDPOINT_REMOVE_DELAY_SECONDS, TimeUnit.SECONDS));
 
         assertTrue(clientService.removeClientListener(id));
 
@@ -415,5 +417,25 @@ public class ClientServiceTest extends HazelcastTestSupport {
         public void clientDisconnected(Client client) {
             countDown();
         }
+    }
+
+
+    @Test
+    public void testClientShutdownDuration_whenServersDown() {
+        HazelcastInstance hazelcastInstance = hazelcastFactory.newHazelcastInstance();
+        final CountDownLatch countDownLatch = new CountDownLatch(1);
+        ClientConfig config = new ClientConfig();
+        config.getNetworkConfig().setConnectionAttemptPeriod(0).setConnectionAttemptLimit(1);
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(config);
+        client.getLifecycleService().addLifecycleListener(new LifecycleListener() {
+            @Override
+            public void stateChanged(LifecycleEvent event) {
+                if (event.getState() == LifecycleEvent.LifecycleState.SHUTDOWN)
+                    countDownLatch.countDown();
+            }
+        });
+
+        hazelcastInstance.shutdown();
+        assertOpenEventually(countDownLatch, ClusterListenerSupport.TERMINATE_TIMEOUT_SECONDS);
     }
 }

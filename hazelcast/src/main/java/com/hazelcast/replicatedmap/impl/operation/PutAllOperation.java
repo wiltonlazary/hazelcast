@@ -25,23 +25,23 @@ import com.hazelcast.replicatedmap.impl.ReplicatedMapEventPublishingService;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.replicatedmap.impl.client.ReplicatedMapEntries;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecordStore;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.partition.IPartitionService;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.Map;
+
+import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_SELECTOR;
 
 /**
  * Puts a set of records to the replicated map.
  */
-public class PutAllOperation extends AbstractOperation {
+public class PutAllOperation extends AbstractSerializableOperation {
+
     private String name;
     private ReplicatedMapEntries entries;
-    private transient ReplicatedMapService service;
-    private transient ReplicatedRecordStore store;
 
+    @SuppressWarnings("unused")
     public PutAllOperation() {
     }
 
@@ -52,46 +52,40 @@ public class PutAllOperation extends AbstractOperation {
 
     @Override
     public void run() throws Exception {
+        ReplicatedMapService service = getService();
+        ReplicatedRecordStore store = service.getReplicatedRecordStore(name, true, getPartitionId());
         int partitionId = getPartitionId();
-        service = getService();
-        store = service.getReplicatedRecordStore(name, true, getPartitionId());
         IPartitionService partitionService = getNodeEngine().getPartitionService();
-        for (Map.Entry<Data, Data> entry : entries.getEntries()) {
-            Data key = entry.getKey();
-            Data value = entry.getValue();
+        ReplicatedMapEventPublishingService eventPublishingService = service.getEventPublishingService();
+        for (int i = 0; i < entries.size(); i++) {
+            Data key = entries.getKey(i);
+            Data value = entries.getValue(i);
             if (partitionId != partitionService.getPartitionId(key)) {
                 continue;
             }
             Object putResult = store.put(key, value);
             Data oldValue = getNodeEngine().toData(putResult);
-            publishEvent(key, value, oldValue);
+            eventPublishingService.fireEntryListenerEvent(key, oldValue, value, name, getCallerAddress());
             VersionResponsePair response = new VersionResponsePair(putResult, store.getVersion());
             publishReplicationMessage(key, value, response);
         }
     }
 
-    private void publishEvent(Data key, Data value, Data oldValue) {
-        ReplicatedMapEventPublishingService eventPublishingService = service.getEventPublishingService();
-        eventPublishingService.fireEntryListenerEvent(key, oldValue, value, name, getCallerAddress());
-    }
-
-
     private void publishReplicationMessage(Data key, Data value, VersionResponsePair response) {
         OperationService operationService = getNodeEngine().getOperationService();
-        Collection<Member> members = getNodeEngine().getClusterService().getMembers();
+        Collection<Member> members = getNodeEngine().getClusterService().getMembers(DATA_MEMBER_SELECTOR);
         for (Member member : members) {
             Address address = member.getAddress();
             if (address.equals(getNodeEngine().getThisAddress())) {
                 continue;
             }
-            ReplicateUpdateOperation updateOperation = new ReplicateUpdateOperation(name, key, value, 0, response,
-                    false, getCallerAddress());
+            ReplicateUpdateOperation updateOperation = new ReplicateUpdateOperation(name, key, value, 0, response, false,
+                    getCallerAddress());
             updateOperation.setPartitionId(getPartitionId());
             updateOperation.setValidateTarget(false);
             operationService.invokeOnTarget(getServiceName(), updateOperation, address);
         }
     }
-
 
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
@@ -103,5 +97,10 @@ public class PutAllOperation extends AbstractOperation {
     protected void readInternal(ObjectDataInput in) throws IOException {
         name = in.readUTF();
         entries = in.readObject();
+    }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.PUT_ALL;
     }
 }

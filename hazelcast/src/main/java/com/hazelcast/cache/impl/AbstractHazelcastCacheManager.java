@@ -308,7 +308,7 @@ public abstract class AbstractHazelcastCacheManager
             @Override
             public void stateChanged(LifecycleEvent event) {
                 if (event.getState() == LifecycleEvent.LifecycleState.SHUTTING_DOWN) {
-                    close();
+                    onShuttingDown();
                 }
             }
         });
@@ -421,8 +421,7 @@ public abstract class AbstractHazelcastCacheManager
                 cacheConfig.getCacheEntryListenerConfigurations().iterator();
         while (iterator.hasNext()) {
             CacheEntryListenerConfiguration<K, V> listenerConfig = iterator.next();
-            iterator.remove();
-            source.registerCacheEntryListener(listenerConfig);
+            ((ICacheInternal<K, V>) source).registerCacheEntryListener(listenerConfig, false);
         }
     }
 
@@ -449,5 +448,7 @@ public abstract class AbstractHazelcastCacheManager
                                                                String simpleCacheName);
 
     protected abstract void postClose();
+
+    protected abstract void onShuttingDown();
 
 }

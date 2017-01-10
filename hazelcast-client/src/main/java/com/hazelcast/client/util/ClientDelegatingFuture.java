@@ -83,6 +83,11 @@ public class ClientDelegatingFuture<V> implements InternalCompletableFuture<V> {
     }
 
     @Override
+    public boolean complete(Object value) {
+        return future.complete(value);
+    }
+
+    @Override
     public boolean cancel(boolean mayInterruptIfRunning) {
         done = true;
         return false;
@@ -112,6 +117,7 @@ public class ClientDelegatingFuture<V> implements InternalCompletableFuture<V> {
     }
 
     @Override
+    @SuppressWarnings({"checkstyle:npathcomplexity", "checkstyle:cyclomaticcomplexity"})
     public V get(long timeout, TimeUnit unit) throws InterruptedException,
             ExecutionException, TimeoutException {
         if (!done || !isResponseSet()) {
@@ -157,11 +163,6 @@ public class ClientDelegatingFuture<V> implements InternalCompletableFuture<V> {
         } catch (Exception e) {
             throw ExceptionUtil.rethrow(e);
         }
-    }
-
-    @Override
-    public V getSafely() {
-        return join();
     }
 
     private V getResult() {

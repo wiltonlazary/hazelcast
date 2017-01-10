@@ -16,6 +16,7 @@
 
 package com.hazelcast.transaction.impl;
 
+import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.logging.ILogger;
@@ -27,15 +28,18 @@ import com.hazelcast.spi.exception.TargetNotMemberException;
 import com.hazelcast.transaction.TransactionException;
 import com.hazelcast.transaction.TransactionNotActiveException;
 import com.hazelcast.transaction.TransactionOptions;
+import com.hazelcast.transaction.TransactionTimedOutException;
 import com.hazelcast.transaction.impl.operations.CreateTxBackupLogOperation;
 import com.hazelcast.transaction.impl.operations.PurgeTxBackupLogOperation;
 import com.hazelcast.transaction.impl.operations.ReplicateTxBackupLogOperation;
 import com.hazelcast.transaction.impl.operations.RollbackTxBackupLogOperation;
+import com.hazelcast.util.ExceptionUtil;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 
 import static com.hazelcast.transaction.TransactionOptions.TransactionType;
@@ -57,21 +61,20 @@ import static com.hazelcast.util.ExceptionUtil.rethrow;
 import static com.hazelcast.util.FutureUtil.ExceptionHandler;
 import static com.hazelcast.util.FutureUtil.RETHROW_TRANSACTION_EXCEPTION;
 import static com.hazelcast.util.FutureUtil.logAllExceptions;
+import static com.hazelcast.util.FutureUtil.waitUntilAllRespondedWithDeadline;
 import static com.hazelcast.util.FutureUtil.waitWithDeadline;
 import static com.hazelcast.util.UuidUtil.newUnsecureUuidString;
 import static java.lang.Boolean.TRUE;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.MINUTES;
 
 public class TransactionImpl implements Transaction {
 
     private static final Address[] EMPTY_ADDRESSES = new Address[0];
     private static final ThreadLocal<Boolean> TRANSACTION_EXISTS = new ThreadLocal<Boolean>();
-    private static final int ROLLBACK_TIMEOUT_MINUTES = 5;
-    private static final int COMMIT_TIMEOUT_MINUTES = 5;
 
     private final ExceptionHandler rollbackExceptionHandler;
     private final ExceptionHandler rollbackTxExceptionHandler;
+    private final ExceptionHandler replicationTxExceptionHandler;
     private final TransactionManagerServiceImpl transactionManagerService;
     private final NodeEngine nodeEngine;
     private final String txnId;
@@ -109,6 +112,7 @@ public class TransactionImpl implements Transaction {
         this.logger = nodeEngine.getLogger(getClass());
         this.rollbackExceptionHandler = logAllExceptions(logger, "Error during rollback!", Level.FINEST);
         this.rollbackTxExceptionHandler = logAllExceptions(logger, "Error during tx rollback backup!", Level.FINEST);
+        this.replicationTxExceptionHandler = createReplicationTxExceptionHandler(logger);
         this.originatedFromClient = originatedFromClient;
     }
 
@@ -131,6 +135,7 @@ public class TransactionImpl implements Transaction {
         this.logger = nodeEngine.getLogger(getClass());
         this.rollbackExceptionHandler = logAllExceptions(logger, "Error during rollback!", Level.FINEST);
         this.rollbackTxExceptionHandler = logAllExceptions(logger, "Error during tx rollback backup!", Level.FINEST);
+        this.replicationTxExceptionHandler = createReplicationTxExceptionHandler(logger);
     }
 
     @Override
@@ -228,7 +233,7 @@ public class TransactionImpl implements Transaction {
             createBackupLogs();
             state = PREPARING;
             List<Future> futures = transactionLog.prepare(nodeEngine);
-            waitWithDeadline(futures, timeoutMillis, MILLISECONDS, RETHROW_TRANSACTION_EXCEPTION);
+            waitUntilAllRespondedWithDeadline(futures, timeoutMillis, MILLISECONDS, RETHROW_TRANSACTION_EXCEPTION);
             state = PREPARED;
             replicateTxnLog();
         } catch (Throwable e) {
@@ -284,7 +289,7 @@ public class TransactionImpl implements Transaction {
             try {
                 state = COMMITTING;
                 List<Future> futures = transactionLog.commit(nodeEngine);
-                waitWithDeadline(futures, COMMIT_TIMEOUT_MINUTES, MINUTES, RETHROW_TRANSACTION_EXCEPTION);
+                waitWithDeadline(futures, Long.MAX_VALUE, MILLISECONDS, RETHROW_TRANSACTION_EXCEPTION);
                 state = COMMITTED;
                 transactionManagerService.commitCount.inc();
             } catch (Throwable e) {
@@ -316,7 +321,7 @@ public class TransactionImpl implements Transaction {
                 //TODO: Do we need both a purge and rollback?
                 rollbackBackupLogs();
                 List<Future> futures = transactionLog.rollback(nodeEngine);
-                waitWithDeadline(futures, ROLLBACK_TIMEOUT_MINUTES, MINUTES, rollbackExceptionHandler);
+                waitWithDeadline(futures, Long.MAX_VALUE, MILLISECONDS, rollbackExceptionHandler);
                 purgeBackupLogs();
             } catch (Throwable e) {
                 throw rethrow(e);
@@ -344,7 +349,7 @@ public class TransactionImpl implements Transaction {
                 futures.add(f);
             }
         }
-        waitWithDeadline(futures, timeoutMillis, MILLISECONDS, RETHROW_TRANSACTION_EXCEPTION);
+        waitWithDeadline(futures, timeoutMillis, MILLISECONDS, replicationTxExceptionHandler);
     }
 
     /**
@@ -384,22 +389,7 @@ public class TransactionImpl implements Transaction {
             }
         }
 
-        for (Future future : futures) {
-            try {
-                future.get(timeoutMillis, MILLISECONDS);
-            } catch (MemberLeftException e) {
-                nodeEngine.getLogger(Transaction.class).warning("Member left while replicating tx begin: " + e);
-            } catch (Throwable e) {
-                if (e instanceof ExecutionException) {
-                    e = e.getCause() != null ? e.getCause() : e;
-                }
-                if (e instanceof TargetNotMemberException) {
-                    nodeEngine.getLogger(Transaction.class).warning("Member left while replicating tx begin: " + e);
-                } else {
-                    RETHROW_TRANSACTION_EXCEPTION.handleException(e);
-                }
-            }
-        }
+        waitWithDeadline(futures, timeoutMillis, MILLISECONDS, replicationTxExceptionHandler);
     }
 
     private void rollbackBackupLogs() {
@@ -474,5 +464,28 @@ public class TransactionImpl implements Transaction {
                 + ", txType=" + transactionType
                 + ", timeoutMillis=" + timeoutMillis
                 + '}';
+    }
+
+    static ExceptionHandler createReplicationTxExceptionHandler(final ILogger logger) {
+        return new ExceptionHandler() {
+            @Override
+            public void handleException(Throwable throwable) {
+                if (throwable instanceof TimeoutException) {
+                    throw new TransactionTimedOutException(throwable);
+                }
+                if (throwable instanceof MemberLeftException) {
+                    logger.warning("Member left while replicating tx begin: " + throwable);
+                    return;
+                }
+                if (throwable instanceof ExecutionException) {
+                    Throwable cause = throwable.getCause();
+                    if (cause instanceof TargetNotMemberException || cause instanceof HazelcastInstanceNotActiveException) {
+                        logger.warning("Member left while replicating tx begin: " + cause);
+                        return;
+                    }
+                }
+                throw ExceptionUtil.rethrow(throwable);
+            }
+        };
     }
 }

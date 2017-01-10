@@ -28,13 +28,16 @@ import com.hazelcast.internal.metrics.MetricsProvider;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.partition.InternalPartition;
+import com.hazelcast.internal.serialization.impl.SerializationServiceV1;
 import com.hazelcast.internal.util.counters.Counter;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
+import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.Packet;
+import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.quorum.QuorumException;
 import com.hazelcast.quorum.impl.QuorumServiceImpl;
-import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.BlockingOperation;
 import com.hazelcast.spi.Notifier;
 import com.hazelcast.spi.Operation;
@@ -43,25 +46,24 @@ import com.hazelcast.spi.ReadonlyOperation;
 import com.hazelcast.spi.exception.CallerNotMemberException;
 import com.hazelcast.spi.exception.PartitionMigratingException;
 import com.hazelcast.spi.exception.ResponseAlreadySentException;
-import com.hazelcast.spi.exception.ResponseNotSentException;
 import com.hazelcast.spi.exception.RetryableException;
 import com.hazelcast.spi.exception.RetryableHazelcastException;
 import com.hazelcast.spi.exception.WrongTargetException;
 import com.hazelcast.spi.impl.AllowedDuringPassiveState;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.operationexecutor.OperationRunner;
+import com.hazelcast.spi.impl.operationservice.impl.operations.Backup;
 import com.hazelcast.spi.impl.operationservice.impl.responses.CallTimeoutResponse;
 import com.hazelcast.spi.impl.operationservice.impl.responses.ErrorResponse;
 import com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse;
 import com.hazelcast.util.ExceptionUtil;
 
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 
 import static com.hazelcast.internal.metrics.ProbeLevel.DEBUG;
 import static com.hazelcast.internal.util.counters.SwCounter.newSwCounter;
-import static com.hazelcast.nio.IOUtil.extractOperationCallId;
-import static com.hazelcast.spi.Operation.CALL_ID_LOCAL_SKIPPED;
 import static com.hazelcast.spi.OperationAccessor.setCallerAddress;
 import static com.hazelcast.spi.OperationAccessor.setConnection;
 import static com.hazelcast.spi.impl.OperationResponseHandlerFactory.createEmptyResponseHandler;
@@ -76,6 +78,7 @@ import static java.util.logging.Level.WARNING;
 /**
  * Responsible for processing an Operation.
  */
+@SuppressWarnings("checkstyle:classfanoutcomplexity")
 class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
 
     static final int AD_HOC_PARTITION_ID = -2;
@@ -91,39 +94,39 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
     private final Address thisAddress;
     private final boolean staleReadOnMigrationEnabled;
 
+    private final Counter failedBackupsCounter;
+    private final OperationBackupHandler backupHandler;
+
     // This field doesn't need additional synchronization, since a partition-specific OperationRunner
     // will never be called concurrently.
     private InternalPartition internalPartition;
 
-    private final OperationResponseHandler remoteResponseHandler;
+    private final OutboundResponseHandler outboundResponseHandler;
 
     // When partitionId >= 0, it is a partition specific
     // when partitionId = -1, it is generic
     // when partitionId = -2, it is ad hoc
     // an ad-hoc OperationRunner can only process generic operations, but it can be shared between threads
     // and therefor the {@link OperationRunner#currentTask()} always returns null
-    OperationRunnerImpl(OperationServiceImpl operationService, int partitionId) {
+    OperationRunnerImpl(OperationServiceImpl operationService, int partitionId, Counter failedBackupsCounter) {
         super(partitionId);
         this.operationService = operationService;
-        this.logger = operationService.logger;
+        this.logger = operationService.node.getLogger(OperationRunnerImpl.class);
         this.node = operationService.node;
         this.thisAddress = node.getThisAddress();
         this.nodeEngine = operationService.nodeEngine;
-        this.remoteResponseHandler = new RemoteInvocationResponseHandler(operationService);
+        this.outboundResponseHandler = operationService.outboundResponseHandler;
         this.executedOperationsCount = operationService.completedOperationsCount;
         this.staleReadOnMigrationEnabled = !node.getProperties().getBoolean(DISABLE_STALE_READ_ON_PARTITION_MIGRATION);
-
-        if (partitionId >= 0) {
-            this.count = newSwCounter();
-        } else {
-            this.count = null;
-        }
+        this.failedBackupsCounter = failedBackupsCounter;
+        this.backupHandler = operationService.backupHandler;
+        this.count = partitionId >= 0 ? newSwCounter() : null;
     }
 
     @Override
-    public void provideMetrics(MetricsRegistry metricsRegistry) {
+    public void provideMetrics(MetricsRegistry registry) {
         if (partitionId >= 0) {
-            metricsRegistry.scanAndRegister(this, "operation.partition[" + partitionId + "]");
+            registry.scanAndRegister(this, "operation.partition[" + partitionId + "]");
         }
     }
 
@@ -146,7 +149,7 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
 
     private boolean publishCurrentTask() {
         boolean isClientRunnable = currentTask instanceof MessageTask;
-        return (getPartitionId() != AD_HOC_PARTITION_ID && (currentTask == null || isClientRunnable));
+        return getPartitionId() != AD_HOC_PARTITION_ID && (currentTask == null || isClientRunnable);
     }
 
     @Override
@@ -198,8 +201,9 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
             return;
         }
 
+        Address localAddress = node.getThisAddress();
         if (state == NodeState.SHUT_DOWN) {
-            throw new HazelcastInstanceNotActiveException("This node is shut down! Operation: " + op);
+            throw new HazelcastInstanceNotActiveException("Member " + localAddress + " is shut down! Operation: " + op);
         }
 
         if (op instanceof AllowedDuringPassiveState) {
@@ -214,14 +218,20 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
         // Operation has no partition id. So it is sent to this node in purpose.
         // Operation will fail since node is shutting down or cluster is passive.
         if (op.getPartitionId() < 0) {
-            throw new HazelcastInstanceNotActiveException("This node is currently passive! Operation: " + op);
+            throw new HazelcastInstanceNotActiveException("Member " + localAddress + "+ is currently passive! Operation: " + op);
         }
 
         // Custer is not passive but this node is shutting down.
         // Since operation has a partition id, it must be retried on another node.
-        throw new RetryableHazelcastException("This node is currently shutting down! Operation: " + op);
+        throw new RetryableHazelcastException("Member " + localAddress + " is currently shutting down! Operation: " + op);
     }
 
+    /**
+     * Ensures that the quorum is present if the quorum is configured and the operation service is quorum aware.
+     *
+     * @param op the operation for which the quorum must be checked for presence
+     * @throws QuorumException if the operation requires a quorum and the quorum is not present
+     */
     private void ensureQuorumPresent(Operation op) {
         QuorumServiceImpl quorumService = operationService.nodeEngine.getQuorumService();
         quorumService.ensureQuorumPresent(op);
@@ -234,7 +244,7 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
 
         BlockingOperation blockingOperation = (BlockingOperation) op;
         if (blockingOperation.shouldWait()) {
-            nodeEngine.getWaitNotifyService().await(blockingOperation);
+            nodeEngine.getOperationParker().park(blockingOperation);
             return true;
         }
         return false;
@@ -251,7 +261,7 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
 
     private void handleResponse(Operation op) throws Exception {
         boolean returnsResponse = op.returnsResponse();
-        int backupAcks = sendBackup(op);
+        int backupAcks = backupHandler.sendBackups(op);
 
         if (!returnsResponse) {
             return;
@@ -260,20 +270,7 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
         sendResponse(op, backupAcks);
     }
 
-    private int sendBackup(Operation op) throws Exception {
-        if (!(op instanceof BackupAwareOperation)) {
-            return 0;
-        }
-
-        int backupAcks = 0;
-        BackupAwareOperation backupAwareOp = (BackupAwareOperation) op;
-        if (backupAwareOp.shouldBackup()) {
-            backupAcks = operationService.operationBackupHandler.backup(backupAwareOp);
-        }
-        return backupAcks;
-    }
-
-   private void sendResponse(Operation op, int backupAcks) {
+    private void sendResponse(Operation op, int backupAcks) {
         try {
             Object response = op.getResponse();
             if (backupAcks > 0) {
@@ -291,7 +288,7 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
             if (op instanceof Notifier) {
                 final Notifier notifier = (Notifier) op;
                 if (notifier.shouldNotify()) {
-                    operationService.nodeEngine.getWaitNotifyService().notify(notifier);
+                    operationService.nodeEngine.getOperationParker().unpark(notifier);
                 }
             }
         } catch (Throwable e) {
@@ -345,16 +342,23 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
 
         operation.logError(e);
 
-        if (e instanceof ResponseNotSentException || !operation.returnsResponse()) {
+        if (operation instanceof Backup) {
+            failedBackupsCounter.inc();
+        }
+
+        if (!operation.returnsResponse()) {
             return;
         }
 
-        OperationResponseHandler responseHandler = operation.getOperationResponseHandler();
+        sendResponseAfterOperationError(operation, e);
+    }
+
+    private void sendResponseAfterOperationError(Operation operation, Throwable e) {
         try {
             if (node.getState() != NodeState.SHUT_DOWN) {
-                responseHandler.sendResponse(operation, e);
-            } else if (responseHandler.isLocal()) {
-                responseHandler.sendResponse(operation, new HazelcastInstanceNotActiveException());
+                operation.sendResponse(e);
+            } else if (operation.executedLocally()) {
+                operation.sendResponse(new HazelcastInstanceNotActiveException());
             }
         } catch (Throwable t) {
             logger.warning("While sending op error... op: " + operation + ", error: " + e, t);
@@ -397,8 +401,8 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
             run(op);
         } catch (Throwable throwable) {
             // If exception happens we need to extract the callId from the bytes directly!
-            long callId = extractOperationCallId(packet, node.getSerializationService());
-            operationService.send(new ErrorResponse(throwable, callId, packet.isUrgent()), caller);
+            long callId = extractOperationCallId(packet);
+            outboundResponseHandler.send(new ErrorResponse(throwable, callId, packet.isUrgent()), caller);
             logOperationDeserializationException(throwable, callId);
             throw ExceptionUtil.rethrow(throwable);
         } finally {
@@ -408,12 +412,24 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
         }
     }
 
+    /**
+     * This method has a direct dependency on how objects are serialized.
+     * If the stream format is changed, this extraction method must be changed as well.
+     * <p>
+     * It makes an assumption that the callId is the first long field in the serialized operation.
+     */
+    private long extractOperationCallId(Data data) throws IOException {
+        ObjectDataInput input = ((SerializationServiceV1) node.getSerializationService())
+                .initDataSerializableInputAndSkipTheHeader(data);
+        return input.readLong();
+    }
+
     private void setOperationResponseHandler(Operation op) {
-        OperationResponseHandler handler = remoteResponseHandler;
-        if (op.getCallId() == 0 || op.getCallId() == CALL_ID_LOCAL_SKIPPED) {
+        OperationResponseHandler handler = outboundResponseHandler;
+        if (op.getCallId() == 0) {
             if (op.returnsResponse()) {
                 throw new HazelcastException(
-                        "Op: " + op + " can not return response without call-id!");
+                        "Operation " + op + " wants to return a response, but doesn't have a call ID");
             }
             handler = createEmptyResponseHandler();
         }

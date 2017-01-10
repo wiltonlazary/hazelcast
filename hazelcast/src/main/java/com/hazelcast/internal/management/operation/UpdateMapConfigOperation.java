@@ -33,33 +33,30 @@
 package com.hazelcast.internal.management.operation;
 
 import com.hazelcast.config.MapConfig;
+import com.hazelcast.internal.management.ManagementDataSerializerHook;
 import com.hazelcast.internal.management.dto.MapConfigDTO;
 import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.Operation;
 
 import java.io.IOException;
 
 /**
  * Operation to update map configuration from Management Center.
  */
-public class UpdateMapConfigOperation extends Operation {
+public class UpdateMapConfigOperation extends AbstractManagementOperation {
 
     private String mapName;
     private MapConfig mapConfig;
 
+    @SuppressWarnings("unused")
     public UpdateMapConfigOperation() {
     }
 
     public UpdateMapConfigOperation(String mapName, MapConfig mapConfig) {
         this.mapName = mapName;
         this.mapConfig = mapConfig;
-    }
-
-    @Override
-    public void beforeRun() throws Exception {
     }
 
     @Override
@@ -82,20 +79,6 @@ public class UpdateMapConfigOperation extends Operation {
     }
 
     @Override
-    public void afterRun() throws Exception {
-    }
-
-    @Override
-    public boolean returnsResponse() {
-        return true;
-    }
-
-    @Override
-    public Object getResponse() {
-        return null;
-    }
-
-    @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         out.writeUTF(mapName);
         new MapConfigDTO(mapConfig).writeData(out);
@@ -107,5 +90,10 @@ public class UpdateMapConfigOperation extends Operation {
         MapConfigDTO adapter = new MapConfigDTO();
         adapter.readData(in);
         mapConfig = adapter.getMapConfig();
+    }
+
+    @Override
+    public int getId() {
+        return ManagementDataSerializerHook.UPDATE_MAP_CONFIG;
     }
 }

@@ -17,16 +17,23 @@
 package com.hazelcast.instance;
 
 import com.hazelcast.cluster.ClusterState;
+import com.hazelcast.hotrestart.HotRestartService;
+import com.hazelcast.hotrestart.InternalHotRestartService;
+import com.hazelcast.internal.cluster.impl.JoinMessage;
+import com.hazelcast.internal.cluster.impl.JoinRequest;
+import com.hazelcast.internal.networking.ReadHandler;
+import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
+import com.hazelcast.internal.networking.WriteHandler;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.memory.MemoryStats;
+import com.hazelcast.nio.Address;
+import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.IOService;
 import com.hazelcast.nio.MemberSocketInterceptor;
-import com.hazelcast.nio.tcp.ReadHandler;
-import com.hazelcast.nio.tcp.SocketChannelWrapperFactory;
 import com.hazelcast.nio.tcp.TcpIpConnection;
-import com.hazelcast.nio.tcp.WriteHandler;
 import com.hazelcast.security.SecurityContext;
 import com.hazelcast.spi.annotation.PrivateApi;
+import com.hazelcast.version.ClusterVersion;
 
 import java.util.Map;
 
@@ -35,6 +42,7 @@ import java.util.Map;
  * some modules, like; <tt>SerializationService</tt>, <tt>SocketChannelWrapperFactory</tt> etc.
  */
 @PrivateApi
+@SuppressWarnings({"checkstyle:methodcount"})
 public interface NodeExtension {
 
     /**
@@ -162,36 +170,58 @@ public interface NodeExtension {
     MemoryStats getMemoryStats();
 
      /**
-     * Called before a new node is joining to cluster,
-     * executed if node is the master node before join event.
-     * {@link com.hazelcast.internal.cluster.impl.ClusterJoinManager} calls this method,
-     * when handleJoinRequest method is called. By this way, we can check the logic we want
-     * by implementing this method. Implementation should throw required exception, with a valid
-     * message which explains rejection reason.
-     */
-    void validateJoinRequest();
+      * Executed on the master node before allowing a new member to join from
+      * {@link com.hazelcast.internal.cluster.impl.ClusterJoinManager#handleJoinRequest(JoinRequest, Connection)}.
+      * Implementation should check if the {@code JoinMessage} should be allowed to proceed, otherwise throw an exception
+      * with a message explaining rejection reason.
+      */
+    void validateJoinRequest(JoinMessage joinMessage);
 
     /**
      * Called when cluster state is changed
      *
      * @param newState new state
-     * @param persistentChange status of the change. A cluster state change may be non-persistent if it has been done temporarily
+     * @param isTransient status of the change. A cluster state change may be transient if it has been done temporarily
      *                         during system operations such cluster start etc.
      */
-    void onClusterStateChange(ClusterState newState, boolean persistentChange);
+    void onClusterStateChange(ClusterState newState, boolean isTransient);
 
     /**
-     * Registers given register if it's a known type.
+     * Called when partition state (partition assignments, version etc) changes
+     */
+    void onPartitionStateChange();
+
+    /**
+     * Called after cluster version is changed.
+     *
+     * @param newVersion the new version at which the cluster operates.
+     */
+    void onClusterVersionChange(ClusterVersion newVersion);
+
+    /**
+     * Check if this node's codebase version is compatible with given cluster version.
+     * @param clusterVersion the cluster version to check against
+     * @return {@code true} if compatible, otherwise false.
+     */
+    boolean isNodeVersionCompatibleWith(ClusterVersion clusterVersion);
+
+    /**
+     * Registers given listener if it's a known type.
      * @param listener listener instance
      * @return true if listener is registered, false otherwise
      */
     boolean registerListener(Object listener);
 
+    /** Returns the public hot restart service */
+    HotRestartService getHotRestartService();
+
+    /** Returns the internal hot restart service */
+    InternalHotRestartService getInternalHotRestartService();
+
     /**
-     * Forces node to start by skipping hot-restart completely and removing all hot-restart data
-     * even if node is still on validation phase or loading hot-restart data.
-     *
-     * @return true if hot restart is enabled and this node knows the master
+     * Creates a UUID for local member
+     * @param address address of local member
+     * @return new uuid
      */
-    boolean triggerForceStart();
+    String createMemberUuid(Address address);
 }

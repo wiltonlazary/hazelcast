@@ -16,13 +16,15 @@
 
 package com.hazelcast.core;
 
-import com.hazelcast.cache.ICache;
+import com.hazelcast.cardinality.CardinalityEstimator;
 import com.hazelcast.config.Config;
+import com.hazelcast.durableexecutor.DurableExecutorService;
 import com.hazelcast.logging.LoggingService;
 import com.hazelcast.mapreduce.JobTracker;
 import com.hazelcast.quorum.QuorumService;
 import com.hazelcast.replicatedmap.ReplicatedMapCantBeCreatedOnLiteMemberException;
 import com.hazelcast.ringbuffer.Ringbuffer;
+import com.hazelcast.scheduledexecutor.IScheduledExecutorService;
 import com.hazelcast.transaction.HazelcastXAResource;
 import com.hazelcast.transaction.TransactionContext;
 import com.hazelcast.transaction.TransactionException;
@@ -199,6 +201,20 @@ public interface HazelcastInstance {
     IExecutorService getExecutorService(String name);
 
     /**
+     * Returns the durable executor service for the given
+     * name.
+     * DurableExecutor service enables you to run your <tt>Runnable</tt>s and <tt>Callable</tt>s
+     * on the Hazelcast cluster.
+     * <p/>
+     * <p><b>Note:</b> Note that it don't support invokeAll/Any
+     * and don't have standard shutdown behavior</p>
+     *
+     * @param name name of the executor service
+     * @return the durable executor service for the given name
+     */
+    DurableExecutorService getDurableExecutorService(String name);
+
+    /**
      * Executes the given transactional task in current thread using default options
      * and returns the result of the task.
      *
@@ -284,38 +300,6 @@ public interface HazelcastInstance {
      * @return {@link ISemaphore} proxy for the given name
      */
     ISemaphore getSemaphore(String name);
-
-    /**
-     * <p>
-     * Returns the cache instance with the specified prefixed cache name.
-     * </p>
-     *
-     * <p>
-     * Prefixed cache name is the name with URI and classloader prefixes if available.
-     * There is no Hazelcast prefix (`/hz/`). For example, `myURI/foo`.
-     *
-     * <code>
-     *     <prefixed_cache_name> = [<uri_prefix>/] + [<cl_prefix>/] + <pure_cache_name>
-     * </code>
-     * where `<pure_cache_name>` is the cache name without any prefix. For example `foo`.
-     *
-     * As seen from the definition, URI and classloader prefixes are optional.
-     *
-     * URI prefix is generated as content of this URI as a US-ASCII string. (<code>uri.toASCIIString()</code>)
-     * Classloader prefix is generated as string representation of the specified classloader. (<code>cl.toString()</code>)
-     *
-     * @see com.hazelcast.cache.CacheUtil#getPrefixedCacheName(String, java.net.URI, ClassLoader)
-     * </p>
-     *
-     * @param name the prefixed name of the cache
-     * @return the cache instance with the specified prefixed name
-     *
-     * @throws com.hazelcast.cache.CacheNotExistsException  if there is no configured or created cache
-     *                                                      with the specified prefixed name
-     * @throws java.lang.IllegalStateException              if a valid (rather than `1.0.0-PFD` or `0.x` versions)
-     *                                                      JCache library is not exist at classpath
-     */
-    <K, V> ICache<K, V> getCache(String name);
 
     /**
      * Returns all {@link DistributedObject}'s such as; queue, map, set, list, topic, lock, multimap.
@@ -423,6 +407,38 @@ public interface HazelcastInstance {
      * @return the xaResource.
      */
     HazelcastXAResource getXAResource();
+
+    /**
+     * Obtain the {@link ICacheManager} that provides access to JSR-107 (JCache) caches configured on a Hazelcast cluster.
+     * <p>Note that this method does not return a JCache {@code CacheManager}; to obtain a JCache
+     * {@link javax.cache.CacheManager} use JCache standard API.</p>
+     *
+     * @see ICacheManager
+     * @return the Hazelcast {@link ICacheManager}
+     */
+    ICacheManager getCacheManager();
+
+    /**
+     * Obtain a {@link CardinalityEstimator} with the given name.
+     * The estimator can be used to efficiently estimate the cardinality of <strong>unique</strong> entities
+     * in big data sets, without the need of storing them.
+     *
+     * The estimator is based on a HyperLogLog++ data-structure.
+     *
+     * @param name the name of the estimator
+     * @return a {@link CardinalityEstimator}
+     */
+    CardinalityEstimator getCardinalityEstimator(String name);
+
+    /**
+     * Returns the {@link IScheduledExecutorService} scheduled executor service for the given name.
+     * ScheduledExecutor service enables you to schedule your <tt>Runnable</tt>s and <tt>Callable</tt>s
+     * on the Hazelcast cluster.
+     *
+     * @param name name of the executor service
+     * @return the scheduled executor service for the given name
+     */
+    IScheduledExecutorService getScheduledExecutorService(String name);
 
     /**
      * Shuts down this HazelcastInstance. For more information see {@link com.hazelcast.core.LifecycleService#shutdown()}.

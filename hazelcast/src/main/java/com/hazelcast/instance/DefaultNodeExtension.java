@@ -21,7 +21,19 @@ import com.hazelcast.cache.impl.ICacheService;
 import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.SerializationConfig;
+import com.hazelcast.core.HazelcastInstanceAware;
 import com.hazelcast.core.PartitioningStrategy;
+import com.hazelcast.hotrestart.HotRestartService;
+import com.hazelcast.hotrestart.InternalHotRestartService;
+import com.hazelcast.hotrestart.NoOpHotRestartService;
+import com.hazelcast.hotrestart.NoopInternalHotRestartService;
+import com.hazelcast.internal.cluster.ClusterStateListener;
+import com.hazelcast.internal.cluster.ClusterVersionListener;
+import com.hazelcast.internal.cluster.impl.JoinMessage;
+import com.hazelcast.internal.cluster.impl.VersionMismatchException;
+import com.hazelcast.internal.networking.ReadHandler;
+import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
+import com.hazelcast.internal.networking.WriteHandler;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.SerializationServiceBuilder;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
@@ -29,38 +41,45 @@ import com.hazelcast.logging.ILogger;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.memory.DefaultMemoryStats;
 import com.hazelcast.memory.MemoryStats;
+import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ClassLoaderUtil;
 import com.hazelcast.nio.IOService;
 import com.hazelcast.nio.MemberSocketInterceptor;
 import com.hazelcast.nio.tcp.DefaultSocketChannelWrapperFactory;
 import com.hazelcast.nio.tcp.MemberReadHandler;
 import com.hazelcast.nio.tcp.MemberWriteHandler;
-import com.hazelcast.nio.tcp.ReadHandler;
-import com.hazelcast.nio.tcp.SocketChannelWrapperFactory;
 import com.hazelcast.nio.tcp.TcpIpConnection;
-import com.hazelcast.nio.tcp.WriteHandler;
 import com.hazelcast.partition.strategy.DefaultPartitioningStrategy;
 import com.hazelcast.security.SecurityContext;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.spi.impl.NodeEngineImpl;
+import com.hazelcast.spi.impl.servicemanager.ServiceManager;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.util.ConstructorFunction;
 import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.util.Preconditions;
+import com.hazelcast.util.UuidUtil;
+import com.hazelcast.version.ClusterVersion;
+import com.hazelcast.version.MemberVersion;
 import com.hazelcast.wan.WanReplicationService;
 import com.hazelcast.wan.impl.WanReplicationServiceImpl;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static com.hazelcast.map.impl.MapServiceConstructor.getDefaultMapServiceConstructor;
 
 @PrivateApi
+@SuppressWarnings({"checkstyle:methodcount", "checkstyle:classfanoutcomplexity"})
 public class DefaultNodeExtension implements NodeExtension {
 
     protected final Node node;
     protected final ILogger logger;
     protected final ILogger systemLogger;
+    protected final List<ClusterVersionListener> clusterVersionListeners = new CopyOnWriteArrayList<ClusterVersionListener>();
 
     private final MemoryStats memoryStats = new DefaultMemoryStats();
 
@@ -213,21 +232,87 @@ public class DefaultNodeExtension implements NodeExtension {
     }
 
     @Override
-    public void validateJoinRequest() {
+    public void validateJoinRequest(JoinMessage joinMessage) {
+        // check joining member's major.minor version is same as current cluster version's major.minor numbers
+        if (!joinMessage.getVersion().asClusterVersion().equals(node.getClusterService().getClusterVersion())) {
+            throw new VersionMismatchException("Joining node's version " + joinMessage.getVersion() + " is not compatible with "
+                    + node.getVersion());
+        }
     }
 
     @Override
-    public void onClusterStateChange(ClusterState newState, boolean persistentChange) {
+    public void onClusterStateChange(ClusterState newState, boolean isTransient) {
+        ServiceManager serviceManager = node.getNodeEngine().getServiceManager();
+        List<ClusterStateListener> listeners = serviceManager.getServices(ClusterStateListener.class);
+        for (ClusterStateListener listener : listeners) {
+            listener.onClusterStateChange(newState);
+        }
+    }
+
+    @Override
+    public void onPartitionStateChange() {
+    }
+
+    @Override
+    public void onClusterVersionChange(ClusterVersion newVersion) {
+        systemLogger.info("Cluster version changed to " + newVersion);
+        ServiceManager serviceManager = node.getNodeEngine().getServiceManager();
+        List<ClusterVersionListener> listeners = serviceManager.getServices(ClusterVersionListener.class);
+        for (ClusterVersionListener listener : listeners) {
+            listener.onClusterVersionChange(newVersion);
+        }
+        // also trigger cluster version change on explicitly registered listeners
+        for (ClusterVersionListener listener : clusterVersionListeners) {
+            listener.onClusterVersionChange(newVersion);
+        }
+    }
+
+    @Override
+    public boolean isNodeVersionCompatibleWith(ClusterVersion clusterVersion) {
+        Preconditions.checkNotNull(clusterVersion);
+        return node.getVersion().asClusterVersion().equals(clusterVersion);
     }
 
     @Override
     public boolean registerListener(Object listener) {
+        if (listener instanceof HazelcastInstanceAware) {
+            ((HazelcastInstanceAware) listener).setHazelcastInstance(node.hazelcastInstance);
+        }
+        if (listener instanceof ClusterVersionListener) {
+            ClusterVersionListener clusterVersionListener = (ClusterVersionListener) listener;
+            clusterVersionListeners.add(clusterVersionListener);
+            // on registration, invoke once the listening method so version is properly initialized on the listener
+            clusterVersionListener.onClusterVersionChange(getClusterOrNodeVersion());
+            return true;
+        }
         return false;
     }
 
     @Override
-    public boolean triggerForceStart() {
-        logger.warning("Force start is available when hot restart is active!");
-        return false;
+    public HotRestartService getHotRestartService() {
+        return new NoOpHotRestartService();
+    }
+
+    @Override
+    public InternalHotRestartService getInternalHotRestartService() {
+        return new NoopInternalHotRestartService();
+    }
+
+    @Override
+    public String createMemberUuid(Address address) {
+        return UuidUtil.createMemberUuid(address);
+    }
+
+    // obtain cluster version, if already initialized (not null)
+    // otherwise, if overridden with GroupProperty#INIT_CLUSTER_VERSION, use this one
+    // otherwise, if not overridden, use current node's codebase version
+    private ClusterVersion getClusterOrNodeVersion() {
+        if (node.getClusterService() != null && node.getClusterService().getClusterVersion() != null) {
+            return node.getClusterService().getClusterVersion();
+        } else {
+            String overriddenClusterVersion = node.getProperties().getString(GroupProperty.INIT_CLUSTER_VERSION);
+            return (overriddenClusterVersion != null) ? MemberVersion.of(overriddenClusterVersion).asClusterVersion()
+                                                        : node.getVersion().asClusterVersion();
+        }
     }
 }

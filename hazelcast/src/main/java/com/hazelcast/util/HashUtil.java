@@ -156,7 +156,11 @@ public final class HashUtil {
                 mem, base + offset, len, DEFAULT_MURMUR_SEED);
     }
 
-    private static <R> long MurmurHash3_x64_64(LoadStrategy<R> loader, R resource, long offset, int len, final int seed) {
+    static <R> long MurmurHash3_x64_64(LoadStrategy<R> loader, R resource, long offset, int len) {
+        return MurmurHash3_x64_64(loader, resource, offset, len, DEFAULT_MURMUR_SEED);
+    }
+
+    static <R> long MurmurHash3_x64_64(LoadStrategy<R> loader, R resource, long offset, int len, final int seed) {
 
         // (len & ~(MURMUR64_BLOCK_SIZE - 1)) is the length rounded down to the Murmur64 block boundary
         final long tailStart = offset + (len & ~(MURMUR64_BLOCK_SIZE - 1));
@@ -280,6 +284,13 @@ public final class HashUtil {
         return k;
     }
 
+    /**
+     * Hash function based on Knuth's multiplicative method. This version is faster than using Murmur hash but provides
+     * acceptable behavior.
+     *
+     * @param k the long for which the hash will be calculated
+     * @return the hash
+     */
     public static long fastLongMix(long k) {
         // phi = 2^64 / goldenRatio
         final long phi = 0x9E3779B97F4A7C15L;
@@ -288,6 +299,13 @@ public final class HashUtil {
         return h ^ (h >>> 16);
     }
 
+    /**
+     * Hash function based on Knuth's multiplicative method. This version is faster than using Murmur hash but provides
+     * acceptable behavior.
+     *
+     * @param k the integer for which the hash will be calculated
+     * @return the hash
+     */
     public static int fastIntMix(int k) {
         // phi = 2^32 / goldenRatio
         final int phi = 0x9E3779B9;
@@ -342,7 +360,7 @@ public final class HashUtil {
         return PERTURBATIONS[Integer.numberOfLeadingZeros(capacity)];
     }
 
-    private abstract static class LoadStrategy<R> implements ByteAccessStrategy<R> {
+    abstract static class LoadStrategy<R> implements ByteAccessStrategy<R> {
 
         abstract int getInt(R resource, long offset);
 

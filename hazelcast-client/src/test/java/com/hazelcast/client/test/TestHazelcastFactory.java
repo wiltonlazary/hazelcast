@@ -38,14 +38,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class TestHazelcastFactory extends TestHazelcastInstanceFactory {
 
-    private static final AtomicInteger clientPorts = new AtomicInteger(40000);
+    private static final AtomicInteger CLIENT_PORTS = new AtomicInteger(40000);
+
     private final boolean mockNetwork = TestEnvironment.isMockNetwork();
     private final List<HazelcastClientInstanceImpl> clients = new ArrayList<HazelcastClientInstanceImpl>(10);
     private final TestClientRegistry clientRegistry;
 
     public TestHazelcastFactory() {
         super(0);
-        this.clientRegistry = new TestClientRegistry(registry);
+        this.clientRegistry = new TestClientRegistry(getRegistry());
     }
 
     public HazelcastInstance newHazelcastClient() {
@@ -61,12 +62,14 @@ public class TestHazelcastFactory extends TestHazelcastInstanceFactory {
             config = new XmlClientConfigBuilder().build();
         }
 
-        final ClassLoader tccl = Thread.currentThread().getContextClassLoader();
+        ClassLoader tccl = Thread.currentThread().getContextClassLoader();
         HazelcastClientProxy proxy;
         try {
-            Thread.currentThread().setContextClassLoader(HazelcastClient.class.getClassLoader());
+            if (tccl == ClassLoader.getSystemClassLoader()) {
+                Thread.currentThread().setContextClassLoader(HazelcastClient.class.getClassLoader());
+            }
             ClientConnectionManagerFactory clientConnectionManagerFactory =
-                    clientRegistry.createClientServiceFactory(createAddress("127.0.0.1", clientPorts.incrementAndGet()));
+                    clientRegistry.createClientServiceFactory("127.0.0.1", CLIENT_PORTS);
             AddressProvider testAddressProvider = createAddressProvider(config);
             HazelcastClientInstanceImpl client =
                     new HazelcastClientInstanceImpl(config, clientConnectionManagerFactory, testAddressProvider);
@@ -81,10 +84,9 @@ public class TestHazelcastFactory extends TestHazelcastInstanceFactory {
     }
 
     private AddressProvider createAddressProvider(ClientConfig config) {
-
         List<String> userConfiguredAddresses = config.getNetworkConfig().getAddresses();
         if (!userConfiguredAddresses.contains("localhost")) {
-            //Addresses are set explicitly. Dont add more addresses
+            // addresses are set explicitly, don't add more addresses
             return null;
         }
 
@@ -92,39 +94,42 @@ public class TestHazelcastFactory extends TestHazelcastInstanceFactory {
             @Override
             public Collection<InetSocketAddress> loadAddresses() {
                 Collection<InetSocketAddress> inetAddresses = new ArrayList<InetSocketAddress>();
-                for (Address address : addressMap.values()) {
+                for (Address address : getKnownAddresses()) {
                     Collection<InetSocketAddress> addresses = AddressHelper.getPossibleSocketAddresses(address.getPort(),
                             address.getHost(), 3);
                     inetAddresses.addAll(addresses);
                 }
-
                 return inetAddresses;
-
             }
         };
     }
 
+    public void shutdownAllMembers() {
+        super.shutdownAll();
+    }
+
     @Override
     public void shutdownAll() {
-        if (!mockNetwork) {
-            HazelcastClient.shutdownAll();
-        } else {
+        if (mockNetwork) {
             for (HazelcastClientInstanceImpl client : clients) {
                 client.shutdown();
             }
+        } else {
+            // for client terminateAll() and shutdownAll() is the same
+            HazelcastClient.shutdownAll();
         }
         super.shutdownAll();
     }
 
     @Override
     public void terminateAll() {
-        if (!mockNetwork) {
-            //For client terminateAll and shutdownAll is same
-            HazelcastClient.shutdownAll();
-        } else {
+        if (mockNetwork) {
             for (HazelcastClientInstanceImpl client : clients) {
                 client.getLifecycleService().terminate();
             }
+        } else {
+            // for client terminateAll() and shutdownAll() is the same
+            HazelcastClient.shutdownAll();
         }
         super.terminateAll();
     }

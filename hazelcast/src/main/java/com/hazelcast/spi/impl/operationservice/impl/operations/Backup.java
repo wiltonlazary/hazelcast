@@ -123,25 +123,17 @@ public final class Backup extends Operation implements BackupOperation, Identifi
     @Override
     public void run() throws Exception {
         if (!valid) {
-            onExecutionFailure(
-                    new IllegalStateException("Wrong target! " + toString() + " cannot be processed!"));
+            onExecutionFailure(new IllegalStateException("Wrong target! " + toString() + " cannot be processed!"));
             return;
         }
 
+        ensureBackupOperationInitialized();
+
+        backupOp.beforeRun();
+        backupOp.run();
+        backupOp.afterRun();
+
         NodeEngineImpl nodeEngine = (NodeEngineImpl) getNodeEngine();
-
-        if (backupOp == null && backupOpData != null) {
-            backupOp = nodeEngine.getSerializationService().toObject(backupOpData);
-        }
-
-        if (backupOp != null) {
-            ensureBackupOperationInitialized();
-
-            backupOp.beforeRun();
-            backupOp.run();
-            backupOp.afterRun();
-        }
-
         InternalPartitionService partitionService = nodeEngine.getPartitionService();
         partitionService.updatePartitionReplicaVersions(getPartitionId(), replicaVersions, getReplicaIndex());
     }
@@ -157,21 +149,16 @@ public final class Backup extends Operation implements BackupOperation, Identifi
         OperationServiceImpl operationService = (OperationServiceImpl) nodeEngine.getOperationService();
 
         if (nodeEngine.getThisAddress().equals(originalCaller)) {
-            operationService.getResponseHandler().notifyBackupComplete(callId);
+            operationService.getInboundResponseHandler().notifyBackupComplete(callId);
         } else {
             BackupAckResponse backupAckResponse = new BackupAckResponse(callId, backupOp.isUrgent());
-            operationService.send(backupAckResponse, originalCaller);
+            operationService.getOutboundResponseHandler().send(backupAckResponse, originalCaller);
         }
     }
 
     @Override
     public boolean returnsResponse() {
         return false;
-    }
-
-    @Override
-    public Object getResponse() {
-        return null;
     }
 
     @Override
@@ -219,19 +206,19 @@ public final class Backup extends Operation implements BackupOperation, Identifi
 
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
-        if (backupOpData != null) {
-            out.writeBoolean(true);
-            out.writeData(backupOpData);
-        } else {
+        if (backupOpData == null) {
             out.writeBoolean(false);
             out.writeObject(backupOp);
+        } else {
+            out.writeBoolean(true);
+            out.writeData(backupOpData);
         }
 
-        if (originalCaller != null) {
+        if (originalCaller == null) {
+            out.writeBoolean(false);
+        } else {
             out.writeBoolean(true);
             originalCaller.writeData(out);
-        } else {
-            out.writeBoolean(false);
         }
 
         byte replicaVersionCount = 0;
@@ -252,7 +239,7 @@ public final class Backup extends Operation implements BackupOperation, Identifi
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         if (in.readBoolean()) {
-            backupOpData = in.readData();
+            backupOp = in.readDataAsObject();
         } else {
             backupOp = in.readObject();
         }

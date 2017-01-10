@@ -38,21 +38,24 @@ import com.hazelcast.client.spi.impl.ClientInvocation;
 import com.hazelcast.client.spi.impl.ClientInvocationFuture;
 import com.hazelcast.client.spi.impl.ConnectionHeartbeatListener;
 import com.hazelcast.client.spi.impl.listener.ClientListenerServiceImpl;
+import com.hazelcast.client.spi.properties.ClientProperty;
+import com.hazelcast.config.SSLConfig;
 import com.hazelcast.config.SocketInterceptorConfig;
 import com.hazelcast.core.ExecutionCallback;
 import com.hazelcast.core.HazelcastException;
+import com.hazelcast.instance.BuildInfoProvider;
+import com.hazelcast.instance.HazelcastThreadGroup;
+import com.hazelcast.internal.networking.IOOutOfMemoryHandler;
+import com.hazelcast.internal.networking.SocketChannelWrapper;
+import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
+import com.hazelcast.internal.networking.nonblocking.NonBlockingIOThreadingModel;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.logging.LoggingService;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.ConnectionListener;
 import com.hazelcast.nio.SocketInterceptor;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.nio.tcp.SocketChannelWrapper;
-import com.hazelcast.nio.tcp.SocketChannelWrapperFactory;
-import com.hazelcast.nio.tcp.nonblocking.NonBlockingIOThread;
-import com.hazelcast.nio.tcp.nonblocking.NonBlockingIOThreadOutOfMemoryHandler;
 import com.hazelcast.security.Credentials;
 import com.hazelcast.security.UsernamePasswordCredentials;
 import com.hazelcast.spi.properties.HazelcastProperties;
@@ -72,22 +75,27 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static com.hazelcast.client.config.SocketOptions.DEFAULT_BUFFER_SIZE_BYTE;
 import static com.hazelcast.client.config.SocketOptions.KILO_BYTE;
 import static com.hazelcast.client.spi.properties.ClientProperty.HEARTBEAT_INTERVAL;
 import static com.hazelcast.client.spi.properties.ClientProperty.HEARTBEAT_TIMEOUT;
+import static com.hazelcast.spi.properties.GroupProperty.SOCKET_CLIENT_BUFFER_DIRECT;
 
 /**
  * Implementation of {@link ClientConnectionManager}.
  */
+@SuppressWarnings("checkstyle:classdataabstractioncoupling")
 public class ClientConnectionManagerImpl implements ClientConnectionManager {
+
+    private static final int DEFAULT_SSL_THREAD_COUNT = 3;
 
     protected final AtomicInteger connectionIdGen = new AtomicInteger();
 
     protected volatile boolean alive;
 
-    private final NonBlockingIOThreadOutOfMemoryHandler outOfMemoryHandler = new NonBlockingIOThreadOutOfMemoryHandler() {
+    private final IOOutOfMemoryHandler outOfMemoryHandler = new IOOutOfMemoryHandler() {
         @Override
         public void handle(OutOfMemoryError error) {
             logger.severe(error);
@@ -95,19 +103,17 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
     };
     private final ILogger logger;
     private final int connectionTimeout;
-    private final long heartBeatInterval;
-    private final long heartBeatTimeout;
+    private final long heartbeatInterval;
+    private final long heartbeatTimeout;
 
     private final HazelcastClientInstanceImpl client;
     private final SocketInterceptor socketInterceptor;
     private final SocketOptions socketOptions;
-    private NonBlockingIOThread inputThread;
-    private NonBlockingIOThread outputThread;
     private final SocketChannelWrapperFactory socketChannelWrapperFactory;
 
     private final ClientExecutionServiceImpl executionService;
     private final AddressTranslator addressTranslator;
-    private final ConcurrentMap<Address, ClientConnection> connections
+    private final ConcurrentMap<Address, ClientConnection> activeConnections
             = new ConcurrentHashMap<Address, ClientConnection>();
     private final ConcurrentMap<Address, AuthenticationFuture> connectionsInProgress =
             new ConcurrentHashMap<Address, AuthenticationFuture>();
@@ -115,52 +121,74 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
 
     private final Set<ConnectionHeartbeatListener> heartbeatListeners =
             new CopyOnWriteArraySet<ConnectionHeartbeatListener>();
-    private final LoggingService loggingService;
     private final Credentials credentials;
+    private final AtomicLong correlationIddOfLastAuthentication = new AtomicLong(0);
+    private NonBlockingIOThreadingModel ioThreadingModel;
 
     public ClientConnectionManagerImpl(HazelcastClientInstanceImpl client, AddressTranslator addressTranslator) {
         this.client = client;
         this.addressTranslator = addressTranslator;
-        final ClientConfig config = client.getClientConfig();
-        final ClientNetworkConfig networkConfig = config.getNetworkConfig();
+        this.logger = client.getLoggingService().getLogger(ClientConnectionManager.class);
+
+        ClientConfig config = client.getClientConfig();
+        ClientNetworkConfig networkConfig = config.getNetworkConfig();
 
         final int connTimeout = networkConfig.getConnectionTimeout();
-        connectionTimeout = connTimeout == 0 ? Integer.MAX_VALUE : connTimeout;
+        this.connectionTimeout = connTimeout == 0 ? Integer.MAX_VALUE : connTimeout;
 
         HazelcastProperties hazelcastProperties = client.getProperties();
         long timeout = hazelcastProperties.getMillis(HEARTBEAT_TIMEOUT);
-        this.heartBeatTimeout = timeout > 0 ? timeout : Integer.parseInt(HEARTBEAT_TIMEOUT.getDefaultValue());
+        this.heartbeatTimeout = timeout > 0 ? timeout : Integer.parseInt(HEARTBEAT_TIMEOUT.getDefaultValue());
 
         long interval = hazelcastProperties.getMillis(HEARTBEAT_INTERVAL);
-        heartBeatInterval = interval > 0 ? interval : Integer.parseInt(HEARTBEAT_INTERVAL.getDefaultValue());
+        this.heartbeatInterval = interval > 0 ? interval : Integer.parseInt(HEARTBEAT_INTERVAL.getDefaultValue());
 
-        executionService = (ClientExecutionServiceImpl) client.getClientExecutionService();
-        loggingService = client.getLoggingService();
+        this.executionService = (ClientExecutionServiceImpl) client.getClientExecutionService();
+        this.socketOptions = networkConfig.getSocketOptions();
 
-        initializeSelectors(client);
+        initIOThreads(client);
 
-        socketOptions = networkConfig.getSocketOptions();
         ClientExtension clientExtension = client.getClientExtension();
-        socketChannelWrapperFactory = clientExtension.createSocketChannelWrapperFactory();
-        socketInterceptor = initSocketInterceptor(networkConfig.getSocketInterceptorConfig());
-        logger = loggingService.getLogger(ClientConnectionManager.class);
-        credentials = client.getCredentials();
+        this.socketChannelWrapperFactory = clientExtension.createSocketChannelWrapperFactory();
+        this.socketInterceptor = initSocketInterceptor(networkConfig.getSocketInterceptorConfig());
+
+        this.credentials = client.getCredentials();
     }
 
-    protected void initializeSelectors(HazelcastClientInstanceImpl client) {
-        inputThread = new NonBlockingIOThread(
-                client.getThreadGroup(),
-                client.getName() + ".thread-in",
-                loggingService.getLogger(NonBlockingIOThread.class),
-                outOfMemoryHandler);
-        client.getMetricsRegistry().scanAndRegister(inputThread, "tcp." + inputThread.getName());
+    protected void initIOThreads(HazelcastClientInstanceImpl client) {
+        HazelcastProperties properties = client.getProperties();
+        boolean directBuffer = properties.getBoolean(SOCKET_CLIENT_BUFFER_DIRECT);
 
-        outputThread = new ClientNonBlockingOutputThread(
-                client.getThreadGroup(),
-                client.getName() + ".thread-out",
-                loggingService.getLogger(ClientNonBlockingOutputThread.class),
-                outOfMemoryHandler);
-        client.getMetricsRegistry().scanAndRegister(outputThread, "tcp." + outputThread.getName());
+        SSLConfig sslConfig = client.getClientConfig().getNetworkConfig().getSSLConfig();
+        boolean sslEnabled = sslConfig != null && sslConfig.isEnabled();
+
+        int configuredInputThreads = properties.getInteger(ClientProperty.IO_INPUT_THREAD_COUNT);
+        int configuredOutputThreads = properties.getInteger(ClientProperty.IO_OUTPUT_THREAD_COUNT);
+
+        int inputThreads;
+        if (configuredInputThreads == -1) {
+            inputThreads = sslEnabled ? DEFAULT_SSL_THREAD_COUNT : 1;
+        } else {
+            inputThreads = configuredInputThreads;
+        }
+
+        int outputThreads;
+        if (configuredOutputThreads == -1) {
+            outputThreads = sslEnabled ? DEFAULT_SSL_THREAD_COUNT : 1;
+        } else {
+            outputThreads = configuredOutputThreads;
+        }
+
+        ioThreadingModel = new NonBlockingIOThreadingModel(
+                client.getLoggingService(),
+                client.getMetricsRegistry(),
+                new HazelcastThreadGroup(client.getName(), logger, client.getClientConfig().getClassLoader()),
+                outOfMemoryHandler,
+                inputThreads,
+                outputThreads,
+                properties.getInteger(ClientProperty.IO_BALANCER_INTERVAL_SECONDS),
+                new ClientSocketWriterInitializer(getBufferSize(), directBuffer),
+                new ClientSocketReaderInitializer(getBufferSize(), directBuffer));
     }
 
     private SocketInterceptor initSocketInterceptor(SocketInterceptorConfig sic) {
@@ -182,14 +210,13 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
             return;
         }
         alive = true;
-        startSelectors();
-        HeartBeat heartBeat = new HeartBeat();
-        executionService.scheduleWithRepetition(heartBeat, heartBeatInterval, heartBeatInterval, TimeUnit.MILLISECONDS);
+        startIOThreads();
+        Heartbeat heartbeat = new Heartbeat();
+        executionService.scheduleWithRepetition(heartbeat, heartbeatInterval, heartbeatInterval, TimeUnit.MILLISECONDS);
     }
 
-    protected void startSelectors() {
-        inputThread.start();
-        outputThread.start();
+    protected void startIOThreads() {
+        ioThreadingModel.start();
     }
 
     @Override
@@ -198,17 +225,16 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
             return;
         }
         alive = false;
-        for (ClientConnection connection : connections.values()) {
+        for (ClientConnection connection : activeConnections.values()) {
             connection.close("Hazelcast client is shutting down", null);
         }
-        shutdownSelectors();
+        shutdownIOThreads();
         connectionListeners.clear();
         heartbeatListeners.clear();
     }
 
-    protected void shutdownSelectors() {
-        inputThread.shutdown();
-        outputThread.shutdown();
+    protected void shutdownIOThreads() {
+        ioThreadingModel.shutdown();
     }
 
     public ClientConnection getConnection(Address target) {
@@ -216,7 +242,7 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
         if (target == null) {
             return null;
         }
-        return connections.get(target);
+        return activeConnections.get(target);
     }
 
     @Override
@@ -227,7 +253,7 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
                 if (connection != null) {
                     return connection;
                 }
-                AuthenticationFuture firstCallback = triggerConnect(address, asOwner);
+                AuthenticationFuture firstCallback = triggerConnect(addressTranslator.translate(address), asOwner);
                 connection = firstCallback.get(connectionTimeout);
                 if (!asOwner) {
                     return connection;
@@ -248,13 +274,13 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
         private Throwable throwable;
         private boolean authenticatedAsOwner;
 
-        public void onSuccess(Connection connection, boolean asOwner) {
+        void onSuccess(Connection connection, boolean asOwner) {
             this.connection = connection;
             this.authenticatedAsOwner = asOwner;
             countDownLatch.countDown();
         }
 
-        public void onFailure(Throwable throwable) {
+        void onFailure(Throwable throwable) {
             this.throwable = throwable;
             countDownLatch.countDown();
         }
@@ -266,6 +292,7 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
             if (connection != null) {
                 return connection;
             }
+            assert throwable != null;
             throw throwable;
         }
     }
@@ -287,7 +314,7 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
             throw new IllegalStateException("Address can not be null");
         }
 
-        ClientConnection connection = connections.get(target);
+        ClientConnection connection = activeConnections.get(target);
 
         if (connection != null) {
             if (!asOwner) {
@@ -308,7 +335,6 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
         AuthenticationFuture callback = new AuthenticationFuture();
         AuthenticationFuture firstCallback = connectionsInProgress.putIfAbsent(target, callback);
         if (firstCallback == null) {
-            ClientExecutionServiceImpl executionService = (ClientExecutionServiceImpl) client.getClientExecutionService();
             executionService.executeInternal(new InitConnectionTask(target, asOwner, callback));
             return callback;
         }
@@ -335,26 +361,23 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
             if (socketOptions.getLingerSeconds() > 0) {
                 socket.setSoLinger(true, socketOptions.getLingerSeconds());
             }
-            int bufferSize = socketOptions.getBufferSize() * KILO_BYTE;
-            if (bufferSize <= 0) {
-                bufferSize = DEFAULT_BUFFER_SIZE_BYTE;
-            }
+            int bufferSize = getBufferSize();
             socket.setSendBufferSize(bufferSize);
             socket.setReceiveBufferSize(bufferSize);
             InetSocketAddress inetSocketAddress = address.getInetSocketAddress();
             socketChannel.socket().connect(inetSocketAddress, connectionTimeout);
             SocketChannelWrapper socketChannelWrapper =
                     socketChannelWrapperFactory.wrapSocketChannel(socketChannel, true);
-            final ClientConnection clientConnection = new ClientConnection(client, inputThread,
-                    outputThread, connectionIdGen.incrementAndGet(), socketChannelWrapper);
+
+            final ClientConnection clientConnection = new ClientConnection(
+                    client, ioThreadingModel, connectionIdGen.incrementAndGet(), socketChannelWrapper);
             socketChannel.configureBlocking(true);
             if (socketInterceptor != null) {
                 socketInterceptor.onConnect(socket);
             }
-            socketChannel.configureBlocking(false);
+            socketChannel.configureBlocking(ioThreadingModel.isBlocking());
             socket.setSoTimeout(0);
-            clientConnection.getReadHandler().register();
-            clientConnection.init();
+            clientConnection.start();
             return clientConnection;
         } catch (Exception e) {
             if (socketChannel != null) {
@@ -364,20 +387,39 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
         }
     }
 
-    @Override
-    public void destroyConnection(final Connection connection, final String reason, final Throwable cause) {
+    private int getBufferSize() {
+        int bufferSize = socketOptions.getBufferSize() * KILO_BYTE;
+        if (bufferSize <= 0) {
+            bufferSize = DEFAULT_BUFFER_SIZE_BYTE;
+        }
+        return bufferSize;
+    }
+
+    void onClose(Connection connection) {
+        removeFromActiveConnections(connection);
+    }
+
+    private void removeFromActiveConnections(Connection connection) {
         Address endpoint = connection.getEndPoint();
-        if (endpoint != null) {
-            final ClientConnection conn = connections.remove(endpoint);
-            if (conn == null) {
-                return;
+
+        if (endpoint == null) {
+            if (logger.isFinestEnabled()) {
+                logger.finest("Destroying " + connection + " , but it has end-point set to null "
+                        + "-> not removing it from a connection map");
             }
-            conn.close(reason, cause);
-            for (ConnectionListener connectionListener : connectionListeners) {
-                connectionListener.connectionRemoved(conn);
+            return;
+        }
+        if (activeConnections.remove(endpoint, connection)) {
+            logger.info("Removed connection to endpoint: " + endpoint + ", connection: " + connection);
+
+            for (ConnectionListener listener : connectionListeners) {
+                listener.connectionRemoved(connection);
             }
         } else {
-            connection.close(reason, cause);
+            if (logger.isFinestEnabled()) {
+                logger.finest("Destroying a connection, but there is no mapping " + endpoint + " -> " + connection
+                        + " in the connection map.");
+            }
         }
     }
 
@@ -394,7 +436,7 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
         }
     }
 
-    class HeartBeat implements Runnable {
+    class Heartbeat implements Runnable {
 
         @Override
         public void run() {
@@ -402,38 +444,57 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
                 return;
             }
             final long now = Clock.currentTimeMillis();
-            for (ClientConnection connection : connections.values()) {
-                if (now - connection.lastReadTimeMillis() > heartBeatTimeout) {
+            for (final ClientConnection connection : activeConnections.values()) {
+                if (!connection.isAlive()) {
+                    continue;
+                }
+
+                if (now - connection.lastReadTimeMillis() > heartbeatTimeout) {
                     if (connection.isHeartBeating()) {
                         logger.warning("Heartbeat failed to connection : " + connection);
-                        connection.heartBeatingFailed();
-                        fireHeartBeatStopped(connection);
+                        connection.onHeartbeatFailed();
+                        fireHeartbeatStopped(connection);
                     }
                 }
-                if (now - connection.lastReadTimeMillis() > heartBeatInterval) {
+                if (now - connection.lastReadTimeMillis() > heartbeatInterval) {
                     ClientMessage request = ClientPingCodec.encodeRequest();
-                    ClientInvocation clientInvocation = new ClientInvocation(client, request, connection);
+                    final ClientInvocation clientInvocation = new ClientInvocation(client, request, connection);
                     clientInvocation.setBypassHeartbeatCheck(true);
-                    clientInvocation.invokeUrgent();
+                    connection.onHeartbeatRequested();
+                    clientInvocation.invokeUrgent().andThen(new ExecutionCallback<ClientMessage>() {
+                        @Override
+                        public void onResponse(ClientMessage response) {
+                            if (connection.isAlive()) {
+                                connection.onHeartbeatReceived();
+                            }
+                        }
+
+                        @Override
+                        public void onFailure(Throwable t) {
+                            if (connection.isAlive()) {
+                                logger.warning("Error receiving heartbeat for connection: " + connection, t);
+                            }
+                        }
+                    }, executionService.getInternalExecutor());
                 } else {
                     if (!connection.isHeartBeating()) {
                         logger.warning("Heartbeat is back to healthy for connection : " + connection);
-                        connection.heartBeatingSucceed();
-                        fireHeartBeatStarted(connection);
+                        connection.onHeartbeatResumed();
+                        fireHeartbeatResumed(connection);
                     }
                 }
             }
         }
 
-        private void fireHeartBeatStarted(ClientConnection connection) {
+        private void fireHeartbeatResumed(ClientConnection connection) {
             for (ConnectionHeartbeatListener heartbeatListener : heartbeatListeners) {
-                heartbeatListener.heartBeatStarted(connection);
+                heartbeatListener.heartbeatResumed(connection);
             }
         }
 
-        private void fireHeartBeatStopped(ClientConnection connection) {
+        private void fireHeartbeatStopped(ClientConnection connection) {
             for (ConnectionHeartbeatListener heartbeatListener : heartbeatListeners) {
-                heartbeatListener.heartBeatStopped(connection);
+                heartbeatListener.heartbeatStopped(connection);
             }
         }
 
@@ -449,34 +510,24 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
         heartbeatListeners.add(connectionHeartbeatListener);
     }
 
-    private void authenticate(final Address target, final ClientConnection connection,
-                              final boolean asOwner,
+    private void authenticate(final Address target, final ClientConnection connection, final boolean asOwner,
                               final AuthenticationFuture callback) {
         SerializationService ss = client.getSerializationService();
         final ClientClusterServiceImpl clusterService = (ClientClusterServiceImpl) client.getClientClusterService();
-        ClientPrincipal principal = clusterService.getPrincipal();
+        final ClientPrincipal principal = clusterService.getPrincipal();
         byte serializationVersion = ((InternalSerializationService) client.getSerializationService()).getVersion();
-
         String uuid = null;
         String ownerUuid = null;
         if (principal != null) {
             uuid = principal.getUuid();
             ownerUuid = principal.getOwnerUuid();
         }
-
-        ClientMessage clientMessage;
-        if (credentials.getClass().equals(UsernamePasswordCredentials.class)) {
-            UsernamePasswordCredentials cr = (UsernamePasswordCredentials) credentials;
-            clientMessage = ClientAuthenticationCodec.encodeRequest(cr.getUsername(), cr.getPassword(),
-                    uuid, ownerUuid, asOwner, ClientTypes.JAVA, serializationVersion);
-        } else {
-            Data data = ss.toData(credentials);
-            clientMessage = ClientAuthenticationCustomCodec.encodeRequest(data, uuid, ownerUuid,
-                    asOwner, ClientTypes.JAVA, serializationVersion);
-
-        }
+        ClientMessage clientMessage = encodeAuthenticationRequest(asOwner, ss, serializationVersion, uuid, ownerUuid);
         ClientInvocation clientInvocation = new ClientInvocation(client, clientMessage, connection);
         ClientInvocationFuture future = clientInvocation.invokeUrgent();
+        if (asOwner && clientInvocation.getSendConnection() != null) {
+            correlationIddOfLastAuthentication.set(clientInvocation.getClientMessage().getCorrelationId());
+        }
         future.andThen(new ExecutionCallback<ClientMessage>() {
             @Override
             public void onResponse(ClientMessage response) {
@@ -484,34 +535,56 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
                 AuthenticationStatus authenticationStatus = AuthenticationStatus.getById(result.status);
                 switch (authenticationStatus) {
                     case AUTHENTICATED:
+                        connection.setConnectedServerVersion(result.serverHazelcastVersion);
+                        connection.setClientUnregisteredMembers(result.clientUnregisteredMembers);
                         connection.setRemoteEndpoint(result.address);
                         if (asOwner) {
+                            if (!(correlationIddOfLastAuthentication.get() == response.getCorrelationId())) {
+                                //if not same, client already gave up on this and send another authentication.
+                                onFailure(new AuthenticationException("Owner authentication response from address "
+                                        + target + " is late. Dropping the response. Principal : " + principal));
+                                return;
+                            }
                             connection.setIsAuthenticatedAsOwner();
-                            clusterService.setPrincipal(new ClientPrincipal(result.uuid, result.ownerUuid));
+                            ClientPrincipal principal = new ClientPrincipal(result.uuid, result.ownerUuid);
+                            clusterService.setPrincipal(principal);
+                            clusterService.setOwnerConnectionAddress(connection.getEndPoint());
+                            logger.info("Setting " + connection + " as owner  with principal " + principal);
                         }
-                        authenticated(target, connection);
+                        onAuthenticated(target, connection);
                         callback.onSuccess(connection, asOwner);
                         break;
                     case CREDENTIALS_FAILED:
-                        AuthenticationException e = new AuthenticationException("Invalid credentials!");
-                        failed(target, connection, e);
-                        callback.onFailure(e);
+                        onFailure(new AuthenticationException("Invalid credentials! Principal :" + principal));
                         break;
                     default:
-                        AuthenticationException exception =
-                                new AuthenticationException("Authentication status code not supported. status:"
-                                        + authenticationStatus);
-                        failed(target, connection, exception);
-                        callback.onFailure(exception);
+                        onFailure(new AuthenticationException("Authentication status code not supported. status:"
+                                + authenticationStatus));
                 }
             }
 
             @Override
             public void onFailure(Throwable t) {
-                failed(target, connection, t);
+                onAuthenticationFailed(target, connection, t);
                 callback.onFailure(t);
             }
         }, executionService.getInternalExecutor());
+    }
+
+    private ClientMessage encodeAuthenticationRequest(boolean asOwner, SerializationService ss, byte serializationVersion,
+                                                      String uuid, String ownerUuid) {
+        ClientMessage clientMessage;
+        if (credentials.getClass().equals(UsernamePasswordCredentials.class)) {
+            UsernamePasswordCredentials cr = (UsernamePasswordCredentials) credentials;
+            clientMessage = ClientAuthenticationCodec
+                    .encodeRequest(cr.getUsername(), cr.getPassword(), uuid, ownerUuid, asOwner, ClientTypes.JAVA,
+                            serializationVersion, BuildInfoProvider.getBuildInfo().getVersion());
+        } else {
+            Data data = ss.toData(credentials);
+            clientMessage = ClientAuthenticationCustomCodec.encodeRequest(data, uuid, ownerUuid,
+                    asOwner, ClientTypes.JAVA, serializationVersion, BuildInfoProvider.getBuildInfo().getVersion());
+        }
+        return clientMessage;
     }
 
     private class InitConnectionTask implements Runnable {
@@ -528,7 +601,7 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
 
         @Override
         public void run() {
-            ClientConnection connection = connections.get(target);
+            ClientConnection connection = activeConnections.get(target);
             if (connection == null) {
                 try {
                     connection = createSocketConnection(target);
@@ -544,24 +617,52 @@ public class ClientConnectionManagerImpl implements ClientConnectionManager {
                 authenticate(target, connection, asOwner, callback);
             } catch (Exception e) {
                 callback.onFailure(e);
-                destroyConnection(connection, "Failed to authenticate connection", e);
+                connection.close("Failed to authenticate connection", e);
                 connectionsInProgress.remove(target);
             }
         }
     }
 
-    private void authenticated(Address target, ClientConnection connection) {
-        ClientConnection oldConnection = connections.put(connection.getRemoteEndpoint(), connection);
+    private void onAuthenticated(Address target, ClientConnection connection) {
+        ClientConnection oldConnection =
+                activeConnections.put(addressTranslator.translate(connection.getEndPoint()), connection);
         if (oldConnection == null) {
+            if (logger.isFinestEnabled()) {
+                logger.finest("Authentication succeeded for " + connection
+                        + " and there was no old connection to this end-point");
+            }
             fireConnectionAddedEvent(connection);
+        } else {
+            if (logger.isFinestEnabled()) {
+                logger.finest("Re-authentication succeeded for " + connection);
+            }
+            assert connection.equals(oldConnection);
         }
-        assert oldConnection == null || connection.equals(oldConnection);
+
         connectionsInProgress.remove(target);
+        logger.info("Authenticated with server " + connection.getEndPoint() + ", server version:" + connection
+                .getConnectedServerVersionString() + " Local address: " + connection.getLocalSocketAddress());
+
+        /* check if connection is closed by remote before authentication complete, if that is the case
+        we need to remove it back from active connections.
+        Race description from https://github.com/hazelcast/hazelcast/pull/8832.(A little bit changed)
+        - open a connection client -> member
+        - send auth message
+        - receive auth reply -> reply processing is offloaded to an executor. Did not start to run yet.
+        - member closes the connection -> the connection is trying to removed from map
+                                                             but it was not there to begin with
+        - the executor start processing the auth reply -> it put the connection to the connection map.
+        - we end up with a closed connection in activeConnections map */
+        if (!connection.isAlive()) {
+            removeFromActiveConnections(connection);
+        }
     }
 
-    private void failed(Address target, ClientConnection connection, Throwable cause) {
-        logger.finest(cause);
-        destroyConnection(connection, null, cause);
+    private void onAuthenticationFailed(Address target, ClientConnection connection, Throwable cause) {
+        if (logger.isFinestEnabled()) {
+            logger.finest("Authentication of " + connection + " failed.", cause);
+        }
+        connection.close(null, cause);
         connectionsInProgress.remove(target);
     }
 

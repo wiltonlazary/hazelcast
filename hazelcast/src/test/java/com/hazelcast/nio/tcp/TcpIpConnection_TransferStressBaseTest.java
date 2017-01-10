@@ -1,5 +1,7 @@
 package com.hazelcast.nio.tcp;
 
+import com.hazelcast.internal.networking.SocketReader;
+import com.hazelcast.internal.networking.SocketWriter;
 import com.hazelcast.nio.Packet;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.TestThread;
@@ -102,11 +104,11 @@ public abstract class TcpIpConnection_TransferStressBaseTest extends TcpIpConnec
             @Override
             public void run() throws Exception {
                 logger.info("writer total frames pending   : " + writer.totalFramesPending());
-                logger.info("writer last write time millis : " + writer.getLastWriteTimeMillis());
+                logger.info("writer last write time millis : " + writer.lastWriteTimeMillis());
 
                 logger.info("reader total frames handled   : " + reader.getNormalFramesReadCounter().get()
                         + reader.getPriorityFramesReadCounter().get());
-                logger.info("reader last read time millis  : " + reader.getLastReadTimeMillis());
+                logger.info("reader last read time millis  : " + reader.lastReadTimeMillis());
 
                 assertEquals(expectedNormalPackets, reader.getNormalFramesReadCounter().get());
                 assertEquals(expectedUrgentPackets, reader.getPriorityFramesReadCounter().get());
@@ -211,7 +213,7 @@ public abstract class TcpIpConnection_TransferStressBaseTest extends TcpIpConnec
             DummyPayload payload = payloads[random.nextInt(payloads.length)];
             Packet packet = new Packet(serializationService.toBytes(payload));
             if (payload.isUrgent()) {
-                packet.setFlag(Packet.FLAG_URGENT);
+                packet.raiseFlags(Packet.FLAG_URGENT);
             }
             return packet;
         }

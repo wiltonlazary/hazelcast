@@ -17,13 +17,15 @@
 package com.hazelcast.executor.impl.operations;
 
 import com.hazelcast.executor.impl.DistributedExecutorService;
+import com.hazelcast.executor.impl.ExecutorDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.Operation;
 
 import java.io.IOException;
 
-public final class CancellationOperation extends Operation {
+public final class CancellationOperation extends Operation implements IdentifiedDataSerializable {
 
     private String uuid;
     private boolean interrupt;
@@ -43,22 +45,9 @@ public final class CancellationOperation extends Operation {
     }
 
     @Override
-    public void beforeRun() throws Exception {
-    }
-
-    @Override
     public void run() throws Exception {
         DistributedExecutorService service = getService();
         response = service.cancel(uuid, interrupt);
-    }
-
-    @Override
-    public void afterRun() throws Exception {
-    }
-
-    @Override
-    public boolean returnsResponse() {
-        return true;
     }
 
     @Override
@@ -76,5 +65,15 @@ public final class CancellationOperation extends Operation {
     protected void readInternal(ObjectDataInput in) throws IOException {
         uuid = in.readUTF();
         interrupt = in.readBoolean();
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ExecutorDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ExecutorDataSerializerHook.CANCELLATION;
     }
 }

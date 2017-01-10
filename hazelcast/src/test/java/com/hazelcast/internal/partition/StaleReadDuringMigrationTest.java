@@ -4,10 +4,10 @@ import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.internal.partition.impl.InternalPartitionImpl;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.ExceptionAction;
 import com.hazelcast.spi.InternalCompletableFuture;
 import com.hazelcast.spi.InvocationBuilder;
+import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.ReadonlyOperation;
 import com.hazelcast.spi.exception.PartitionMigratingException;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
@@ -15,6 +15,7 @@ import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
+import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -26,7 +27,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 @RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class})
+@Category({QuickTest.class, ParallelTest.class})
 public class StaleReadDuringMigrationTest extends HazelcastTestSupport {
 
     @Test
@@ -68,15 +69,10 @@ public class StaleReadDuringMigrationTest extends HazelcastTestSupport {
         return invocationBuilder.invoke();
     }
 
-    private static class DummyOperation extends AbstractOperation implements ReadonlyOperation {
+    private static class DummyOperation extends Operation implements ReadonlyOperation {
 
         @Override
         public void run() throws Exception {
-        }
-
-        @Override
-        public boolean returnsResponse() {
-            return true;
         }
 
         @Override
@@ -91,7 +87,5 @@ public class StaleReadDuringMigrationTest extends HazelcastTestSupport {
             }
             return super.onInvocationException(throwable);
         }
-
     }
-
 }

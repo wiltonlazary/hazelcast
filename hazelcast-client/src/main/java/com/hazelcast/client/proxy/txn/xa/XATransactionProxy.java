@@ -24,12 +24,12 @@ import com.hazelcast.client.impl.protocol.codec.XATransactionCreateCodec;
 import com.hazelcast.client.impl.protocol.codec.XATransactionPrepareCodec;
 import com.hazelcast.client.impl.protocol.codec.XATransactionRollbackCodec;
 import com.hazelcast.client.spi.impl.ClientInvocation;
+import com.hazelcast.logging.ILogger;
 import com.hazelcast.transaction.TransactionException;
 import com.hazelcast.transaction.TransactionNotActiveException;
 import com.hazelcast.transaction.impl.Transaction;
 import com.hazelcast.transaction.impl.xa.SerializableXID;
 import com.hazelcast.util.Clock;
-import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.ExceptionUtil;
 
 import javax.transaction.xa.XAException;
@@ -39,6 +39,8 @@ import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.transaction.impl.Transaction.State.ACTIVE;
 import static com.hazelcast.transaction.impl.Transaction.State.COMMITTED;
+import static com.hazelcast.transaction.impl.Transaction.State.COMMITTING;
+import static com.hazelcast.transaction.impl.Transaction.State.COMMIT_FAILED;
 import static com.hazelcast.transaction.impl.Transaction.State.NO_TXN;
 import static com.hazelcast.transaction.impl.Transaction.State.PREPARED;
 import static com.hazelcast.transaction.impl.Transaction.State.ROLLED_BACK;
@@ -54,6 +56,7 @@ public class XATransactionProxy {
     private final ClientConnection connection;
     private final SerializableXID xid;
     private final int timeout;
+    private final ILogger logger;
 
     private Transaction.State state = NO_TXN;
     private volatile String txnId;
@@ -64,6 +67,7 @@ public class XATransactionProxy {
         this.connection = connection;
         this.timeout = timeout;
         this.xid = new SerializableXID(xid.getFormatId(), xid.getGlobalTransactionId(), xid.getBranchQualifier());
+        logger = client.getLoggingService().getLogger(XATransactionProxy.class);
     }
 
     void begin() {
@@ -102,21 +106,23 @@ public class XATransactionProxy {
             if (!onePhase && state != PREPARED) {
                 throw new TransactionException("Transaction is not prepared");
             }
+            state = COMMITTING;
             ClientMessage request = XATransactionCommitCodec.encodeRequest(txnId, onePhase);
             invoke(request);
             state = COMMITTED;
         } catch (Exception e) {
-            state = ROLLING_BACK;
+            state = COMMIT_FAILED;
             throw ExceptionUtil.rethrow(e);
         }
     }
 
     void rollback() {
+        state = ROLLING_BACK;
         try {
             ClientMessage request = XATransactionRollbackCodec.encodeRequest(txnId);
             invoke(request);
-        } catch (Exception ignored) {
-            EmptyStatement.ignore(ignored);
+        } catch (Exception exception) {
+            logger.warning("Exception while rolling back the transaction", exception);
         }
         state = ROLLED_BACK;
     }

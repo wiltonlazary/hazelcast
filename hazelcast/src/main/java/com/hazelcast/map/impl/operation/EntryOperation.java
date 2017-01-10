@@ -27,6 +27,7 @@ import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.impl.LazyMapEntry;
 import com.hazelcast.map.impl.LocalMapStatsProvider;
 import com.hazelcast.map.impl.MapContainer;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.monitor.impl.LocalMapStatsImpl;
@@ -106,12 +107,12 @@ public class EntryOperation extends LockAwareOperation implements BackupAwareOpe
         mapServiceContext.interceptAfterPut(name, dataValue);
         if (isPostProcessing(recordStore)) {
             Record record = recordStore.getRecord(dataKey);
-            dataValue = record.getValue();
+            dataValue = record == null ? null : record.getValue();
         }
         invalidateNearCache(dataKey);
         publishEntryEvent();
         publishWanReplicationEvent();
-        evict();
+        evict(dataKey);
     }
 
     @Override
@@ -132,7 +133,7 @@ public class EntryOperation extends LockAwareOperation implements BackupAwareOpe
 
     @Override
     public boolean shouldBackup() {
-        return mapContainer.getBackupCount() > 0 && entryProcessor.getBackupProcessor() != null;
+        return mapContainer.getTotalBackupCount() > 0 && entryProcessor.getBackupProcessor() != null;
     }
 
     @Override
@@ -263,5 +264,10 @@ public class EntryOperation extends LockAwareOperation implements BackupAwareOpe
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
         out.writeObject(entryProcessor);
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.ENTRY_OPERATION;
     }
 }

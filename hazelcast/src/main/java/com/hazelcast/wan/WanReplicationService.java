@@ -16,6 +16,8 @@
 
 package com.hazelcast.wan;
 
+import com.hazelcast.config.WanReplicationConfig;
+import com.hazelcast.monitor.WanSyncState;
 import com.hazelcast.spi.CoreService;
 import com.hazelcast.spi.StatisticsAwareService;
 
@@ -66,4 +68,24 @@ public interface WanReplicationService
     void checkWanReplicationQueues(String name);
 
     void syncMap(String wanReplicationName, String targetGroupName, String mapName);
+
+    void syncAllMaps(String wanReplicationName, String targetGroupName);
+
+    /**
+     * Clears WAN replication queues of the given wanReplicationName for the given target.
+     *
+     * @param wanReplicationName
+     * @param targetGroupName
+     */
+    void clearQueues(String wanReplicationName, String targetGroupName);
+
+    /**
+     * Adds a new {@link WanReplicationConfig} to all members.
+     */
+    void addWanReplicationConfig(WanReplicationConfig wanConfig);
+
+    /**
+     * Returns current status of WAN sync operation
+     */
+    WanSyncState getWanSyncState();
 }

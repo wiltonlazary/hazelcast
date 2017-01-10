@@ -20,12 +20,14 @@ import com.hazelcast.config.Config;
 import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.QuorumConfig;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.HazelcastInstanceAware;
 import com.hazelcast.core.IMap;
 import com.hazelcast.core.Member;
 import com.hazelcast.quorum.impl.QuorumServiceImpl;
 import com.hazelcast.spi.MemberAttributeServiceEvent;
 import com.hazelcast.spi.MembershipAwareService;
 import com.hazelcast.spi.impl.NodeEngineImpl;
+import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
@@ -38,7 +40,9 @@ import org.junit.runner.RunWith;
 import java.util.Collection;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
 
@@ -47,15 +51,60 @@ import static org.mockito.Mockito.mock;
 public class QuorumTest extends HazelcastTestSupport {
 
     @Test
+    public void testQuorumIsSetCorrectlyOnNodeInitialization() {
+        Config config = new Config();
+        QuorumConfig quorumConfig1 = new QuorumConfig();
+        String quorumName1 = randomString();
+        quorumConfig1.setName(quorumName1);
+        quorumConfig1.setEnabled(true);
+        quorumConfig1.setQuorumFunctionImplementation(new QuorumFunction() {
+            @Override
+            public boolean apply(Collection<Member> members) {
+                return true;
+            }
+        });
+
+        QuorumConfig quorumConfig2 = new QuorumConfig();
+        String quorumName2 = randomString();
+        quorumConfig2.setName(quorumName2);
+        quorumConfig2.setEnabled(true);
+        quorumConfig2.setSize(2);
+
+        config.addQuorumConfig(quorumConfig1);
+        config.addQuorumConfig(quorumConfig2);
+
+        HazelcastInstance hazelcastInstance = createHazelcastInstance(config);
+        final Quorum quorum1 = hazelcastInstance.getQuorumService().getQuorum(quorumName1);
+        final Quorum quorum2 = hazelcastInstance.getQuorumService().getQuorum(quorumName2);
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run()
+                    throws Exception {
+                assertTrue(quorum1.isPresent());
+                assertFalse(quorum2.isPresent());
+            }
+        });
+    }
+
+    @Test
     public void testQuorumIgnoresMemberAttributeEvents() throws Exception {
         Config config = new Config();
         QuorumConfig quorumConfig = new QuorumConfig().setName(randomString()).setEnabled(true);
-        RecordingQuorumFunction function = new RecordingQuorumFunction();
+        final RecordingQuorumFunction function = new RecordingQuorumFunction();
         quorumConfig.setQuorumFunctionImplementation(function);
         config.addQuorumConfig(quorumConfig);
         HazelcastInstance hazelcastInstance = createHazelcastInstance(config);
         NodeEngineImpl nodeEngine = getNodeEngineImpl(hazelcastInstance);
         MembershipAwareService service = nodeEngine.getService(QuorumServiceImpl.SERVICE_NAME);
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run()
+                    throws Exception {
+                assertTrue(function.wasCalled);
+            }
+        });
+        function.wasCalled = false;
 
         MemberAttributeServiceEvent event = mock(MemberAttributeServiceEvent.class);
         service.memberAttributeChanged(event);
@@ -227,6 +276,47 @@ public class QuorumTest extends HazelcastTestSupport {
         }
     }
 
+    @Test
+    public void givenQuorumFunctionConfigured_whenImplementsHazelcastInstanceAware_thenHazelcastInjectsItsInstance() {
+        String quorumName = randomString();
+        QuorumConfig quorumConfig = new QuorumConfig(quorumName, true);
+        quorumConfig.setQuorumFunctionClassName(HazelcastInstanceAwareQuorumFunction.class.getName());
+
+        Config config = new Config();
+        config.addQuorumConfig(quorumConfig);
+
+        HazelcastInstance instance = createHazelcastInstance(config);
+
+        assertEquals(instance, HazelcastInstanceAwareQuorumFunction.instance);
+    }
+
+    @Test
+    public void givenQuorumFunctionInstanceConfigured_whenImplementsHazelcastInstanceAware_thenHazelcastInjectsItsInstance() {
+        String quorumName = randomString();
+        QuorumConfig quorumConfig = new QuorumConfig(quorumName, true);
+        quorumConfig.setQuorumFunctionImplementation(new HazelcastInstanceAwareQuorumFunction());
+
+        Config config = new Config();
+        config.addQuorumConfig(quorumConfig);
+        HazelcastInstance instance = createHazelcastInstance(config);
+
+        assertEquals(instance, HazelcastInstanceAwareQuorumFunction.instance);
+    }
+
+    private static class HazelcastInstanceAwareQuorumFunction implements QuorumFunction, HazelcastInstanceAware {
+        private static volatile HazelcastInstance instance;
+
+        @Override
+        public void setHazelcastInstance(HazelcastInstance instance) {
+            this.instance = instance;
+        }
+
+        @Override
+        public boolean apply(Collection<Member> members) {
+            return false;
+        }
+    }
+
     private static class RecordingQuorumFunction implements QuorumFunction {
         private volatile boolean wasCalled;
 
@@ -237,5 +327,4 @@ public class QuorumTest extends HazelcastTestSupport {
         }
 
     }
-
 }

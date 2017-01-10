@@ -18,10 +18,11 @@ package com.hazelcast.nio.tcp;
 
 import com.hazelcast.instance.OutOfMemoryErrorDispatcher;
 import com.hazelcast.internal.metrics.Probe;
+import com.hazelcast.internal.networking.SocketChannelWrapper;
+import com.hazelcast.internal.networking.nonblocking.SelectorMode;
 import com.hazelcast.internal.util.counters.SwCounter;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.IOService;
-import com.hazelcast.nio.tcp.nonblocking.SelectorMode;
 
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
@@ -61,7 +62,8 @@ public class SocketAcceptorThread extends Thread {
     // See issue: https://github.com/hazelcast/hazelcast/issues/7943
     private final boolean selectorWorkaround = (SelectorMode.getConfiguredValue() == SelectorMode.SELECT_WITH_FIX);
 
-    private Selector selector;
+    private volatile boolean live = true;
+    private volatile Selector selector;
     private SelectionKey selectionKey;
 
     public SocketAcceptorThread(
@@ -73,7 +75,7 @@ public class SocketAcceptorThread extends Thread {
         this.serverSocketChannel = serverSocketChannel;
         this.connectionManager = connectionManager;
         this.ioService = connectionManager.getIoService();
-        this.logger = ioService.getLogger(this.getClass().getName());
+        this.logger = ioService.getLoggingService().getLogger(getClass());
     }
 
     /**
@@ -111,7 +113,7 @@ public class SocketAcceptorThread extends Thread {
     }
 
     private void acceptLoop() throws IOException {
-        while (connectionManager.isLive()) {
+        while (live) {
             // block until new connection or interruption.
             int keyCount = selector.select();
             if (isInterrupted()) {
@@ -127,7 +129,7 @@ public class SocketAcceptorThread extends Thread {
 
     private void acceptLoopWithSelectorFix() throws IOException {
         int idleCount = 0;
-        while (connectionManager.isLive()) {
+        while (live) {
             // block with a timeout until new connection or interruption.
             long before = currentTimeMillis();
             int keyCount = selector.select(SELECT_TIMEOUT_MILLIS);
@@ -191,10 +193,6 @@ public class SocketAcceptorThread extends Thread {
     }
 
     private void acceptSocket() {
-        if (!connectionManager.isLive()) {
-            return;
-        }
-
         SocketChannelWrapper socketChannelWrapper = null;
         try {
             final SocketChannel socketChannel = serverSocketChannel.accept();
@@ -210,7 +208,7 @@ public class SocketAcceptorThread extends Thread {
                 // or ClosedByInterruptException
                 logger.finest("Terminating socket acceptor thread...", e);
             } else {
-                logger.warning("Unexpected error while accepting connection! "
+                logger.severe("Unexpected error while accepting connection! "
                         + e.getClass().getName() + ": " + e.getMessage());
                 try {
                     serverSocketChannel.close();
@@ -250,9 +248,17 @@ public class SocketAcceptorThread extends Thread {
         }
     }
 
-    public void shutdown() {
+    public synchronized void shutdown() {
+        if (!live) {
+            return;
+        }
+
         logger.finest("Shutting down SocketAcceptor thread.");
-        interrupt();
+        live = false;
+        Selector sel = selector;
+        if (sel != null) {
+            sel.wakeup();
+        }
         try {
             join(SHUTDOWN_TIMEOUT_MILLIS);
         } catch (InterruptedException e) {

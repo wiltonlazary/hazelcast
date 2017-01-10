@@ -5,7 +5,6 @@ import com.hazelcast.core.ExecutionCallback;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.BackupOperation;
 import com.hazelcast.spi.InternalCompletableFuture;
@@ -29,6 +28,7 @@ import static com.hazelcast.spi.properties.GroupProperty.BACKPRESSURE_ENABLED;
 import static com.hazelcast.spi.properties.GroupProperty.BACKPRESSURE_MAX_CONCURRENT_INVOCATIONS_PER_PARTITION;
 import static com.hazelcast.spi.properties.GroupProperty.BACKPRESSURE_SYNCWINDOW;
 import static com.hazelcast.spi.properties.GroupProperty.OPERATION_BACKUP_TIMEOUT_MILLIS;
+import static com.hazelcast.spi.properties.GroupProperty.PARTITION_COUNT;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static org.junit.Assert.assertEquals;
 
@@ -62,7 +62,9 @@ public class BackpressureRegulatorStressTest extends HazelcastTestSupport {
                 .setProperty(OPERATION_BACKUP_TIMEOUT_MILLIS.getName(), "60000")
                 .setProperty(BACKPRESSURE_ENABLED.getName(), "true")
                 .setProperty(BACKPRESSURE_SYNCWINDOW.getName(), "10")
-                .setProperty(BACKPRESSURE_MAX_CONCURRENT_INVOCATIONS_PER_PARTITION.getName(), "2");
+                .setProperty(BACKPRESSURE_MAX_CONCURRENT_INVOCATIONS_PER_PARTITION.getName(), "2")
+                .setProperty(PARTITION_COUNT.getName(), "10");
+
         HazelcastInstance[] cluster = createHazelcastInstanceFactory(2).newInstances(config);
         local = cluster[0];
         remote = cluster[1];
@@ -291,7 +293,7 @@ public class BackpressureRegulatorStressTest extends HazelcastTestSupport {
         StressThread create();
     }
 
-    static class DummyOperation extends AbstractOperation implements BackupAwareOperation {
+    static class DummyOperation extends Operation implements BackupAwareOperation {
         long result;
         int asyncBackups;
         int syncBackups;
@@ -376,7 +378,7 @@ public class BackpressureRegulatorStressTest extends HazelcastTestSupport {
         }
     }
 
-    public static class DummyBackupOperation extends AbstractOperation implements BackupOperation {
+    public static class DummyBackupOperation extends Operation implements BackupOperation {
         private int runDelayMs;
 
         @Override

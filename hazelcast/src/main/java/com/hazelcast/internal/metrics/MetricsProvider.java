@@ -21,5 +21,5 @@ package com.hazelcast.internal.metrics;
  */
 public interface MetricsProvider {
 
-    void provideMetrics(MetricsRegistry metricsRegistry);
+    void provideMetrics(MetricsRegistry registry);
 }

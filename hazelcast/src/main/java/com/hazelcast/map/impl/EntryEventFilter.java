@@ -19,12 +19,12 @@ package com.hazelcast.map.impl;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.EventFilter;
 
 import java.io.IOException;
 
-public class EntryEventFilter implements EventFilter, DataSerializable {
+public class EntryEventFilter implements EventFilter, IdentifiedDataSerializable {
 
     protected boolean includeValue;
     protected Data key;
@@ -87,5 +87,23 @@ public class EntryEventFilter implements EventFilter, DataSerializable {
         int result = (includeValue ? 1 : 0);
         result = 31 * result + (key != null ? key.hashCode() : 0);
         return result;
+    }
+
+    @Override
+    public String toString() {
+        return "EntryEventFilter{"
+                + "includeValue=" + includeValue
+                + ", key=" + key
+                + '}';
+    }
+
+    @Override
+    public int getFactoryId() {
+        return MapDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.ENTRY_EVENT_FILTER;
     }
 }

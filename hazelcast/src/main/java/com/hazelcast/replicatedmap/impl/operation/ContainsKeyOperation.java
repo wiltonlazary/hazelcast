@@ -21,11 +21,10 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecordStore;
-import com.hazelcast.spi.AbstractOperation;
 
 import java.io.IOException;
 
-public class ContainsKeyOperation extends AbstractOperation {
+public class ContainsKeyOperation extends AbstractSerializableOperation {
 
     private String name;
     private Data key;
@@ -48,11 +47,6 @@ public class ContainsKeyOperation extends AbstractOperation {
     }
 
     @Override
-    public boolean returnsResponse() {
-        return true;
-    }
-
-    @Override
     public Object getResponse() {
         return response;
     }
@@ -67,5 +61,10 @@ public class ContainsKeyOperation extends AbstractOperation {
     protected void readInternal(ObjectDataInput in) throws IOException {
         name = in.readUTF();
         key = in.readData();
+    }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.CONTAINS_KEY;
     }
 }

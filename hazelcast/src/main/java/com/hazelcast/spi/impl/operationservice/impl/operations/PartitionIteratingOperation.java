@@ -16,33 +16,48 @@
 
 package com.hazelcast.spi.impl.operationservice.impl.operations;
 
-import com.hazelcast.core.HazelcastException;
-import com.hazelcast.logging.ILogger;
+import com.hazelcast.client.impl.operations.OperationFactoryWrapper;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationAccessor;
 import com.hazelcast.spi.OperationFactory;
 import com.hazelcast.spi.OperationResponseHandler;
+import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.impl.SpiDataSerializerHook;
+import com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl;
+import com.hazelcast.spi.impl.operationservice.impl.responses.ErrorResponse;
 import com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse;
-import com.hazelcast.util.ResponseQueueFactory;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
+import static com.hazelcast.spi.impl.operationservice.impl.operations.PartitionAwareFactoryAccessor.extractPartitionAware;
 import static com.hazelcast.util.CollectionUtil.toIntArray;
 
-public final class PartitionIteratingOperation extends AbstractOperation implements IdentifiedDataSerializable {
+/**
+ * Executes Operations on one or more partitions.
+ * <p>
+ * THe execution used to be synchronous; so the thread executing this PartitionIteratingOperation would block till all
+ * the child requests are done. In 3.8 this is made asynchronous so that the thread isn't consumed and available for
+ * other tasks. On each partition operation an {@link OperationResponseHandler} is set, that sends the result to the
+ * caller when all responses have completed.
+ */
+public final class PartitionIteratingOperation extends Operation implements IdentifiedDataSerializable {
+    private static final Object NULL = new Object() {
+        @Override
+        public String toString() {
+            return "null";
+        }
+    };
 
     private OperationFactory operationFactory;
     private int[] partitions;
-    private Object[] results;
 
     public PartitionIteratingOperation() {
     }
@@ -52,101 +67,98 @@ public final class PartitionIteratingOperation extends AbstractOperation impleme
         this.partitions = toIntArray(partitions);
     }
 
+    public OperationFactory getOperationFactory() {
+        return operationFactory;
+    }
+
+    @Override
+    public boolean returnsResponse() {
+        // since this call is non blocking, we don't have a response. The response is send when the actual operations complete.
+        return false;
+    }
+
     @Override
     public void run() throws Exception {
-        try {
-            Object[] responses;
-            if (operationFactory instanceof PartitionAwareOperationFactory) {
-                responses = executePartitionAwareOperations();
-            } else {
-                responses = executeOperations();
-            }
+        getOperationServiceImpl().onStartAsyncOperation(this);
 
-            results = resolveResponses(responses);
-        } catch (Exception e) {
-            getLogger(getNodeEngine()).severe(e);
+        PartitionAwareOperationFactory partitionAwareFactory = extractPartitionAware(operationFactory);
+        if (partitionAwareFactory != null) {
+            executePartitionAwareOperations(partitionAwareFactory);
+        } else {
+            executeOperations();
         }
     }
 
-    private Object[] executeOperations() {
-        NodeEngine nodeEngine = getNodeEngine();
-        Object[] responses = new Object[partitions.length];
-        for (int i = 0; i < partitions.length; i++) {
-            ResponseQueue responseQueue = new ResponseQueue();
-            responses[i] = responseQueue;
+    @Override
+    public void onExecutionFailure(Throwable cause) {
+        // in case of an error, we need to de-register to prevent leaks.
+        getOperationServiceImpl().onCompletionAsyncOperation(this);
 
-            Operation operation = operationFactory.createOperation();
-            operation.setNodeEngine(nodeEngine)
-                    .setPartitionId(partitions[i])
+        // we also send a response so that the caller doesn't wait indefinitely.
+        sendResponse(new ErrorResponse(cause, getCallId(), isUrgent()));
+
+        getLogger().severe(cause);
+    }
+
+    private void executeOperations() {
+        NodeEngine nodeEngine = getNodeEngine();
+        OperationResponseHandler responseHandler = new OperationResponseHandlerImpl(partitions);
+        OperationService operationService = nodeEngine.getOperationService();
+        Object service = getServiceName() == null ? null : getService();
+
+        for (int partitionId : partitions) {
+            Operation operation = operationFactory.createOperation()
+                    .setNodeEngine(nodeEngine)
+                    .setPartitionId(partitionId)
                     .setReplicaIndex(getReplicaIndex())
-                    .setOperationResponseHandler(responseQueue)
+                    .setOperationResponseHandler(responseHandler)
                     .setServiceName(getServiceName())
-                    .setService(getService())
-                    .setCallerUuid(getCallerUuid());
+                    .setService(service)
+                    .setCallerUuid(extractCallerUuid());
+
             OperationAccessor.setCallerAddress(operation, getCallerAddress());
-            nodeEngine.getOperationService().executeOperation(operation);
+            operationService.execute(operation);
         }
-        return responses;
     }
 
-
-    private Object[] executePartitionAwareOperations() {
-        PartitionAwareOperationFactory operationFactory = (PartitionAwareOperationFactory) this.operationFactory;
-        operationFactory.init(getNodeEngine());
+    private void executePartitionAwareOperations(PartitionAwareOperationFactory givenFactory) {
+        PartitionAwareOperationFactory factory = givenFactory.createFactoryOnRunner(getNodeEngine());
 
         NodeEngine nodeEngine = getNodeEngine();
-        int[] operationFactoryPartitions = operationFactory.getPartitions();
+        int[] operationFactoryPartitions = factory.getPartitions();
         partitions = operationFactoryPartitions == null ? partitions : operationFactoryPartitions;
-        Object[] responses = new Object[partitions.length];
 
-        for (int i = 0; i < partitions.length; i++) {
-            ResponseQueue responseQueue = new ResponseQueue();
-            responses[i] = responseQueue;
+        OperationResponseHandler responseHandler = new OperationResponseHandlerImpl(partitions);
+        OperationService operationService = nodeEngine.getOperationService();
+        Object service = getServiceName() == null ? null : getService();
 
-            int partition = partitions[i];
-            Operation operation = operationFactory.createPartitionOperation(partition);
-            operation.setNodeEngine(nodeEngine)
-                    .setPartitionId(partition)
+        for (int partitionId : partitions) {
+            Operation op = factory.createPartitionOperation(partitionId)
+                    .setNodeEngine(nodeEngine)
+                    .setPartitionId(partitionId)
                     .setReplicaIndex(getReplicaIndex())
-                    .setOperationResponseHandler(responseQueue)
+                    .setOperationResponseHandler(responseHandler)
                     .setServiceName(getServiceName())
-                    .setService(getService())
-                    .setCallerUuid(getCallerUuid());
-            OperationAccessor.setCallerAddress(operation, getCallerAddress());
-            nodeEngine.getOperationService().executeOperation(operation);
+                    .setService(service)
+                    .setCallerUuid(extractCallerUuid());
+
+            OperationAccessor.setCallerAddress(op, getCallerAddress());
+            operationService.execute(op);
         }
-        return responses;
     }
 
-    /**
-     * Replaces the {@link ResponseQueue} entries with its results.
-     * <p>
-     * The responses array is reused to avoid the allocation of a new array.
-     */
-    private Object[] resolveResponses(Object[] responses) throws InterruptedException {
-        for (int i = 0; i < responses.length; i++) {
-            ResponseQueue queue = (ResponseQueue) responses[i];
-            Object result = queue.get();
-            if (result instanceof NormalResponse) {
-                responses[i] = ((NormalResponse) result).getValue();
-            } else {
-                responses[i] = result;
-            }
+    private OperationServiceImpl getOperationServiceImpl() {
+        return (OperationServiceImpl) getNodeEngine().getOperationService();
+    }
+
+    private String extractCallerUuid() {
+        // Clients callerUUID can be set already. See OperationFactoryWrapper usage.
+        if (operationFactory instanceof OperationFactoryWrapper) {
+            return ((OperationFactoryWrapper) operationFactory).getUuid();
         }
-        return responses;
-    }
 
-    private ILogger getLogger(NodeEngine nodeEngine) {
-        return nodeEngine.getLogger(PartitionIteratingOperation.class.getName());
-    }
-
-    @Override
-    public void afterRun() throws Exception {
-    }
-
-    @Override
-    public Object getResponse() {
-        return new PartitionResponse(partitions, results);
+        // Members UUID
+        return getCallerUuid();
     }
 
     @Override
@@ -156,24 +168,55 @@ public final class PartitionIteratingOperation extends AbstractOperation impleme
         sb.append(", operationFactory=").append(operationFactory);
     }
 
-    private static class ResponseQueue implements OperationResponseHandler {
+    private class OperationResponseHandlerImpl implements OperationResponseHandler {
 
-        private final BlockingQueue<Object> queue = ResponseQueueFactory.newResponseQueue();
+        // an array with the partitionCount as length, so we can quickly do a lookup for a given partitionId.
+        // it will store all the 'sub' responses.
+        private final AtomicReferenceArray<Object> responseArray = new AtomicReferenceArray<Object>(
+                getNodeEngine().getPartitionService().getPartitionCount());
+
+        // contains the number of pending operations. If it hits zero, all responses have been received.
+        private final AtomicInteger pendingOperations;
+        private final int[] partitions;
+
+        OperationResponseHandlerImpl(int[] partitions) {
+            this.partitions = partitions;
+            this.pendingOperations = new AtomicInteger(partitions.length);
+        }
 
         @Override
-        public void sendResponse(Operation op, Object obj) {
-            if (!queue.offer(obj)) {
-                throw new HazelcastException("Response could not be queued for transportation");
+        public void sendResponse(Operation op, Object response) {
+            if (response instanceof NormalResponse) {
+                response = ((NormalResponse) response).getValue();
+            } else if (response == null) {
+                response = NULL;
+            }
+
+            // we try to set the response in the responseArray
+            if (!responseArray.compareAndSet(op.getPartitionId(), null, response)) {
+                // duplicate response; should not happen. We can only log it since this method is being executed on some
+                // general purpose executor.
+                getLogger().warning("Duplicate response for " + op + " second response [" + response + "]"
+                        + "first response [" + responseArray.get(op.getPartitionId()) + "]");
+                return;
+            }
+
+            // if it is the last response we are waiting for, we can send the final response to the caller.
+            if (pendingOperations.decrementAndGet() == 0) {
+                getOperationServiceImpl().onCompletionAsyncOperation(PartitionIteratingOperation.this);
+                sendResponse();
             }
         }
 
-        public Object get() throws InterruptedException {
-            return queue.take();
-        }
+        private void sendResponse() {
+            Object[] results = new Object[partitions.length];
+            for (int k = 0; k < partitions.length; k++) {
+                int partitionId = partitions[k];
+                Object response = responseArray.get(partitionId);
+                results[k] = response == NULL ? null : response;
+            }
 
-        @Override
-        public boolean isLocal() {
-            return true;
+            PartitionIteratingOperation.this.sendResponse(new PartitionResponse(partitions, results));
         }
     }
 
@@ -239,7 +282,7 @@ public final class PartitionIteratingOperation extends AbstractOperation impleme
         @Override
         public void writeData(ObjectDataOutput out) throws IOException {
             out.writeIntArray(partitions);
-            int resultLength = (results != null ? results.length : 0);
+            int resultLength = results != null ? results.length : 0;
             out.writeInt(resultLength);
             if (resultLength > 0) {
                 for (Object result : results) {
@@ -260,6 +303,4 @@ public final class PartitionIteratingOperation extends AbstractOperation impleme
             }
         }
     }
-
-
 }

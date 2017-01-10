@@ -21,7 +21,7 @@
     <parent>
         <groupId>com.hazelcast</groupId>
         <artifactId>hazelcast-root</artifactId>
-        <version>3.7-SNAPSHOT</version>
+        <version>3.8-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -36,6 +36,11 @@
             <url>https://oss.sonatype.org/content/repositories/snapshots</url>
         </repository>
     </repositories>
+
+    <properties>
+        <!-- needed for checkstyle/findbugs -->
+        <main.basedir>${project.parent.basedir}</main.basedir>
+    </properties>
 
     <build>
         <plugins>
@@ -150,13 +155,13 @@
         </dependency>
         <dependency>
             <groupId>com.hazelcast</groupId>
-            <artifactId>hazelcast-cloud</artifactId>
-            <version>3.6</version>
+            <artifactId>hazelcast-aws</artifactId>
+            <version>1.0</version>
         </dependency>
         <dependency>
             <groupId>com.hazelcast</groupId>
             <artifactId>hazelcast-hibernate3</artifactId>
-            <version>${project.version}</version>
+            <version>3.6.5</version>
         </dependency>
         <dependency>
             <groupId>com.hazelcast</groupId>
@@ -166,7 +171,7 @@
         <dependency>
             <groupId>com.hazelcast</groupId>
             <artifactId>hazelcast-wm</artifactId>
-            <version>${project.version}</version>
+            <version>3.7.1</version>
         </dependency>
     </dependencies>
 </project>

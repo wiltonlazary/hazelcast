@@ -25,19 +25,18 @@ import com.hazelcast.test.annotation.QuickTest;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class ReplicatedMapEntryListenerOnReconnectTest extends AbstractListenersOnReconnectTest {
 
-    private ReplicatedMap replicatedMap;
+    private ReplicatedMap<String, String> replicatedMap;
 
     @Override
-    protected String addListener(final AtomicInteger eventCount) {
+    protected String addListener() {
         replicatedMap = client.getReplicatedMap(randomString());
-        final EntryAdapter<Object, Object> listener = new EntryAdapter<Object, Object>() {
-            public void onEntryEvent(EntryEvent<Object, Object> event) {
+        final EntryAdapter<String, String> listener = new EntryAdapter<String, String>() {
+            @Override
+            public void onEntryEvent(EntryEvent<String, String> event) {
                 eventCount.incrementAndGet();
             }
         };
@@ -54,4 +53,3 @@ public class ReplicatedMapEntryListenerOnReconnectTest extends AbstractListeners
         return replicatedMap.removeEntryListener(registrationId);
     }
 }
-

@@ -20,6 +20,7 @@ import com.hazelcast.client.ClientEndpoint;
 import com.hazelcast.client.impl.client.ClientPrincipal;
 import com.hazelcast.core.ClientType;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
+import com.hazelcast.instance.BuildInfo;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.tcp.TcpIpConnection;
@@ -55,16 +56,20 @@ public final class ClientEndpointImpl implements ClientEndpoint {
     private boolean firstConnection;
     private Credentials credentials;
     private volatile boolean authenticated;
+    private int clientVersion;
+    private String clientVersionString;
 
     public ClientEndpointImpl(ClientEngineImpl clientEngine, Connection conn) {
         this.clientEngine = clientEngine;
         this.conn = conn;
         if (conn instanceof TcpIpConnection) {
             TcpIpConnection tcpIpConnection = (TcpIpConnection) conn;
-            socketAddress = tcpIpConnection.getSocketChannelWrapper().socket().getRemoteSocketAddress();
+            socketAddress = tcpIpConnection.getSocketChannel().socket().getRemoteSocketAddress();
         } else {
             socketAddress = null;
         }
+        this.clientVersion = BuildInfo.UNKNOWN_HAZELCAST_VERSION;
+        this.clientVersionString = "Unknown";
     }
 
     @Override
@@ -79,7 +84,15 @@ public final class ClientEndpointImpl implements ClientEndpoint {
 
     @Override
     public boolean isAlive() {
-        return conn.isAlive();
+        if (conn.isAlive()) {
+            return true;
+        }
+        String clientUuid = getUuid();
+        if (null != clientUuid) {
+            Connection connection = clientEngine.getEndpointManager().findLiveConnectionFor(clientUuid);
+            return null != connection;
+        }
+        return false;
     }
 
     @Override
@@ -97,11 +110,12 @@ public final class ClientEndpointImpl implements ClientEndpoint {
     }
 
     @Override
-    public void authenticated(ClientPrincipal principal, Credentials credentials, boolean firstConnection) {
+    public void authenticated(ClientPrincipal principal, Credentials credentials, boolean firstConnection, String clientVersion) {
         this.principal = principal;
         this.firstConnection = firstConnection;
         this.credentials = credentials;
         this.authenticated = true;
+        this.setClientVersion(clientVersion);
     }
 
     @Override
@@ -113,6 +127,17 @@ public final class ClientEndpointImpl implements ClientEndpoint {
     @Override
     public boolean isAuthenticated() {
         return authenticated;
+    }
+
+    @Override
+    public int getClientVersion() {
+        return clientVersion;
+    }
+
+    @Override
+    public void setClientVersion(String version) {
+        clientVersionString = version;
+        clientVersion = BuildInfo.calculateVersion(version);
     }
 
     public ClientPrincipal getPrincipal() {
@@ -142,6 +167,9 @@ public final class ClientEndpointImpl implements ClientEndpoint {
                 break;
             case RUBY_CLIENT:
                 type = ClientType.RUBY;
+                break;
+            case NODEJS_CLIENT:
+                type = ClientType.NODEJS;
                 break;
             case BINARY_CLIENT:
                 type = ClientType.OTHER;
@@ -209,6 +237,11 @@ public final class ClientEndpointImpl implements ClientEndpoint {
         removeListenerActions.clear();
     }
 
+    @Override
+    public boolean resourcesExist() {
+        return !removeListenerActions.isEmpty() || !transactionContextMap.isEmpty();
+    }
+
     public void destroy() throws LoginException {
         clearAllListeners();
 
@@ -242,6 +275,7 @@ public final class ClientEndpointImpl implements ClientEndpoint {
                 + ", principal='" + principal + '\''
                 + ", firstConnection=" + firstConnection
                 + ", authenticated=" + authenticated
+                + ", clientVersion=" + clientVersionString
                 + '}';
     }
 }

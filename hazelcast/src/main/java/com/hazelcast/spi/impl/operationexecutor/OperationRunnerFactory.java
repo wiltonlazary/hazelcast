@@ -49,7 +49,7 @@ public interface OperationRunnerFactory {
      * into problems.
      *
      * @return the created ad hoc OperationRunner.
-     * @see com.hazelcast.spi.OperationService#runOperationOnCallingThread(com.hazelcast.spi.Operation)
+     * @see com.hazelcast.spi.OperationService#run(com.hazelcast.spi.Operation)
      */
     OperationRunner createAdHocRunner();
 }

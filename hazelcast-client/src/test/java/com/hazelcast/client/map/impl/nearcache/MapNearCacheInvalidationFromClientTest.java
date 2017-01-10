@@ -1,12 +1,14 @@
 package com.hazelcast.client.map.impl.nearcache;
 
-import com.hazelcast.cache.impl.nearcache.NearCache;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.internal.nearcache.NearCache;
 import com.hazelcast.map.impl.MapService;
+import com.hazelcast.map.impl.MapServiceContext;
+import com.hazelcast.map.impl.nearcache.MapNearCacheManager;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
@@ -31,55 +33,52 @@ import static org.junit.Assert.assertTrue;
 @Category({QuickTest.class, ParallelTest.class})
 public class MapNearCacheInvalidationFromClientTest {
 
+    private String mapName;
+
     private TestHazelcastFactory factory;
 
     private HazelcastInstance lite;
-
     private HazelcastInstance client;
-
-    private String mapName;
 
     @Before
     public void init() {
-        factory = new TestHazelcastFactory();
         mapName = randomMapName();
-        factory.newHazelcastInstance(createServerConfig(mapName, false));
-        lite = factory.newHazelcastInstance(createServerConfig(mapName, true));
 
+        factory = new TestHazelcastFactory();
+        factory.newHazelcastInstance(createServerConfig(mapName, false));
+
+        lite = factory.newHazelcastInstance(createServerConfig(mapName, true));
         client = factory.newHazelcastClient();
     }
 
     @After
-    public void tearDown()
-            throws Exception {
+    public void tearDown() {
         factory.shutdownAll();
     }
 
     @Test
-    public void testPut()
-            throws Exception {
-        final IMap<Object, Object> map = client.getMap(mapName);
+    public void testPut() {
+        IMap<Object, Object> map = client.getMap(mapName);
 
-        final int count = 100;
+        int count = 100;
         for (int i = 0; i < count; i++) {
             map.put(i, i);
         }
 
-        final IMap<Object, Object> liteMap = lite.getMap(mapName);
+        IMap<Object, Object> liteMap = lite.getMap(mapName);
 
         for (int i = 0; i < count; i++) {
             assertNotNull(liteMap.get(i));
         }
 
-        final NearCache nearCache = getNearCache(lite, mapName);
-        final int sizeAfterPut = nearCache.size();
-        assertTrue("NearCache size should be > 0 but was " + sizeAfterPut, sizeAfterPut > 0);
+        NearCache nearCache = getNearCache(lite, mapName);
+        int sizeAfterPut = nearCache.size();
+        assertTrue("Near Cache size should be > 0 but was " + sizeAfterPut, sizeAfterPut > 0);
     }
 
     @Test
-    public void testClear()
-            throws Exception {
-        final IMap<Object, Object> map = client.getMap(mapName);
+    public void testClear() {
+        IMap<Object, Object> map = client.getMap(mapName);
 
         final int count = 100;
         for (int i = 0; i < count; i++) {
@@ -91,8 +90,7 @@ public class MapNearCacheInvalidationFromClientTest {
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
+            public void run() {
                 for (int i = 0; i < count; i++) {
                     liteMap.get(i);
                 }
@@ -104,8 +102,7 @@ public class MapNearCacheInvalidationFromClientTest {
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
+            public void run() {
                 assertEquals(0, nearCache.size());
             }
         });
@@ -113,7 +110,7 @@ public class MapNearCacheInvalidationFromClientTest {
 
     @Test
     public void testEvictAll() {
-        final IMap<Object, Object> map = client.getMap(mapName);
+        IMap<Object, Object> map = client.getMap(mapName);
 
         final int count = 100;
         for (int i = 0; i < count; i++) {
@@ -125,8 +122,7 @@ public class MapNearCacheInvalidationFromClientTest {
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
+            public void run() {
                 for (int i = 0; i < count; i++) {
                     liteMap.get(i);
                 }
@@ -138,8 +134,7 @@ public class MapNearCacheInvalidationFromClientTest {
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
+            public void run() {
                 assertTrue(nearCache.size() < count);
             }
         });
@@ -147,7 +142,7 @@ public class MapNearCacheInvalidationFromClientTest {
 
     @Test
     public void testEvict() {
-        final IMap<Object, Object> map = client.getMap(mapName);
+        IMap<Object, Object> map = client.getMap(mapName);
 
         final int count = 100;
         for (int i = 0; i < count; i++) {
@@ -159,8 +154,7 @@ public class MapNearCacheInvalidationFromClientTest {
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
+            public void run() {
                 for (int i = 0; i < count; i++) {
                     liteMap.get(i);
                 }
@@ -172,8 +166,7 @@ public class MapNearCacheInvalidationFromClientTest {
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
+            public void run() {
                 assertTrue(nearCache.size() < count);
             }
         });
@@ -181,19 +174,18 @@ public class MapNearCacheInvalidationFromClientTest {
 
     @Test
     public void testUpdate() {
-        final IMap<Object, Object> map = client.getMap(mapName);
+        IMap<Object, Object> map = client.getMap(mapName);
         map.put(1, 1);
 
         final IMap<Object, Object> liteMap = lite.getMap(mapName);
-        final NearCache nearCache = getNearCache(lite, mapName);
+        final NearCache<Object, Object> nearCache = getNearCache(lite, mapName);
         final Data keyData = toData(lite, 1);
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
+            public void run() {
                 liteMap.get(1);
-                assertEquals(keyData, nearCache.get(keyData));
+                assertEquals(1, nearCache.get(keyData));
             }
         });
 
@@ -201,28 +193,26 @@ public class MapNearCacheInvalidationFromClientTest {
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
-                assertNull(toObject(lite, nearCache.get(keyData)));
+            public void run() {
+                assertNull(nearCache.get(keyData));
             }
         });
     }
 
     @Test
     public void testRemove() {
-        final IMap<Object, Object> map = client.getMap(mapName);
+        IMap<Object, Object> map = client.getMap(mapName);
         map.put(1, 1);
 
         final IMap<Object, Object> liteMap = lite.getMap(mapName);
-        final NearCache nearCache = getNearCache(lite, mapName);
+        final NearCache<Object, Object> nearCache = getNearCache(lite, mapName);
         final Data keyData = toData(lite, 1);
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
+            public void run() {
                 liteMap.get(1);
-                assertEquals(keyData, nearCache.get(keyData));
+                assertEquals(1, nearCache.get(keyData));
             }
         });
 
@@ -230,39 +220,39 @@ public class MapNearCacheInvalidationFromClientTest {
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
-                assertNull(toObject(lite, nearCache.get(keyData)));
+            public void run() {
+                assertNull(nearCache.get(keyData));
             }
         });
     }
 
-    private Config createServerConfig(final String mapName, final boolean liteMember) {
-        final Config config = new Config();
+    private Config createServerConfig(String mapName, boolean liteMember) {
+        NearCacheConfig nearCacheConfig = new NearCacheConfig();
+        nearCacheConfig.setInvalidateOnChange(true);
+
+        Config config = new Config();
         config.setLiteMember(liteMember);
         config.setProperty(GroupProperty.MAP_INVALIDATION_MESSAGE_BATCH_ENABLED.getName(), "true");
         config.setProperty(GroupProperty.MAP_INVALIDATION_MESSAGE_BATCH_FREQUENCY_SECONDS.getName(), "5");
         config.setProperty(GroupProperty.MAP_INVALIDATION_MESSAGE_BATCH_SIZE.getName(), "1000");
-        final NearCacheConfig nearCacheConfig = new NearCacheConfig();
-        nearCacheConfig.setInvalidateOnChange(true);
         config.getMapConfig(mapName).setNearCacheConfig(nearCacheConfig);
+
         return config;
     }
 
-    private NearCache getNearCache(final HazelcastInstance instance, final String mapName) {
-        return getMapService(instance).getMapServiceContext().getNearCacheProvider().getOrCreateNearCache(mapName);
+    @SuppressWarnings("unchecked")
+    private NearCache<Object, Object> getNearCache(HazelcastInstance instance, String mapName) {
+        MapServiceContext mapServiceContext = getMapService(instance).getMapServiceContext();
+        MapNearCacheManager mapNearCacheManager = mapServiceContext.getMapNearCacheManager();
+        NearCacheConfig nearCacheConfig = getNodeEngineImpl(instance).getConfig().getMapConfig(mapName).getNearCacheConfig();
+        return mapNearCacheManager.getOrCreateNearCache(mapName, nearCacheConfig);
     }
 
     private Data toData(HazelcastInstance instance, Object obj) {
         return getMapService(instance).getMapServiceContext().toData(obj);
     }
 
-    private Object toObject(HazelcastInstance instance, Object obj) {
-        return getMapService(instance).getMapServiceContext().toObject(obj);
-    }
-
     private MapService getMapService(HazelcastInstance instance) {
         return getNodeEngineImpl(instance).getService(MapService.SERVICE_NAME);
     }
-
 }

@@ -26,14 +26,12 @@ import com.hazelcast.spring.CustomSpringJUnit4ClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.AfterClass;
-import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.CacheManager;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.test.context.ContextConfiguration;
 
 import javax.annotation.Resource;
@@ -41,8 +39,11 @@ import java.util.Collection;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static com.hazelcast.test.HazelcastTestSupport.sleepSeconds;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 @RunWith(CustomSpringJUnit4ClassRunner.class)
 @ContextConfiguration(locations = {"cacheManager-applicationContext-hazelcast.xml"})
@@ -65,7 +66,7 @@ public class TestCacheManager {
     }
 
     @Test
-    public void test() {
+    public void testBean_withValue() {
         for (int i = 0; i < 100; i++) {
             assertEquals("name:" + i, bean.getName(i));
             assertEquals("city:" + i, bean.getCity(i));
@@ -73,42 +74,39 @@ public class TestCacheManager {
     }
 
     @Test
-    public void testNull() {
+    public void testBean_withNull() {
         for (int i = 0; i < 100; i++) {
             assertNull(bean.getNull());
         }
     }
 
     @Test
-    public void testTTL() throws InterruptedException {
-        final String name = bean.getNameWithTTL();
+    public void testBean_withTTL() {
+        String name = bean.getNameWithTTL();
         assertEquals("ali", name);
-        final String nameFromCache = bean.getNameWithTTL();
+        String nameFromCache = bean.getNameWithTTL();
         assertEquals("ali", nameFromCache);
 
-        Thread.sleep(3000);
+        sleepSeconds(3);
 
-        final String nameFromCacheAfterTTL = bean.getNameWithTTL();
+        String nameFromCacheAfterTTL = bean.getNameWithTTL();
         assertNull(nameFromCacheAfterTTL);
-
     }
 
     @Test
-    public void testCacheNames() throws InterruptedException {
-
-        //Create a test instance, to reproduce the behaviour stated in the
-        //github issue: https://github.com/hazelcast/hazelcast/issues/492
+    public void testCacheNames() {
+        // create a test instance, to reproduce the behavior described in the GitHub issue
+        // https://github.com/hazelcast/hazelcast/issues/492
         final String testMap = "test-map";
 
         final CountDownLatch distributionSignal = new CountDownLatch(1);
         instance.addDistributedObjectListener(new DistributedObjectListener() {
-
             @Override
             public void distributedObjectCreated(DistributedObjectEvent event) {
                 DistributedObject distributedObject = event.getDistributedObject();
-                if(distributedObject instanceof IMap) {
+                if (distributedObject instanceof IMap) {
                     IMap<?, ?> map = (IMap) distributedObject;
-                    if(testMap.equals(map.getName())) {
+                    if (testMap.equals(map.getName())) {
                         distributionSignal.countDown();
                     }
                 }
@@ -116,50 +114,47 @@ public class TestCacheManager {
 
             @Override
             public void distributedObjectDestroyed(DistributedObjectEvent event) {
-
             }
         });
 
         HazelcastInstance testInstance = Hazelcast.newHazelcastInstance();
         testInstance.getMap(testMap);
-        //Be sure that test-map is distrubuted
+        // be sure that test-map is distributed
         HazelcastTestSupport.assertOpenEventually(distributionSignal);
 
         Collection<String> test = cacheManager.getCacheNames();
-        Assert.assertTrue(test.contains(testMap));
+        assertTrue(test.contains(testMap));
         testInstance.shutdown();
     }
 
-
     public static class DummyBean implements IDummyBean {
 
-        @Cacheable("name")
-        public String getName(int k) {
-            Assert.fail("should not call this method!");
-            return null;
-        }
-
-        @Cacheable("city")
-        public String getCity(int k) {
-            Assert.fail("should not call this method!");
-            return null;
-        }
-
         final AtomicBoolean nullCall = new AtomicBoolean(false);
+        final AtomicBoolean firstCall = new AtomicBoolean(false);
 
-        @Cacheable("null-map")
+        @Override
+        public String getName(int k) {
+            fail("should not call this method!");
+            return null;
+        }
+
+        @Override
+        public String getCity(int k) {
+            fail("should not call this method!");
+            return null;
+        }
+
+        @Override
         public Object getNull() {
             if (nullCall.compareAndSet(false, true)) {
                 return null;
             }
-            Assert.fail("should not call this method!");
+            fail("should not call this method!");
             return null;
         }
 
-        final AtomicBoolean firstCall = new AtomicBoolean(false);
-
-        @Cacheable("map-with-ttl")
-        public String getNameWithTTL(){
+        @Override
+        public String getNameWithTTL() {
             if (firstCall.compareAndSet(false, true)) {
                 return "ali";
             }

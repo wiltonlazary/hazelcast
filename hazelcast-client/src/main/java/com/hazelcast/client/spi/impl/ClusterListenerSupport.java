@@ -25,13 +25,13 @@ import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.client.impl.LifecycleServiceImpl;
 import com.hazelcast.client.impl.client.ClientPrincipal;
 import com.hazelcast.client.spi.ClientClusterService;
-import com.hazelcast.client.spi.ClientExecutionService;
 import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.core.Member;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.ConnectionListener;
+import com.hazelcast.spi.exception.TargetDisconnectedException;
 import com.hazelcast.util.Clock;
 import com.hazelcast.util.executor.SingleExecutorThreadFactory;
 
@@ -48,11 +48,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 
 import static com.hazelcast.client.spi.properties.ClientProperty.SHUFFLE_MEMBER_LIST;
-import static com.hazelcast.spi.exception.TargetDisconnectedException.newTargetDisconnectedExceptionCausedByHeartBeat;
 
 public abstract class ClusterListenerSupport implements ConnectionListener, ConnectionHeartbeatListener, ClientClusterService {
 
-    private static final long TERMINATE_TIMEOUT_SECONDS = 30;
+    public static final long TERMINATE_TIMEOUT_SECONDS = 30;
+
     protected final HazelcastClientInstanceImpl client;
 
     private final Collection<AddressProvider> addressProviders;
@@ -62,6 +62,7 @@ public abstract class ClusterListenerSupport implements ConnectionListener, Conn
 
     private ClientConnectionManager connectionManager;
     private ClientMembershipListener clientMembershipListener;
+
     private volatile Address ownerConnectionAddress;
     private volatile ClientPrincipal principal;
 
@@ -88,8 +89,13 @@ public abstract class ClusterListenerSupport implements ConnectionListener, Conn
         connectionManager.addConnectionHeartbeatListener(this);
     }
 
+    @Override
     public Address getOwnerConnectionAddress() {
         return ownerConnectionAddress;
+    }
+
+    public void setOwnerConnectionAddress(Address ownerConnectionAddress) {
+        this.ownerConnectionAddress = ownerConnectionAddress;
     }
 
     public void shutdown() {
@@ -172,8 +178,8 @@ public abstract class ClusterListenerSupport implements ConnectionListener, Conn
                 }
             }
         }
-        throw new IllegalStateException("Unable to connect to any address in the config! "
-                + "The following addresses were tried:" + triedAddresses);
+        throw new IllegalStateException("Unable to connect to any address in the config!"
+                + " The following addresses were tried: " + triedAddresses);
     }
 
     private boolean connect(Set<InetSocketAddress> triedAddresses) throws Exception {
@@ -185,34 +191,30 @@ public abstract class ClusterListenerSupport implements ConnectionListener, Conn
                 }
                 break;
             }
+            Connection connection = null;
             try {
                 triedAddresses.add(inetSocketAddress);
                 Address address = new Address(inetSocketAddress);
-                if (logger.isFinestEnabled()) {
-                    logger.finest("Trying to connect to " + address);
-                }
-                Connection connection = connectionManager.getOrConnect(address, true);
-                ownerConnectionAddress = connection.getEndPoint();
+                logger.info("Trying to connect to " + address + " as owner member");
+                connection = connectionManager.getOrConnect(address, true);
                 clientMembershipListener.listenMembershipEvents(ownerConnectionAddress);
+                client.getListenerService().onClusterConnect((ClientConnection) connection);
                 fireConnectionEvent(LifecycleEvent.LifecycleState.CLIENT_CONNECTED);
                 return true;
             } catch (Exception e) {
                 Level level = e instanceof AuthenticationException ? Level.WARNING : Level.FINEST;
                 logger.log(level, "Exception during initial connection to " + inetSocketAddress, e);
+                if (null != connection) {
+                    connection.close("Could not connect to " + inetSocketAddress + " as owner", e);
+                }
             }
         }
         return false;
     }
 
     private void fireConnectionEvent(final LifecycleEvent.LifecycleState state) {
-        ClientExecutionService executionService = client.getClientExecutionService();
-        executionService.execute(new Runnable() {
-            @Override
-            public void run() {
-                final LifecycleServiceImpl lifecycleService = (LifecycleServiceImpl) client.getLifecycleService();
-                lifecycleService.fireLifecycleEvent(state);
-            }
-        });
+        final LifecycleServiceImpl lifecycleService = (LifecycleServiceImpl) client.getLifecycleService();
+        lifecycleService.fireLifecycleEvent(state);
     }
 
     @Override
@@ -223,15 +225,25 @@ public abstract class ClusterListenerSupport implements ConnectionListener, Conn
     public void connectionRemoved(Connection connection) {
         if (connection.getEndPoint().equals(ownerConnectionAddress)) {
             if (client.getLifecycleService().isRunning()) {
+                fireConnectionEvent(LifecycleEvent.LifecycleState.CLIENT_DISCONNECTED);
+
                 clusterExecutor.execute(new Runnable() {
                     @Override
                     public void run() {
                         try {
-                            fireConnectionEvent(LifecycleEvent.LifecycleState.CLIENT_DISCONNECTED);
                             connectToCluster();
                         } catch (Exception e) {
                             logger.warning("Could not re-connect to cluster shutting down the client", e);
-                            client.getLifecycleService().shutdown();
+                            new Thread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    try {
+                                        client.getLifecycleService().shutdown();
+                                    } catch (Exception exception) {
+                                        logger.severe("Exception during client shutdown ", exception);
+                                    }
+                                }
+                            }, client.getName() + ".clientShutdown-").start();
                         }
                     }
                 });
@@ -240,16 +252,14 @@ public abstract class ClusterListenerSupport implements ConnectionListener, Conn
     }
 
     @Override
-    public void heartBeatStarted(Connection connection) {
+    public void heartbeatResumed(Connection connection) {
     }
 
     @Override
-    public void heartBeatStopped(Connection connection) {
+    public void heartbeatStopped(Connection connection) {
         if (connection.getEndPoint().equals(ownerConnectionAddress)) {
-            ClientConnection clientConnection = (ClientConnection) connection;
-            Exception ex = newTargetDisconnectedExceptionCausedByHeartBeat(clientConnection.getRemoteEndpoint(),
-                    clientConnection.getLastHeartbeatMillis(), clientConnection.getCloseCause());
-            connectionManager.destroyConnection(connection, null, ex);
+            connection.close(null,
+                    new TargetDisconnectedException("Heartbeat timed out to owner connection " + connection));
         }
     }
 }

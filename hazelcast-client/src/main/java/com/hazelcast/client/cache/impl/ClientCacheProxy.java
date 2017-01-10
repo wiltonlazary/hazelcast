@@ -22,7 +22,6 @@ import com.hazelcast.cache.impl.CacheEventType;
 import com.hazelcast.cache.impl.CacheProxyUtil;
 import com.hazelcast.cache.impl.event.CachePartitionLostEvent;
 import com.hazelcast.cache.impl.event.CachePartitionLostListener;
-import com.hazelcast.cache.impl.nearcache.NearCache;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.CacheAddEntryListenerCodec;
@@ -33,6 +32,7 @@ import com.hazelcast.client.impl.protocol.codec.CacheListenerRegistrationCodec;
 import com.hazelcast.client.impl.protocol.codec.CacheLoadAllCodec;
 import com.hazelcast.client.impl.protocol.codec.CacheRemoveEntryListenerCodec;
 import com.hazelcast.client.impl.protocol.codec.CacheRemovePartitionLostListenerCodec;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.client.spi.ClientListenerService;
 import com.hazelcast.client.spi.EventHandler;
 import com.hazelcast.client.spi.impl.ClientInvocation;
@@ -40,6 +40,7 @@ import com.hazelcast.client.spi.impl.ListenerMessageCodec;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.core.Member;
+import com.hazelcast.internal.nearcache.NearCache;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.util.ExceptionUtil;
@@ -75,8 +76,7 @@ import static com.hazelcast.cache.impl.CacheProxyUtil.validateNotNull;
  * @param <K> key type
  * @param <V> value type
  */
-public class ClientCacheProxy<K, V>
-        extends AbstractClientCacheProxy<K, V> {
+public class ClientCacheProxy<K, V> extends AbstractClientCacheProxy<K, V> {
 
     public ClientCacheProxy(CacheConfig<K, V> cacheConfig) {
         super(cacheConfig);
@@ -135,8 +135,8 @@ public class ClientCacheProxy<K, V>
     @Override
     protected void onLoadAll(Set<Data> keys, Object response, long start, long end) {
         if (statisticsEnabled) {
-            // We don't know how many of keys are actually loaded so we assume that all of them are loaded
-            // and calculates statistics based on this assumption.
+            // we don't know how many of keys are actually loaded, so we assume that all of them are loaded
+            // and calculate statistics based on this assumption
             statistics.increaseCachePuts(keys.size());
             statistics.addPutTimeNanos(end - start);
         }
@@ -285,7 +285,7 @@ public class ClientCacheProxy<K, V>
     @Override
     public <T> Map<K, EntryProcessorResult<T>> invokeAll(Set<? extends K> keys, EntryProcessor<K, V, T> entryProcessor,
                                                          Object... arguments) {
-        // TODO Implement a multiple (batch) invoke operation and its factory
+        // TODO: implement a multiple (batch) invoke operation and its factory
         ensureOpen();
         validateNotNull(keys);
         if (entryProcessor == null) {
@@ -323,21 +323,30 @@ public class ClientCacheProxy<K, V>
 
     @Override
     public void registerCacheEntryListener(CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
+        registerCacheEntryListener(cacheEntryListenerConfiguration, true);
+    }
+
+    @Override
+    public void registerCacheEntryListener(CacheEntryListenerConfiguration cacheEntryListenerConfiguration, boolean addToConfig) {
         ensureOpen();
         if (cacheEntryListenerConfiguration == null) {
             throw new NullPointerException("CacheEntryListenerConfiguration can't be null");
         }
         CacheEventListenerAdaptor<K, V> adaptor =
                 new CacheEventListenerAdaptor<K, V>(this,
-                                                    cacheEntryListenerConfiguration,
-                                                    clientContext.getSerializationService(),
-                                                    clientContext.getHazelcastInstance());
+                        cacheEntryListenerConfiguration,
+                        clientContext.getSerializationService(),
+                        clientContext.getHazelcastInstance());
         EventHandler handler = createHandler(adaptor);
         String regId = clientContext.getListenerService().registerListener(createCacheEntryListenerCodec(), handler);
         if (regId != null) {
-            cacheConfig.addCacheEntryListenerConfiguration(cacheEntryListenerConfiguration);
+            if (addToConfig) {
+                cacheConfig.addCacheEntryListenerConfiguration(cacheEntryListenerConfiguration);
+            }
             addListenerLocally(regId, cacheEntryListenerConfiguration);
-            updateCacheListenerConfigOnOtherNodes(cacheEntryListenerConfiguration, true);
+            if (addToConfig) {
+                updateCacheListenerConfigOnOtherNodes(cacheEntryListenerConfiguration, true);
+            }
         }
     }
 
@@ -406,13 +415,18 @@ public class ClientCacheProxy<K, V>
     @Override
     public Iterator<Entry<K, V>> iterator() {
         ensureOpen();
-        return new ClientClusterWideIterator<K, V>(this, clientContext);
+        return new ClientClusterWideIterator<K, V>(this, clientContext, false);
     }
 
     @Override
     public Iterator<Entry<K, V>> iterator(int fetchSize) {
         ensureOpen();
-        return new ClientClusterWideIterator<K, V>(this, clientContext, fetchSize);
+        return new ClientClusterWideIterator<K, V>(this, clientContext, fetchSize, false);
+    }
+
+    public Iterator<Entry<K, V>> iterator(int fetchSize, int partitionId, boolean prefetchValues) {
+        ensureOpen();
+        return new ClientCachePartitionIterator<K, V>(this, clientContext, fetchSize, partitionId, prefetchValues);
     }
 
     @Override
@@ -463,12 +477,10 @@ public class ClientCacheProxy<K, V>
 
         @Override
         public void beforeListenerRegister() {
-
         }
 
         @Override
         public void onListenerRegister() {
-
         }
 
         @Override
@@ -477,7 +489,10 @@ public class ClientCacheProxy<K, V>
             listener.partitionLost(new CachePartitionLostEvent(name, member, CacheEventType.PARTITION_LOST.getType(),
                     partitionId));
         }
-
     }
 
+    // used in tests
+    public ClientContext getClientContext() {
+        return getContext();
+    }
 }

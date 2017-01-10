@@ -18,15 +18,15 @@ package com.hazelcast.internal.eviction.impl.comparator;
 
 import com.hazelcast.internal.eviction.EvictableEntryView;
 import com.hazelcast.internal.eviction.EvictionPolicyComparator;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * {@link com.hazelcast.config.EvictionPolicy#LRU} policy based {@link EvictionPolicyComparator}.
  */
-@edu.umd.cs.findbugs.annotations.SuppressWarnings(
+@SuppressFBWarnings(
         value = "SE_COMPARATOR_SHOULD_BE_SERIALIZABLE",
         justification = "No need to serializable since its instance is not serialized")
-public class LRUEvictionPolicyComparator
-        extends EvictionPolicyComparator {
+public class LRUEvictionPolicyComparator extends EvictionPolicyComparator {
 
     @Override
     public int compare(EvictableEntryView e1, EvictableEntryView e2) {
@@ -39,7 +39,7 @@ public class LRUEvictionPolicyComparator
         } else {
             long creationTime1 = e1.getCreationTime();
             long creationTime2 = e2.getCreationTime();
-            // If access times are same, we select the oldest entry to evict
+            // if access times are same, we select the oldest entry to evict
             if (creationTime2 < creationTime1) {
                 return SECOND_ENTRY_HAS_HIGHER_PRIORITY_TO_BE_EVICTED;
             } else if (creationTime2 > creationTime1) {
@@ -49,5 +49,4 @@ public class LRUEvictionPolicyComparator
             }
         }
     }
-
 }

@@ -16,6 +16,7 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import com.hazelcast.internal.eviction.EvictionPolicyComparator;
 
 import static com.hazelcast.util.Preconditions.checkNotNull;
@@ -24,12 +25,11 @@ import static com.hazelcast.util.Preconditions.checkNotNull;
  * Configuration for cache eviction.
  *
  * @see com.hazelcast.config.EvictionConfig
- *
  * @deprecated Use {@link com.hazelcast.config.EvictionConfig} instead of this
  */
 @Deprecated
-public class CacheEvictionConfig
-        extends EvictionConfig {
+@BinaryInterface
+public class CacheEvictionConfig extends EvictionConfig {
 
     public CacheEvictionConfig() {
     }
@@ -66,11 +66,11 @@ public class CacheEvictionConfig
     }
 
     @Override
-    public EvictionConfig getAsReadOnly() {
+    public CacheEvictionConfig getAsReadOnly() {
         if (readOnly == null) {
             readOnly = new CacheEvictionConfigReadOnly(this);
         }
-        return readOnly;
+        return (CacheEvictionConfig) readOnly;
     }
 
     /**
@@ -139,7 +139,6 @@ public class CacheEvictionConfig
      *
      * @return the {@link com.hazelcast.config.EvictionConfig.MaxSizePolicy} as
      * {@link com.hazelcast.config.CacheEvictionConfig.CacheMaxSizePolicy}
-     *
      * @deprecated Use {@link com.hazelcast.config.EvictionConfig#getMaximumSizePolicy()} instead of this
      */
     public CacheMaxSizePolicy getMaxSizePolicy() {
@@ -153,7 +152,6 @@ public class CacheEvictionConfig
      * @param cacheMaxSizePolicy {@link com.hazelcast.config.CacheEvictionConfig.CacheMaxSizePolicy} to be converted
      *                           and set as {@link com.hazelcast.config.EvictionConfig.MaxSizePolicy}
      * @return this {@link com.hazelcast.config.CacheEvictionConfig}
-     *
      * @deprecated Use {@link com.hazelcast.config.EvictionConfig#setMaximumSizePolicy(MaxSizePolicy)} instead of this
      */
     public CacheEvictionConfig setMaxSizePolicy(CacheMaxSizePolicy cacheMaxSizePolicy) {
@@ -200,8 +198,6 @@ public class CacheEvictionConfig
                 + ", evictionPolicy=" + evictionPolicy
                 + ", comparatorClassName=" + comparatorClassName
                 + ", comparator=" + comparator
-                + ", readOnly=" + readOnly
                 + '}';
     }
-
 }

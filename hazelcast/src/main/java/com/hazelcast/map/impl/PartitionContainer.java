@@ -28,6 +28,7 @@ import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
+import com.hazelcast.util.ContextMutexFactory;
 
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
@@ -85,6 +86,8 @@ public class PartitionContainer {
      */
     long lastCleanupTimeCopy;
 
+    private final ContextMutexFactory contextMutexFactory = new ContextMutexFactory();
+
     public PartitionContainer(final MapService mapService, final int partitionId) {
         this.mapService = mapService;
         this.partitionId = partitionId;
@@ -128,7 +131,7 @@ public class PartitionContainer {
     }
 
     public RecordStore getRecordStore(String name) {
-        return ConcurrencyUtil.getOrPutSynchronized(maps, name, this, recordStoreConstructor);
+        return ConcurrencyUtil.getOrPutSynchronized(maps, name, contextMutexFactory, recordStoreConstructor);
     }
 
     public RecordStore getRecordStore(String name, boolean skipLoadingOnCreate) {
@@ -137,7 +140,7 @@ public class PartitionContainer {
     }
 
     public RecordStore getRecordStoreForHotRestart(String name) {
-        return ConcurrencyUtil.getOrPutSynchronized(maps, name, this, recordStoreConstructorForHotRestart);
+        return ConcurrencyUtil.getOrPutSynchronized(maps, name, contextMutexFactory, recordStoreConstructorForHotRestart);
     }
 
     public RecordStore getExistingRecordStore(String mapName) {
@@ -158,12 +161,15 @@ public class PartitionContainer {
         }
 
         MapServiceContext mapServiceContext = mapService.getMapServiceContext();
-        mapServiceContext.removeMapContainer(mapContainer);
+        if (mapServiceContext.removeMapContainer(mapContainer)) {
+            mapContainer.onDestroy();
+        }
+        mapServiceContext.removePartitioningStrategyFromCache(mapContainer.getName());
     }
 
     private void clearLockStore(String name) {
         final NodeEngine nodeEngine = mapService.getMapServiceContext().getNodeEngine();
-        final LockService lockService = nodeEngine.getService(LockService.SERVICE_NAME);
+        final LockService lockService = nodeEngine.getSharedService(LockService.SERVICE_NAME);
         if (lockService != null) {
             final DefaultObjectNamespace namespace = new DefaultObjectNamespace(MapService.SERVICE_NAME, name);
             lockService.clearLockStore(partitionId, namespace);

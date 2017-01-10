@@ -20,6 +20,7 @@ import com.hazelcast.config.Config;
 import com.hazelcast.config.GlobalSerializerConfig;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.core.EntryAdapter;
+import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceAware;
 import com.hazelcast.core.IMap;
@@ -37,7 +38,10 @@ import org.junit.runner.RunWith;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -57,22 +61,22 @@ public class IssuesTest extends HazelcastTestSupport {
         int n = 1;
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(n);
 
-        final IMap<Integer, Integer> imap = factory.newHazelcastInstance(getConfig()).getMap("testIssue321_1");
+        final IMap<Integer, Integer> map = factory.newHazelcastInstance(getConfig()).getMap("testIssue321_1");
         final BlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>> events1 = new LinkedBlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>>();
         final BlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>> events2 = new LinkedBlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>>();
-        imap.addEntryListener(new EntryAdapter<Integer, Integer>() {
+        map.addEntryListener(new EntryAdapter<Integer, Integer>() {
             @Override
             public void entryAdded(com.hazelcast.core.EntryEvent<Integer, Integer> event) {
                 events2.add(event);
             }
         }, false);
-        imap.addEntryListener(new EntryAdapter<Integer, Integer>() {
+        map.addEntryListener(new EntryAdapter<Integer, Integer>() {
             @Override
             public void entryAdded(com.hazelcast.core.EntryEvent<Integer, Integer> event) {
                 events1.add(event);
             }
         }, true);
-        imap.put(1, 1);
+        map.put(1, 1);
         final com.hazelcast.core.EntryEvent<Integer, Integer> event1 = events1.poll(10, TimeUnit.SECONDS);
         final com.hazelcast.core.EntryEvent<Integer, Integer> event2 = events2.poll(10, TimeUnit.SECONDS);
         assertNotNull(event1);
@@ -111,29 +115,41 @@ public class IssuesTest extends HazelcastTestSupport {
         assertNull(event2.getValue());
     }
 
+    // verify an event including values and an event excluding values are received, in any order
     @Test
     public void testIssue321_3() throws Exception {
         int n = 1;
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(n);
 
         final IMap<Integer, Integer> imap = factory.newHazelcastInstance(getConfig()).getMap("testIssue321_3");
-        final BlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>> events = new LinkedBlockingQueue<com.hazelcast.core.EntryEvent<Integer, Integer>>();
+        final List<EntryEvent<Integer, Integer>> eventsWithValues = new ArrayList<EntryEvent<Integer, Integer>>();
+        final List<EntryEvent<Integer, Integer>> eventsWithoutValues = new ArrayList<EntryEvent<Integer, Integer>>();
         final EntryAdapter<Integer, Integer> listener = new EntryAdapter<Integer, Integer>() {
             @Override
             public void entryAdded(com.hazelcast.core.EntryEvent<Integer, Integer> event) {
-                events.add(event);
+                if (event.getValue() == null) {
+                    eventsWithoutValues.add(event);
+                } else {
+                    eventsWithValues.add(event);
+                }
             }
         };
         imap.addEntryListener(listener, true);
         Thread.sleep(50L);
         imap.addEntryListener(listener, false);
         imap.put(1, 1);
-        final com.hazelcast.core.EntryEvent<Integer, Integer> event1 = events.poll(10, TimeUnit.SECONDS);
-        final com.hazelcast.core.EntryEvent<Integer, Integer> event2 = events.poll(10, TimeUnit.SECONDS);
-        assertNotNull(event1);
-        assertNotNull(event2);
-        assertNotNull(event1.getValue());
-        assertNull(event2.getValue());
+        assertEqualsEventually(new Callable<Integer>() {
+            @Override
+            public Integer call() throws Exception {
+                return eventsWithValues.size();
+            }
+        }, 1);
+        assertEqualsEventually(new Callable<Integer>() {
+            @Override
+            public Integer call() throws Exception {
+                return eventsWithoutValues.size();
+            }
+        }, 1);
     }
 
     @Test
@@ -155,9 +171,6 @@ public class IssuesTest extends HazelcastTestSupport {
         assertEquals(0, map.entrySet().size());
     }
 
-    /*
-       github issue 174
-    */
     @Test
     public void testIssue174NearCacheContainsKeySingleNode() {
         int n = 1;
@@ -257,7 +270,6 @@ public class IssuesTest extends HazelcastTestSupport {
 
         @Override
         public void afterGet(Object value) {
-
         }
 
         @Override
@@ -270,7 +282,6 @@ public class IssuesTest extends HazelcastTestSupport {
 
         @Override
         public void afterPut(Object value) {
-
         }
 
         @Override
@@ -280,7 +291,6 @@ public class IssuesTest extends HazelcastTestSupport {
 
         @Override
         public void afterRemove(Object value) {
-
         }
     }
 
@@ -289,7 +299,7 @@ public class IssuesTest extends HazelcastTestSupport {
         int n = 1;
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(n);
         final HazelcastInstance instance = factory.newHazelcastInstance(getConfig());
-        final IMap map = instance.getMap(randomString());
+        final IMap<CompositeKey, String> map = instance.getMap(randomString());
         final CompositeKey key = new CompositeKey();
         map.put(key, "value");
         map.clear();
@@ -298,6 +308,7 @@ public class IssuesTest extends HazelcastTestSupport {
     }
 
     public static class CompositeKey implements Serializable {
+
         static boolean hashCodeCalled = false;
         static boolean equalsCalled = false;
 

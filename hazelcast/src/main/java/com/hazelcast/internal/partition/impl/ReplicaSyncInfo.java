@@ -18,7 +18,13 @@ package com.hazelcast.internal.partition.impl;
 
 import com.hazelcast.nio.Address;
 
+/**
+ * The information for a replica synchronization - which partition and replica index needs synchronization and what is
+ * the target (the owner of the partition).
+ * The target is ignored when comparing if two {@link ReplicaSyncInfo} instances are the same.
+ */
 public final class ReplicaSyncInfo {
+
     final int partitionId;
     final int replicaIndex;
     final Address target;

@@ -29,7 +29,9 @@ import com.hazelcast.executor.impl.DistributedExecutorService;
 import com.hazelcast.instance.HazelcastInstanceImpl;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
+import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.management.dto.ClientEndPointDTO;
+import com.hazelcast.internal.management.dto.ClusterHotRestartStatusDTO;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.monitor.LocalExecutorStats;
@@ -42,11 +44,14 @@ import com.hazelcast.monitor.LocalReplicatedMapStats;
 import com.hazelcast.monitor.LocalTopicStats;
 import com.hazelcast.monitor.LocalWanStats;
 import com.hazelcast.monitor.TimedMemberState;
+import com.hazelcast.monitor.WanSyncState;
+import com.hazelcast.monitor.impl.HotRestartStateImpl;
 import com.hazelcast.monitor.impl.LocalCacheStatsImpl;
 import com.hazelcast.monitor.impl.LocalMemoryStatsImpl;
 import com.hazelcast.monitor.impl.LocalOperationStatsImpl;
 import com.hazelcast.monitor.impl.MemberPartitionStateImpl;
 import com.hazelcast.monitor.impl.MemberStateImpl;
+import com.hazelcast.monitor.impl.NodeStateImpl;
 import com.hazelcast.multimap.impl.MultiMapService;
 import com.hazelcast.nio.Address;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
@@ -164,6 +169,39 @@ public class TimedMemberStateFactory {
         memberState.setOperationStats(getOperationStats());
         TimedMemberStateFactoryHelper.createRuntimeProps(memberState);
         createMemState(timedMemberState, memberState, services);
+
+        createNodeState(memberState);
+        createHotRestartState(memberState);
+        createClusterHotRestarStatus(memberState);
+        createWanSyncState(memberState);
+    }
+
+    private void createHotRestartState(MemberStateImpl memberState) {
+        final HotRestartStateImpl state = new HotRestartStateImpl(
+                instance.node.getNodeExtension().getHotRestartService().getBackupTaskStatus());
+        memberState.setHotRestartState(state);
+    }
+
+    private void createClusterHotRestarStatus(MemberStateImpl memberState) {
+        final ClusterHotRestartStatusDTO state =
+                instance.node.getNodeExtension().getInternalHotRestartService().getCurrentClusterHotRestartStatus();
+        memberState.setClusterHotRestartStatus(state);
+    }
+
+    private void createNodeState(MemberStateImpl memberState) {
+        Node node = instance.node;
+        ClusterService cluster = instance.node.clusterService;
+        NodeStateImpl nodeState = new NodeStateImpl(cluster.getClusterState(), node.getState(),
+                cluster.getClusterVersion(), node.getVersion());
+        memberState.setNodeState(nodeState);
+    }
+
+    private void createWanSyncState(MemberStateImpl memberState) {
+        WanReplicationService wanReplicationService = instance.node.nodeEngine.getWanReplicationService();
+        WanSyncState wanSyncState = wanReplicationService.getWanSyncState();
+        if (wanSyncState != null) {
+            memberState.setWanSyncState(wanSyncState);
+        }
     }
 
     private void createMemState(TimedMemberState timedMemberState, MemberStateImpl memberState,

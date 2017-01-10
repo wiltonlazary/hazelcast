@@ -16,26 +16,34 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
+
+import java.util.List;
+
 /**
  * Configuration for Wan target replication reference(read only)
  *
  * @deprecated this class will be removed in 3.8; it is meant for internal usage only.
  */
+@BinaryInterface
 public class WanReplicationRefReadOnly extends WanReplicationRef {
 
     public WanReplicationRefReadOnly(WanReplicationRef ref) {
         super(ref);
     }
 
+    @Override
     public WanReplicationRef setName(String name) {
         throw new UnsupportedOperationException("This config is read-only");
     }
 
+    @Override
     public WanReplicationRef setMergePolicy(String mergePolicy) {
         throw new UnsupportedOperationException("This config is read-only");
     }
 
-    public WanReplicationRef setFilter(String mergePolicy) {
+    @Override
+    public WanReplicationRef setFilters(List<String> filters) {
         throw new UnsupportedOperationException("This config is read-only");
     }
 

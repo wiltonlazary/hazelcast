@@ -31,8 +31,9 @@ import java.io.IOException;
 public class PutAllOperationFactory implements OperationFactory {
 
     private String name;
-    private ReplicatedMapEntries entries = new ReplicatedMapEntries();
+    private ReplicatedMapEntries entries;
 
+    @SuppressWarnings("unused")
     public PutAllOperationFactory() {
     }
 
@@ -58,5 +59,15 @@ public class PutAllOperationFactory implements OperationFactory {
     public void readData(ObjectDataInput in) throws IOException {
         name = in.readUTF();
         entries = in.readObject();
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ReplicatedMapDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.PUT_ALL_OP_FACTORY;
     }
 }

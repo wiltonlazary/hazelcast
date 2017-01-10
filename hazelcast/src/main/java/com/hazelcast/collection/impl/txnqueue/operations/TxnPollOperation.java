@@ -24,11 +24,12 @@ import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.Notifier;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 /**
  * Poll operation for the transactional queue.
  */
-public class TxnPollOperation extends BaseTxnQueueOperation implements Notifier {
+public class TxnPollOperation extends BaseTxnQueueOperation implements Notifier, MutatingOperation {
 
     private Data data;
 
@@ -41,7 +42,7 @@ public class TxnPollOperation extends BaseTxnQueueOperation implements Notifier 
 
     @Override
     public void run() throws Exception {
-        QueueContainer queueContainer = getOrCreateContainer();
+        QueueContainer queueContainer = getContainer();
         data = queueContainer.txnCommitPoll(getItemId());
         response = data != null;
     }
@@ -64,7 +65,7 @@ public class TxnPollOperation extends BaseTxnQueueOperation implements Notifier 
 
     @Override
     public WaitNotifyKey getNotifiedKey() {
-        QueueContainer container = getOrCreateContainer();
+        QueueContainer container = getContainer();
         return container.getOfferWaitNotifyKey();
     }
 

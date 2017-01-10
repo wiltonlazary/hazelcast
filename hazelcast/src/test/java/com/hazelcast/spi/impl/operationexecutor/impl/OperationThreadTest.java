@@ -17,6 +17,7 @@ import org.junit.runner.RunWith;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
+import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyInt;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -36,8 +37,8 @@ public class OperationThreadTest extends OperationExecutorImpl_AbstractTest {
         initExecutor();
 
         DummyOperation operation = new DummyOperation(Operation.GENERIC_PARTITION_ID);
-        Packet packet = new Packet(serializationService.toBytes(operation), operation.getPartitionId());
-        packet.setFlag(Packet.FLAG_OP);
+        Packet packet = new Packet(serializationService.toBytes(operation), operation.getPartitionId())
+                .setPacketType(Packet.Type.OPERATION);
 
         doThrow(new OutOfMemoryError()).when(handler).run(packet);
 
@@ -101,8 +102,8 @@ public class OperationThreadTest extends OperationExecutorImpl_AbstractTest {
     public void executePacket_withInvalid_partitionId() {
         final int partitionId = Integer.MAX_VALUE;
         Operation operation = new DummyPartitionOperation(partitionId);
-        Packet packet = new Packet(serializationService.toBytes(operation), operation.getPartitionId());
-        packet.setFlag(Packet.FLAG_OP);
+        Packet packet = new Packet(serializationService.toBytes(operation), operation.getPartitionId())
+                .setPacketType(Packet.Type.OPERATION);
 
         testExecute_withInvalid_partitionId(packet);
     }
@@ -143,8 +144,6 @@ public class OperationThreadTest extends OperationExecutorImpl_AbstractTest {
     private PartitionOperationThread createNewOperationThread(OperationQueue mockOperationQueue) {
         ILogger mockLogger = mock(ILogger.class);
         OperationRunner[] runners = new OperationRunner[0];
-        PartitionOperationThread thread = new PartitionOperationThread("threadName", 0, mockOperationQueue, mockLogger, threadGroup, nodeExtension, runners);
-
-        return thread;
+        return new PartitionOperationThread("threadName", 0, mockOperationQueue, mockLogger, threadGroup, nodeExtension, runners);
     }
 }

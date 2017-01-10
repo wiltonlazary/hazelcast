@@ -6,10 +6,9 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.internal.partition.MigrationInfo;
 import com.hazelcast.internal.partition.impl.InternalMigrationListener.MigrationParticipant;
 import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.test.HazelcastParallelClassRunner;
+import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -20,10 +19,9 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 
-@RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
-public class InternalMigrationListenerTest
-        extends HazelcastTestSupport {
+@RunWith(HazelcastSerialClassRunner.class)
+@Category(QuickTest.class)
+public class InternalMigrationListenerTest extends HazelcastTestSupport {
 
     private static final int PARTITION_COUNT = 2;
 
@@ -46,7 +44,6 @@ public class InternalMigrationListenerTest
 
         final List<Integer> hz2PartitionIds = getNodeEngineImpl(hz2).getPartitionService().getMemberPartitions(getAddress(hz2));
         assertEquals(1, hz2PartitionIds.size());
-        final int hz2PartitionId = hz2PartitionIds.get(0);
 
         final List<MigrationProgressNotification> notifications = listener.getNotifications();
 
@@ -54,7 +51,7 @@ public class InternalMigrationListenerTest
         assertEquals(6, notifications.size());
 
         for (MigrationProgressNotification n : notifications) {
-            if ( n.migrationInfo.getPartitionId() == 0) {
+            if (n.migrationInfo.getPartitionId() == 0) {
                 partition0Events++;
             } else {
                 partition1Events++;

@@ -16,14 +16,17 @@
 
 package com.hazelcast.internal.cluster.impl.operations;
 
+import com.hazelcast.instance.Node;
 import com.hazelcast.internal.cluster.MemberInfo;
 import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
+import com.hazelcast.internal.partition.PartitionRuntimeState;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.util.Clock;
 
 import java.io.IOException;
@@ -32,39 +35,63 @@ import java.util.Collection;
 
 public class MemberInfoUpdateOperation extends AbstractClusterOperation implements JoinOperation, IdentifiedDataSerializable {
 
+    protected String targetUuid;
     protected Collection<MemberInfo> memberInfos;
     protected long masterTime = Clock.currentTimeMillis();
+    protected PartitionRuntimeState partitionRuntimeState;
     protected boolean sendResponse;
 
     public MemberInfoUpdateOperation() {
         memberInfos = new ArrayList<MemberInfo>();
     }
 
-    public MemberInfoUpdateOperation(Collection<MemberInfo> memberInfos, long masterTime, boolean sendResponse) {
+    public MemberInfoUpdateOperation(String targetUuid, Collection<MemberInfo> memberInfos, long masterTime,
+                                     PartitionRuntimeState partitionRuntimeState, boolean sendResponse) {
+        this.targetUuid = targetUuid;
         this.masterTime = masterTime;
         this.memberInfos = memberInfos;
         this.sendResponse = sendResponse;
+        this.partitionRuntimeState = partitionRuntimeState;
     }
 
     @Override
     public void run() throws Exception {
-        processMemberUpdate();
-    }
+        checkLocalMemberUuid();
 
-    protected final void processMemberUpdate() {
-        if (isValid()) {
-            final ClusterServiceImpl clusterService = getService();
-            clusterService.updateMembers(memberInfos);
+        ClusterServiceImpl clusterService = getService();
+        Address callerAddress = getConnectionEndpointOrThisAddress();
+        if (clusterService.updateMembers(memberInfos, callerAddress)) {
+            processPartitionState();
         }
     }
 
-    protected final boolean isValid() {
-        final ClusterServiceImpl clusterService = getService();
-        final Connection conn = getConnection();
-        final Address masterAddress = conn != null ? conn.getEndPoint() : null;
-        boolean isLocal = conn == null;
-        return isLocal
-                || (masterAddress != null && masterAddress.equals(clusterService.getMasterAddress()));
+    final Address getConnectionEndpointOrThisAddress() {
+        ClusterServiceImpl clusterService = getService();
+        NodeEngineImpl nodeEngine = clusterService.getNodeEngine();
+        Node node = nodeEngine.getNode();
+        Connection conn = getConnection();
+        return conn != null ? conn.getEndPoint() : node.getThisAddress();
+    }
+
+    final void processPartitionState() {
+        if (partitionRuntimeState == null) {
+            return;
+        }
+
+        partitionRuntimeState.setEndpoint(getCallerAddress());
+        ClusterServiceImpl clusterService = getService();
+        Node node = clusterService.getNodeEngine().getNode();
+        node.partitionService.processPartitionRuntimeState(partitionRuntimeState);
+    }
+
+    final void checkLocalMemberUuid() {
+        ClusterServiceImpl clusterService = getService();
+        NodeEngineImpl nodeEngine = clusterService.getNodeEngine();
+        Node node = nodeEngine.getNode();
+        if (!node.getThisUuid().equals(targetUuid)) {
+            String msg = "targetUuid: " + targetUuid + " is different than this node's uuid: " + node.getThisUuid();
+            throw new IllegalStateException(msg);
+        }
     }
 
     @Override
@@ -74,6 +101,7 @@ public class MemberInfoUpdateOperation extends AbstractClusterOperation implemen
 
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
+        targetUuid = in.readUTF();
         masterTime = in.readLong();
         int size = in.readInt();
         memberInfos = new ArrayList<MemberInfo>(size);
@@ -82,16 +110,20 @@ public class MemberInfoUpdateOperation extends AbstractClusterOperation implemen
             memberInfo.readData(in);
             memberInfos.add(memberInfo);
         }
+
+        partitionRuntimeState = in.readObject();
         sendResponse = in.readBoolean();
     }
 
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
+        out.writeUTF(targetUuid);
         out.writeLong(masterTime);
         out.writeInt(memberInfos.size());
         for (MemberInfo memberInfo : memberInfos) {
             memberInfo.writeData(out);
         }
+        out.writeObject(partitionRuntimeState);
         out.writeBoolean(sendResponse);
     }
 
@@ -99,14 +131,11 @@ public class MemberInfoUpdateOperation extends AbstractClusterOperation implemen
     protected void toString(StringBuilder sb) {
         super.toString(sb);
 
+        sb.append(", targetUuid=").append(targetUuid);
         sb.append(", members=");
         for (MemberInfo address : memberInfos) {
             sb.append(address).append(' ');
         }
-    }
-
-    public int getFactoryId() {
-        return ClusterDataSerializerHook.F_ID;
     }
 
     @Override

@@ -20,7 +20,6 @@ import com.hazelcast.map.impl.event.MapEventPublishingService;
 import com.hazelcast.spi.ClientAwareService;
 import com.hazelcast.spi.EventPublishingService;
 import com.hazelcast.spi.ManagedService;
-import com.hazelcast.spi.MigrationAwareService;
 import com.hazelcast.spi.PostJoinAwareService;
 import com.hazelcast.spi.QuorumAwareService;
 import com.hazelcast.spi.RemoteService;
@@ -28,6 +27,7 @@ import com.hazelcast.spi.ReplicationSupportingService;
 import com.hazelcast.spi.SplitBrainHandlerService;
 import com.hazelcast.spi.StatisticsAwareService;
 import com.hazelcast.spi.TransactionalService;
+import com.hazelcast.spi.impl.CountingMigrationAwareService;
 
 import static com.hazelcast.util.Preconditions.checkNotNull;
 
@@ -55,8 +55,8 @@ class DefaultMapServiceFactory extends AbstractMapServiceFactory {
     }
 
     @Override
-    MigrationAwareService createMigrationAwareService() {
-        return new MapMigrationAwareService(mapServiceContext);
+    CountingMigrationAwareService createMigrationAwareService() {
+        return new CountingMigrationAwareService(new MapMigrationAwareService(mapServiceContext));
     }
 
     @Override
@@ -106,7 +106,7 @@ class DefaultMapServiceFactory extends AbstractMapServiceFactory {
 
     @Override
     ClientAwareService createClientAwareService() {
-        return new MapClientAwareService();
+        return new MapClientAwareService(getMapServiceContext());
     }
 
 }

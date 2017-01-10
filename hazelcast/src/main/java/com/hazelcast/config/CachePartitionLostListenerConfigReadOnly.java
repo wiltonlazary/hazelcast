@@ -17,6 +17,7 @@
 package com.hazelcast.config;
 
 import com.hazelcast.cache.impl.event.CachePartitionLostListener;
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
 
 import java.util.EventListener;
 
@@ -26,6 +27,7 @@ import java.util.EventListener;
  *
  * @deprecated this class will be removed in 3.8; it is meant for internal usage only.
  */
+@BinaryInterface
 public class CachePartitionLostListenerConfigReadOnly
         extends CachePartitionLostListenerConfig {
 
@@ -33,18 +35,22 @@ public class CachePartitionLostListenerConfigReadOnly
         super(config);
     }
 
+    @Override
     public CachePartitionLostListener getImplementation() {
         return (CachePartitionLostListener) implementation;
     }
 
+    @Override
     public ListenerConfig setClassName(String className) {
         throw new UnsupportedOperationException("this config is read-only");
     }
 
+    @Override
     public ListenerConfig setImplementation(EventListener implementation) {
         throw new UnsupportedOperationException("this config is read-only");
     }
 
+    @Override
     public CachePartitionLostListenerConfig setImplementation(CachePartitionLostListener implementation) {
         throw new UnsupportedOperationException("this config is read-only");
     }

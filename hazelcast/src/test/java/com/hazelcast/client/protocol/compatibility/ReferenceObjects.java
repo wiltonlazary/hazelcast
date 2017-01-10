@@ -33,6 +33,7 @@ import com.hazelcast.core.HazelcastOverloadException;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.core.OperationTimeoutException;
+import com.hazelcast.durableexecutor.StaleTaskIdException;
 import com.hazelcast.internal.cluster.impl.ConfigMismatchException;
 import com.hazelcast.internal.serialization.impl.HeapData;
 import com.hazelcast.map.QueryResultSizeExceededException;
@@ -59,6 +60,7 @@ import com.hazelcast.spi.exception.PartitionMigratingException;
 import com.hazelcast.spi.exception.ResponseAlreadySentException;
 import com.hazelcast.spi.exception.RetryableHazelcastException;
 import com.hazelcast.spi.exception.RetryableIOException;
+import com.hazelcast.spi.exception.ServiceNotFoundException;
 import com.hazelcast.spi.exception.TargetDisconnectedException;
 import com.hazelcast.spi.exception.TargetNotMemberException;
 import com.hazelcast.spi.exception.WrongTargetException;
@@ -68,6 +70,7 @@ import com.hazelcast.transaction.TransactionNotActiveException;
 import com.hazelcast.transaction.TransactionTimedOutException;
 import com.hazelcast.transaction.impl.xa.SerializableXID;
 import com.hazelcast.util.AddressUtil;
+import com.hazelcast.version.MemberVersion;
 import com.hazelcast.wan.WANReplicationQueueFullException;
 
 import javax.cache.CacheException;
@@ -98,6 +101,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
@@ -163,18 +167,17 @@ public class ReferenceObjects {
         if (!isEqual(stackTraceElement1.getFileName(), stackTraceElement2.getFileName())) {
             return false;
         }
-        if (!isEqual(stackTraceElement1.getLineNumber(), stackTraceElement2.getLineNumber())) {
-            return false;
-        }
-        return true;
+        return isEqual(stackTraceElement1.getLineNumber(), stackTraceElement2.getLineNumber());
 
     }
-
+    // Static values below should not be a random value, because the values are used when generating compatibility files and
+    // when testing against them. Random values causes test failures.
     public static boolean aBoolean = true;
     public static byte aByte = 113;
     public static int anInt = 56789;
     public static long aLong = -50992225L;
     public static String aString = "SampleString";
+    public static UUID aUUID = new UUID(123456789, 987654321);
     public static Throwable aThrowable = new HazelcastException(aString);
     public static Data aData = new HeapData("111313123131313131".getBytes());
     public static Address anAddress;
@@ -187,7 +190,7 @@ public class ReferenceObjects {
         }
     }
 
-    public static Member aMember = new MemberImpl(anAddress, aString, Collections.singletonMap(aString, (Object) aString), false);
+    public static Member aMember = new MemberImpl(anAddress, MemberVersion.UNKNOWN, aString, Collections.singletonMap(aString, (Object) aString), false);
     public static Collection<Map.Entry<Address, List<Integer>>> aPartitionTable;
 
     static {
@@ -197,18 +200,24 @@ public class ReferenceObjects {
     }
 
     public static SimpleEntryView<Data, Data> anEntryView = new SimpleEntryView<Data, Data>(aData, aData);
-    public static Collection<JobPartitionState> jobPartitionStates = Collections.singletonList((JobPartitionState) new JobPartitionStateImpl(anAddress, JobPartitionState.State.MAPPING));
-    public static List<DistributedObjectInfo> distributedObjectInfos = Collections.singletonList(new DistributedObjectInfo(aString, aString));
+    public static Collection<JobPartitionState> jobPartitionStates = Collections
+            .singletonList((JobPartitionState) new JobPartitionStateImpl(anAddress, JobPartitionState.State.MAPPING));
+    public static List<DistributedObjectInfo> distributedObjectInfos = Collections
+            .singletonList(new DistributedObjectInfo(aString, aString));
     public static QueryCacheEventData aQueryCacheEventData = new DefaultQueryCacheEventData();
     public static Collection<QueryCacheEventData> queryCacheEventDatas = Collections.singletonList(aQueryCacheEventData);
-    public static Collection<CacheEventData> cacheEventDatas = Collections.singletonList((CacheEventData) new CacheEventDataImpl(aString, CacheEventType.COMPLETED, aData, aData, aData, true));
+    public static Collection<CacheEventData> cacheEventDatas = Collections
+            .singletonList((CacheEventData) new CacheEventDataImpl(aString, CacheEventType.COMPLETED, aData, aData, aData, true));
     public static Collection<Data> datas = Collections.singletonList(aData);
     public static Collection<Member> members = Collections.singletonList(aMember);
     public static Collection<String> strings = Collections.singletonList(aString);
+    public static Collection<Long> longs = Collections.singletonList(aLong);
+    public static Collection<UUID> uuids = Collections.singletonList(aUUID);
     public static Xid anXid = new SerializableXID(1, aString.getBytes(), aString.getBytes());
-    public static List<Map.Entry<Data, Data>> aListOfEntry = Collections.<Map.Entry<Data, Data>>singletonList(new AbstractMap.SimpleEntry<Data, Data>(aData, aData));
+    public static List<Map.Entry<Data, Data>> aListOfEntry = Collections.<Map.Entry<Data, Data>>singletonList(
+            new AbstractMap.SimpleEntry<Data, Data>(aData, aData));
 
-    public static Throwable[] throwables = {new CacheException(aString),
+    public static Throwable[] throwables_1_0 = {new CacheException(aString),
             new CacheLoaderException(aString),
             new CacheWriterException(aString),
             new EntryProcessorException(aString),
@@ -287,4 +296,19 @@ public class ReferenceObjects {
             new OutOfMemoryError(aString),
             new StackOverflowError(aString),
             new NativeOutOfMemoryError(aString)};
+
+    public static Throwable[] throwables_1_1 = {
+            new StaleTaskIdException(aString),
+            new ServiceNotFoundException(aString)
+    };
+
+    public static Throwable[] throwables_1_2 = {};
+
+    public static Map<String, Throwable[]> throwables = new HashMap<String, Throwable[]>();
+
+    static {
+        throwables.put("1.0", throwables_1_0);
+        throwables.put("1.1", throwables_1_1);
+        throwables.put("1.2", throwables_1_2);
+    }
 }

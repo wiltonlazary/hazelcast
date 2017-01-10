@@ -19,19 +19,24 @@ package com.hazelcast.client.connection.nio;
 import com.hazelcast.client.connection.ClientConnectionManager;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.core.LifecycleService;
+import com.hazelcast.core.Member;
+import com.hazelcast.instance.BuildInfo;
+import com.hazelcast.internal.metrics.DiscardableMetricsProvider;
+import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.metrics.ProbeLevel;
-import com.hazelcast.internal.metrics.impl.MetricsRegistryImpl;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.logging.LoggingService;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.ConnectionType;
 import com.hazelcast.nio.OutboundFrame;
 import com.hazelcast.nio.Protocols;
-import com.hazelcast.nio.tcp.SocketChannelWrapper;
-import com.hazelcast.nio.tcp.nonblocking.NonBlockingIOThread;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.internal.networking.IOThreadingModel;
+import com.hazelcast.internal.networking.SocketChannelWrapper;
+import com.hazelcast.internal.networking.SocketConnection;
+import com.hazelcast.internal.networking.SocketReader;
+import com.hazelcast.internal.networking.SocketWriter;
+import com.hazelcast.util.Clock;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.io.IOException;
@@ -39,74 +44,108 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static com.hazelcast.util.StringUtil.stringToBytes;
+import static com.hazelcast.util.StringUtil.timeToStringFriendly;
 
 /**
  * Client implementation of {@link Connection}.
  * ClientConnection is a connection between a Hazelcast Client and a Hazelcast Member.
  */
-public class ClientConnection implements Connection {
+public class ClientConnection implements SocketConnection, DiscardableMetricsProvider {
 
     @Probe
-    protected final int connectionId;
-    private final AtomicBoolean live = new AtomicBoolean(true);
+    private final int connectionId;
     private final ILogger logger;
 
     private final AtomicInteger pendingPacketCount = new AtomicInteger(0);
-    private final ClientWriteHandler writeHandler;
-    private final ClientReadHandler readHandler;
-    private final SocketChannelWrapper socketChannelWrapper;
-    private final ClientConnectionManager connectionManager;
+    private final SocketWriter writer;
+    private final SocketReader reader;
+    private final SocketChannelWrapper socketChannel;
+    private final ClientConnectionManagerImpl connectionManager;
     private final LifecycleService lifecycleService;
     private final HazelcastClientInstanceImpl client;
 
     private volatile Address remoteEndpoint;
-    private volatile boolean heartBeating = true;
+    private volatile boolean isHeartBeating = true;
     // the time in millis the last heartbeat was received. 0 indicates that no heartbeat has ever been received.
-    private volatile long lastHeartbeatMillis;
+    private volatile long lastHeartbeatRequestedMillis;
+    private volatile long lastHeartbeatReceivedMillis;
     private boolean isAuthenticatedAsOwner;
     @Probe(level = ProbeLevel.DEBUG)
-    private volatile long closedTime;
+    private final AtomicLong closedTime = new AtomicLong();
 
     private volatile Throwable closeCause;
     private volatile String closeReason;
+    private int connectedServerVersion = BuildInfo.UNKNOWN_HAZELCAST_VERSION;
+    private String connectedServerVersionString;
 
-    public ClientConnection(HazelcastClientInstanceImpl client, NonBlockingIOThread in, NonBlockingIOThread out,
-                            int connectionId, SocketChannelWrapper socketChannelWrapper) throws IOException {
-        final Socket socket = socketChannelWrapper.socket();
+    /**
+     * The list of members from which the client resources are deleted at the time of connection authentication. The client may
+     * use this list to re-register the client resources such the listeners to these members.
+     */
+    private List<Member> clientUnregisteredMembers;
 
+
+    public ClientConnection(HazelcastClientInstanceImpl client,
+                            IOThreadingModel ioThreadingModel,
+                            int connectionId,
+                            SocketChannelWrapper socketChannel) throws IOException {
         this.client = client;
-        this.connectionManager = client.getConnectionManager();
+        this.connectionManager = (ClientConnectionManagerImpl) client.getConnectionManager();
         this.lifecycleService = client.getLifecycleService();
-        this.socketChannelWrapper = socketChannelWrapper;
+        this.socketChannel = socketChannel;
         this.connectionId = connectionId;
-        LoggingService clientLoggingService = client.getLoggingService();
-        this.logger = clientLoggingService.getLogger(ClientConnection.class);
-        boolean directBuffer = client.getProperties().getBoolean(GroupProperty.SOCKET_CLIENT_BUFFER_DIRECT);
-        this.readHandler = new ClientReadHandler(this, in, socket.getReceiveBufferSize(), directBuffer, clientLoggingService);
-        this.writeHandler = new ClientWriteHandler(this, out, socket.getSendBufferSize(), directBuffer, clientLoggingService);
-
-        MetricsRegistryImpl metricsRegistry = client.getMetricsRegistry();
-        String connectionName = "tcp.connection["
-                + socket.getLocalSocketAddress() + " -> " + socket.getRemoteSocketAddress() + "]";
-        metricsRegistry.scanAndRegister(this, connectionName);
-        metricsRegistry.scanAndRegister(readHandler, connectionName + ".in");
-        metricsRegistry.scanAndRegister(writeHandler, connectionName + ".out");
+        this.logger = client.getLoggingService().getLogger(ClientConnection.class);
+        this.reader = ioThreadingModel.newSocketReader(this);
+        this.writer = ioThreadingModel.newSocketWriter(this);
     }
 
     public ClientConnection(HazelcastClientInstanceImpl client,
                             int connectionId) throws IOException {
         this.client = client;
-        this.connectionManager = client.getConnectionManager();
+        this.connectionManager = (ClientConnectionManagerImpl) client.getConnectionManager();
         this.lifecycleService = client.getLifecycleService();
         this.connectionId = connectionId;
-        writeHandler = null;
-        readHandler = null;
-        socketChannelWrapper = null;
-        logger = client.getLoggingService().getLogger(ClientConnection.class);
+        this.writer = null;
+        this.reader = null;
+        this.socketChannel = null;
+        this.logger = client.getLoggingService().getLogger(ClientConnection.class);
+    }
+
+    @Override
+    public void provideMetrics(MetricsRegistry registry) {
+        Socket socket = socketChannel.socket();
+        String connectionName = "tcp.connection["
+                + socket.getLocalSocketAddress() + " -> " + socket.getRemoteSocketAddress() + "]";
+        registry.scanAndRegister(this, connectionName);
+        registry.scanAndRegister(reader, connectionName + ".in");
+        registry.scanAndRegister(writer, connectionName + ".out");
+    }
+
+    @Override
+    public void discardMetrics(MetricsRegistry registry) {
+        registry.deregister(this);
+        registry.deregister(reader);
+        registry.deregister(writer);
+    }
+
+    @Override
+    public SocketReader getSocketReader() {
+        return reader;
+    }
+
+    @Override
+    public SocketWriter getSocketWriter() {
+        return writer;
+    }
+
+    @Override
+    public SocketChannelWrapper getSocketChannel() {
+        return socketChannel;
     }
 
     public void incrementPendingPacketCount() {
@@ -123,21 +162,24 @@ public class ClientConnection implements Connection {
 
     @Override
     public boolean write(OutboundFrame frame) {
-        if (!live.get()) {
+        if (!isAlive()) {
             if (logger.isFinestEnabled()) {
                 logger.finest("Connection is closed, dropping frame -> " + frame);
             }
             return false;
         }
-        writeHandler.enqueue(frame);
+        writer.write(frame);
         return true;
     }
 
-    public void init() throws IOException {
-        final ByteBuffer buffer = ByteBuffer.allocate(3);
+    public void start() throws IOException {
+        ByteBuffer buffer = ByteBuffer.allocate(3);
         buffer.put(stringToBytes(Protocols.CLIENT_BINARY_NEW));
         buffer.flip();
-        socketChannelWrapper.write(buffer);
+        socketChannel.write(buffer);
+
+        // we need to give the reader a kick so it starts reading from the socket.
+        reader.init();
     }
 
     @Override
@@ -147,17 +189,17 @@ public class ClientConnection implements Connection {
 
     @Override
     public boolean isAlive() {
-        return live.get();
+        return closedTime.get() == 0;
     }
 
     @Override
     public long lastReadTimeMillis() {
-        return readHandler.getLastHandle();
+        return reader.lastReadTimeMillis();
     }
 
     @Override
     public long lastWriteTimeMillis() {
-        return writeHandler.getLastHandle();
+        return writer.lastWriteTimeMillis();
     }
 
     @Override
@@ -177,54 +219,41 @@ public class ClientConnection implements Connection {
 
     @Override
     public InetAddress getInetAddress() {
-        return socketChannelWrapper.socket().getInetAddress();
+        return socketChannel.socket().getInetAddress();
     }
 
     @Override
     public InetSocketAddress getRemoteSocketAddress() {
-        return (InetSocketAddress) socketChannelWrapper.socket().getRemoteSocketAddress();
+        return (InetSocketAddress) socketChannel.socket().getRemoteSocketAddress();
     }
 
     @Override
     public int getPort() {
-        return socketChannelWrapper.socket().getPort();
-    }
-
-    public SocketChannelWrapper getSocketChannelWrapper() {
-        return socketChannelWrapper;
+        return socketChannel.socket().getPort();
     }
 
     public ClientConnectionManager getConnectionManager() {
         return connectionManager;
     }
 
-    public ClientReadHandler getReadHandler() {
-        return readHandler;
-    }
-
     public void setRemoteEndpoint(Address remoteEndpoint) {
         this.remoteEndpoint = remoteEndpoint;
     }
 
-    public Address getRemoteEndpoint() {
-        return remoteEndpoint;
-    }
-
     public InetSocketAddress getLocalSocketAddress() {
-        return (InetSocketAddress) socketChannelWrapper.socket().getLocalSocketAddress();
+        return (InetSocketAddress) socketChannel.socket().getLocalSocketAddress();
     }
 
     @Override
     public void close(String reason, Throwable cause) {
-        if (!live.compareAndSet(true, false)) {
+        if (!closedTime.compareAndSet(0, System.currentTimeMillis())) {
             return;
         }
 
         closeCause = cause;
         closeReason = reason;
 
-        closedTime = System.currentTimeMillis();
-        String message = "Connection [" + getRemoteSocketAddress() + "] lost. Reason: ";
+        String message = this + " lost. Reason: ";
         if (cause != null) {
             message += cause.getClass().getName() + '[' + cause.getMessage() + ']';
         } else {
@@ -242,19 +271,18 @@ public class ClientConnection implements Connection {
         } else {
             logger.finest(message);
         }
+
+        connectionManager.onClose(this);
+
+        client.getMetricsRegistry().discardMetrics(this);
     }
 
     protected void innerClose() throws IOException {
-        if (socketChannelWrapper.isOpen()) {
-            socketChannelWrapper.close();
+        if (socketChannel.isOpen()) {
+            socketChannel.close();
         }
-        readHandler.shutdown();
-        writeHandler.shutdown();
-
-        MetricsRegistryImpl metricsRegistry = client.getMetricsRegistry();
-        metricsRegistry.deregister(this);
-        metricsRegistry.deregister(writeHandler);
-        metricsRegistry.deregister(readHandler);
+        reader.close();
+        writer.close();
     }
 
     @Override
@@ -264,25 +292,32 @@ public class ClientConnection implements Connection {
 
     @Override
     public String getCloseReason() {
-        return closeReason;
+        if (closeReason == null) {
+            return closeCause == null ? null : closeCause.getMessage();
+        } else {
+            return closeReason;
+        }
     }
 
     @SuppressFBWarnings(value = "VO_VOLATILE_INCREMENT", justification = "incremented in single thread")
-    void heartBeatingFailed() {
-        heartBeating = false;
+    void onHeartbeatFailed() {
+        isHeartBeating = false;
     }
 
-    void heartBeatingSucceed() {
-        heartBeating = true;
-        lastHeartbeatMillis = System.currentTimeMillis();
+    void onHeartbeatResumed() {
+        isHeartBeating = true;
     }
 
-    public long getLastHeartbeatMillis() {
-        return lastHeartbeatMillis;
+    void onHeartbeatReceived() {
+        lastHeartbeatReceivedMillis = Clock.currentTimeMillis();
+    }
+
+    void onHeartbeatRequested() {
+        lastHeartbeatRequestedMillis = Clock.currentTimeMillis();
     }
 
     public boolean isHeartBeating() {
-        return live.get() && heartBeating;
+        return isAlive() && isHeartBeating;
     }
 
     public boolean isAuthenticatedAsOwner() {
@@ -319,16 +354,46 @@ public class ClientConnection implements Connection {
     @Override
     public String toString() {
         return "ClientConnection{"
-                + "live=" + live
-                + ", writeHandler=" + writeHandler
-                + ", readHandler=" + readHandler
+                + "alive=" + isAlive()
                 + ", connectionId=" + connectionId
-                + ", socketChannel=" + socketChannelWrapper
+                + ", socketChannel=" + socketChannel
                 + ", remoteEndpoint=" + remoteEndpoint
+                + ", lastReadTime=" + timeToStringFriendly(lastReadTimeMillis())
+                + ", lastWriteTime=" + timeToStringFriendly(lastWriteTimeMillis())
+                + ", closedTime=" + timeToStringFriendly(closedTime.get())
+                + ", lastHeartbeatRequested=" + timeToStringFriendly(lastHeartbeatRequestedMillis)
+                + ", lastHeartbeatReceived=" + timeToStringFriendly(lastHeartbeatReceivedMillis)
+                + ", connected server version=" + connectedServerVersionString
                 + '}';
     }
 
+    /**
+     * Closed time is the first time connection.close called.
+     *
+     * @return the closed time of connection, returns zero if not closed yet
+     */
     public long getClosedTime() {
-        return closedTime;
+        return closedTime.get();
+    }
+
+    public void setConnectedServerVersion(String connectedServerVersion) {
+        this.connectedServerVersionString = connectedServerVersion;
+        this.connectedServerVersion = BuildInfo.calculateVersion(connectedServerVersion);
+    }
+
+    public int getConnectedServerVersion() {
+        return connectedServerVersion;
+    }
+
+    public String getConnectedServerVersionString() {
+        return connectedServerVersionString;
+    }
+
+    public List<Member> getClientUnregisteredMembers() {
+        return clientUnregisteredMembers;
+    }
+
+    public void setClientUnregisteredMembers(List<Member> clientUnregisteredMembers) {
+        this.clientUnregisteredMembers = clientUnregisteredMembers;
     }
 }

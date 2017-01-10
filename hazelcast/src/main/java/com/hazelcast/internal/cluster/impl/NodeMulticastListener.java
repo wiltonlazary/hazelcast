@@ -59,8 +59,8 @@ public class NodeMulticastListener implements MulticastListener {
     }
 
     private void logDroppedMessage(Object msg) {
-        if (logger.isFinestEnabled()) {
-            logger.finest("Dropped: " + msg);
+        if (logger.isFineEnabled()) {
+            logger.fine("Dropped: " + msg);
         }
     }
 
@@ -71,8 +71,8 @@ public class NodeMulticastListener implements MulticastListener {
         }
 
         if (node.isMaster()) {
-            JoinMessage response = new JoinMessage(Packet.VERSION, node.getBuildInfo().getBuildNumber(),
-                    node.getThisAddress(), node.localMember.getUuid(), node.isLiteMember(), node.createConfigCheck());
+            JoinMessage response = new JoinMessage(Packet.VERSION, node.getBuildInfo().getBuildNumber(), node.getVersion(),
+                    node.getThisAddress(), node.getThisUuid(), node.isLiteMember(), node.createConfigCheck());
             node.multicastService.send(response);
         } else if (isMasterNode(joinMessage.getAddress()) && !checkMasterUuid(joinMessage.getUuid())) {
             String message = "New join request has been received from current master. "
@@ -101,9 +101,10 @@ public class NodeMulticastListener implements MulticastListener {
             if (!node.joined() && node.getMasterAddress() == null) {
                 String masterHost = joinMessage.getAddress().getHost();
                 if (trustedInterfaces.isEmpty() || matchAnyInterface(masterHost, trustedInterfaces)) {
+                    ClusterJoinManager clusterJoinManager = node.getClusterService().getClusterJoinManager();
                     //todo: why are we making a copy here of address?
                     Address masterAddress = new Address(joinMessage.getAddress());
-                    node.setMasterAddress(masterAddress);
+                    clusterJoinManager.setMasterAddress(masterAddress);
                 } else {
                     logJoinMessageDropped(masterHost);
                 }
@@ -118,14 +119,14 @@ public class NodeMulticastListener implements MulticastListener {
     }
 
     private void logJoinMessageDropped(String masterHost) {
-        if (logger.isFinestEnabled()) {
-            logger.finest(format(
+        if (logger.isFineEnabled()) {
+            logger.fine(format(
                     "JoinMessage from %s is dropped because its sender is not a trusted interface", masterHost));
         }
     }
 
     private boolean isJoinMessage(Object msg) {
-        return msg != null && msg instanceof JoinMessage;
+        return msg != null && msg instanceof JoinMessage && !(msg instanceof SplitBrainJoinMessage);
     }
 
     private boolean isValidJoinMessage(Object msg) {

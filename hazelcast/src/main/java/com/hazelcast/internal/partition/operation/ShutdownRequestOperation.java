@@ -16,19 +16,16 @@
 
 package com.hazelcast.internal.partition.operation;
 
-import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.internal.partition.MigrationCycleOperation;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
+import com.hazelcast.internal.partition.impl.PartitionDataSerializerHook;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
-import com.hazelcast.spi.AbstractOperation;
-import com.hazelcast.spi.ExceptionAction;
 import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.exception.TargetNotMemberException;
 
-public class ShutdownRequestOperation extends AbstractOperation implements MigrationCycleOperation {
+public class ShutdownRequestOperation extends AbstractPartitionOperation implements MigrationCycleOperation {
 
     public ShutdownRequestOperation() {
     }
@@ -67,11 +64,7 @@ public class ShutdownRequestOperation extends AbstractOperation implements Migra
     }
 
     @Override
-    public ExceptionAction onInvocationException(Throwable throwable) {
-        if (throwable instanceof MemberLeftException || throwable instanceof TargetNotMemberException) {
-            return ExceptionAction.THROW_EXCEPTION;
-        }
-        return super.onInvocationException(throwable);
+    public int getId() {
+        return PartitionDataSerializerHook.SHUTDOWN_REQUEST;
     }
-
 }

@@ -86,6 +86,53 @@ public final class ClientProperty {
     public static final HazelcastProperty DISCOVERY_SPI_ENABLED
             = new HazelcastProperty("hazelcast.discovery.enabled", false);
 
+    /**
+     * <p>Enables the Discovery Joiner to use public ips from DiscoveredNode. This property is temporary and will
+     * eventually be removed when the experimental marker is removed.</p>
+     * <p>Discovery SPI is <b>disabled</b> by default</p>
+     */
+    public static final HazelcastProperty DISCOVERY_SPI_PUBLIC_IP_ENABLED
+            = new HazelcastProperty("hazelcast.discovery.public.ip.enabled", false);
+
+    /**
+     * When this property is true, if the client can not know the server version it will assume that the server is version 3.6.x.
+     * This property is especially needed if you are using ICache (or JCache).
+     */
+    public static final HazelcastProperty COMPATIBILITY_3_6_SERVER_ENABLED
+            = new HazelcastProperty("hazelcast.compatibility.3.6.server", false);
+
+
+    /**
+     * Controls the number of socket input threads. Defaults to -1, so the system will determine.
+     *
+     * If SSL is disabled, system will default to 1.
+     * If SSL is enabled, system will default to 3.
+     */
+    public static final HazelcastProperty IO_INPUT_THREAD_COUNT
+            = new HazelcastProperty("hazelcast.client.io.input.thread.count", -1);
+
+    /**
+     * Controls the number of socket output threads. Defaults to -1, so the system will determine.
+     *
+     * If SSL is disabled, system will default to 1.
+     * If SSL is enabled, system will default to 3.
+     */
+    public static final HazelcastProperty IO_OUTPUT_THREAD_COUNT
+            = new HazelcastProperty("hazelcast.client.io.output.thread.count", -1);
+
+    /**
+     * The interval in seconds between {@link com.hazelcast.internal.networking.nonblocking.iobalancer.IOBalancer IOBalancer}
+     * executions. The shorter intervals will catch I/O Imbalance faster, but they will cause higher overhead.
+     * <p/>
+     * Please see the documentation of {@link com.hazelcast.internal.networking.nonblocking.iobalancer.IOBalancer IOBalancer}
+     * for a detailed explanation of the problem.
+     * <p/>
+     * The default is 20 seconds. A value smaller than 1 disables the balancer.
+     */
+    public static final HazelcastProperty IO_BALANCER_INTERVAL_SECONDS
+            = new HazelcastProperty("hazelcast.client.io.balancer.interval.seconds", 20, SECONDS);
+
+
     private ClientProperty() {
     }
 }

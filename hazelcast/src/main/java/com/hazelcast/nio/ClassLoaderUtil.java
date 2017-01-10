@@ -16,6 +16,7 @@
 
 package com.hazelcast.nio;
 
+import com.hazelcast.internal.distributedclassloading.impl.ClassSource;
 import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.util.ConcurrentReferenceHashMap;
 import com.hazelcast.util.EmptyStatement;
@@ -39,10 +40,13 @@ public final class ClassLoaderUtil {
     public static final String HAZELCAST_BASE_PACKAGE = "com.hazelcast.";
     public static final String HAZELCAST_ARRAY = "[L" + HAZELCAST_BASE_PACKAGE;
 
+    private static final boolean CLASS_CACHE_DISABLED = Boolean.getBoolean("hazelcast.compat.classloading.cache.disabled");
+
     private static final Map<String, Class> PRIMITIVE_CLASSES;
     private static final int MAX_PRIM_CLASSNAME_LENGTH = 7;
 
-    private static final ConstructorCache CONSTRUCTOR_CACHE = new ConstructorCache();
+    private static final ClassLoaderWeakCache<Constructor> CONSTRUCTOR_CACHE = new ClassLoaderWeakCache<Constructor>();
+    private static final ClassLoaderWeakCache<Class> CLASS_CACHE = new ClassLoaderWeakCache<Class>();
 
     static {
         final Map<String, Class> primitives = new HashMap<String, Class>(10, 1.0f);
@@ -76,7 +80,9 @@ public final class ClassLoaderUtil {
         if (!constructor.isAccessible()) {
             constructor.setAccessible(true);
         }
-        CONSTRUCTOR_CACHE.put(classLoader, className, constructor);
+        if (!shouldBypassCache(klass)) {
+            CONSTRUCTOR_CACHE.put(classLoader, className, constructor);
+        }
         return constructor.newInstance();
     }
 
@@ -133,11 +139,28 @@ public final class ClassLoaderUtil {
     private static Class<?> tryLoadClass(String className, ClassLoader classLoader)
             throws ClassNotFoundException {
 
-        if (className.startsWith("[")) {
-            return Class.forName(className, false, classLoader);
-        } else {
-            return classLoader.loadClass(className);
+        Class<?> clazz;
+
+        if (!CLASS_CACHE_DISABLED) {
+            clazz = CLASS_CACHE.get(classLoader, className);
+            if (clazz != null) {
+                return clazz;
+            }
         }
+
+        if (className.startsWith("[")) {
+            clazz = Class.forName(className, false, classLoader);
+        } else {
+            clazz = classLoader.loadClass(className);
+        }
+
+        if (!CLASS_CACHE_DISABLED) {
+            if (!shouldBypassCache(clazz)) {
+                CLASS_CACHE.put(classLoader, className, clazz);
+            }
+        }
+
+        return clazz;
     }
 
     public static boolean isInternalType(Class type) {
@@ -177,41 +200,47 @@ public final class ClassLoaderUtil {
         }
     }
 
-    private static final class ConstructorCache {
-        private final ConcurrentMap<ClassLoader, ConcurrentMap<String, WeakReference<Constructor>>> cache;
+    private static final class ClassLoaderWeakCache<V> {
+        private final ConcurrentMap<ClassLoader, ConcurrentMap<String, WeakReference<V>>> cache;
 
-        private ConstructorCache() {
+        private ClassLoaderWeakCache() {
             // Guess 16 classloaders to not waste to much memory (16 is default concurrency level)
-            cache = new ConcurrentReferenceHashMap<ClassLoader, ConcurrentMap<String, WeakReference<Constructor>>>(16);
+            cache = new ConcurrentReferenceHashMap<ClassLoader, ConcurrentMap<String, WeakReference<V>>>(16);
         }
 
-        private <T> Constructor put(ClassLoader classLoader, String className, Constructor<T> constructor) {
+        private V put(ClassLoader classLoader, String className, V value) {
             ClassLoader cl = classLoader == null ? ClassLoaderUtil.class.getClassLoader() : classLoader;
-            ConcurrentMap<String, WeakReference<Constructor>> innerCache = cache.get(cl);
+            ConcurrentMap<String, WeakReference<V>> innerCache = cache.get(cl);
             if (innerCache == null) {
                 // Let's guess a start of 100 classes per classloader
-                innerCache = new ConcurrentHashMap<String, WeakReference<Constructor>>(100);
-                ConcurrentMap<String, WeakReference<Constructor>> old = cache.putIfAbsent(cl, innerCache);
+                innerCache = new ConcurrentHashMap<String, WeakReference<V>>(100);
+                ConcurrentMap<String, WeakReference<V>> old = cache.putIfAbsent(cl, innerCache);
                 if (old != null) {
                     innerCache = old;
                 }
             }
-            innerCache.put(className, new WeakReference<Constructor>(constructor));
-            return constructor;
+            innerCache.put(className, new WeakReference<V>(value));
+            return value;
         }
 
-        public <T> Constructor<T> get(ClassLoader classLoader, String className) {
+        public V get(ClassLoader classloader, String className) {
             isNotNull(className, "className");
-            ConcurrentMap<String, WeakReference<Constructor>> innerCache = cache.get(classLoader);
+            ConcurrentMap<String, WeakReference<V>> innerCache = cache.get(classloader);
             if (innerCache == null) {
                 return null;
             }
-            WeakReference<Constructor> reference = innerCache.get(className);
-            Constructor constructor = reference == null ? null : reference.get();
-            if (reference != null && constructor == null) {
+            WeakReference<V> reference = innerCache.get(className);
+            V value = reference == null ? null : reference.get();
+            if (reference != null && value == null) {
                 innerCache.remove(className);
             }
-            return (Constructor<T>) constructor;
+            return value;
         }
+    }
+
+    private static boolean shouldBypassCache(Class clazz) {
+        //dynamically loaded class should not be cached here as they are already cached
+        //in the DistributedLoadingService (when cache is enabled)
+        return (clazz.getClassLoader() instanceof ClassSource);
     }
 }

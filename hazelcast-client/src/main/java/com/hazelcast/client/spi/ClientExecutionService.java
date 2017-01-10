@@ -17,36 +17,33 @@
 package com.hazelcast.client.spi;
 
 import com.hazelcast.core.ICompletableFuture;
+import com.hazelcast.spi.ExecutionService;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 
 /**
- * @author mdogan 5/16/13
+ * Executor service for Hazelcast clients.
+ *
+ * Allows asynchronous execution and scheduling of {@link Runnable} and {@link Callable} commands.
  */
-public interface ClientExecutionService extends Executor {
+public interface ClientExecutionService extends ExecutionService, Executor {
 
     /**
-     * Execute alien(user code) on execution service
+     * Execute alien (user code) on execution service
      *
      * @param command to run
      */
+    @Override
     void execute(Runnable command);
 
     ICompletableFuture<?> submit(Runnable task);
 
     <T> ICompletableFuture<T> submit(Callable<T> task);
 
-    ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit);
-
-    ScheduledFuture<?> scheduleWithRepetition(Runnable command, long initialDelay, long period, TimeUnit unit);
-
     /**
-     * @return executorService that alien(user code) runs on
+     * @return executorService that alien (user code) runs on
      */
     ExecutorService getAsyncExecutor();
-
 }

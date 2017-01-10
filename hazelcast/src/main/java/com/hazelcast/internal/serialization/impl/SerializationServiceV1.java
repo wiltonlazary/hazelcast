@@ -25,6 +25,7 @@ import com.hazelcast.internal.serialization.impl.ConstantSerializers.ByteSeriali
 import com.hazelcast.internal.serialization.impl.ConstantSerializers.StringArraySerializer;
 import com.hazelcast.internal.serialization.impl.bufferpool.BufferPoolFactory;
 import com.hazelcast.nio.BufferObjectDataInput;
+import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.serialization.ClassDefinition;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.DataSerializable;
@@ -64,6 +65,10 @@ import static com.hazelcast.internal.serialization.impl.ConstantSerializers.Shor
 import static com.hazelcast.internal.serialization.impl.ConstantSerializers.ShortSerializer;
 import static com.hazelcast.internal.serialization.impl.ConstantSerializers.StringSerializer;
 import static com.hazelcast.internal.serialization.impl.ConstantSerializers.TheByteArraySerializer;
+import static com.hazelcast.internal.serialization.impl.DataSerializableSerializer.COMP_FLAG;
+import static com.hazelcast.internal.serialization.impl.DataSerializableSerializer.EE_FLAG;
+import static com.hazelcast.internal.serialization.impl.DataSerializableSerializer.IDS_FLAG;
+import static com.hazelcast.internal.serialization.impl.DataSerializableSerializer.isFlagSet;
 import static com.hazelcast.internal.serialization.impl.JavaDefaultSerializers.BigDecimalSerializer;
 import static com.hazelcast.internal.serialization.impl.JavaDefaultSerializers.BigIntegerSerializer;
 import static com.hazelcast.internal.serialization.impl.JavaDefaultSerializers.ClassSerializer;
@@ -74,10 +79,14 @@ import static com.hazelcast.internal.serialization.impl.SerializationUtil.create
 
 public class SerializationServiceV1 extends AbstractSerializationService {
 
+    private static final int FACTORY_AND_CLASS_ID_BYTE_LENGTH = 8;
+    private static final int FACTORY_AND_CLASS_ID_BYTE_COMP_LENGTH = 2;
+    private static final int EE_BYTE_LENGTH = 1;
+
     private final PortableContextImpl portableContext;
     private final PortableSerializer portableSerializer;
 
-    SerializationServiceV1(InputOutputFactory inputOutputFactory, byte version, int portableVersion, ClassLoader classLoader,
+     SerializationServiceV1(InputOutputFactory inputOutputFactory, byte version, int portableVersion, ClassLoader classLoader,
             Map<Integer, ? extends DataSerializableFactory> dataSerializableFactories,
             Map<Integer, ? extends PortableFactory> portableFactories, ManagedContext managedContext,
             PartitioningStrategy globalPartitionStrategy, int initialOutputBufferSize, BufferPoolFactory bufferPoolFactory,
@@ -169,7 +178,7 @@ public class SerializationServiceV1 extends AbstractSerializationService {
     }
 
     protected void registerClassDefinition(ClassDefinition cd, Map<Integer, ClassDefinition> classDefMap,
-            boolean checkClassDefErrors) {
+                                           boolean checkClassDefErrors) {
         final Set<String> fieldNames = cd.getFieldNames();
         for (String fieldName : fieldNames) {
             FieldDefinition fd = cd.getField(fieldName);
@@ -191,4 +200,38 @@ public class SerializationServiceV1 extends AbstractSerializationService {
     final PortableSerializer getPortableSerializer() {
         return portableSerializer;
     }
+
+    /**
+     * Init the ObjectDataInput for the given Data skipping the serialization header-bytes and navigating to the position
+     * from where the readData() starts reading the object fields.
+     *
+     * @param data data to initialize the ObjectDataInput with.
+     * @return the initialized ObjectDataInput without the header.
+     * @throws IOException
+     */
+    public ObjectDataInput initDataSerializableInputAndSkipTheHeader(Data data) throws IOException {
+        ObjectDataInput input = createObjectDataInput(data);
+        byte header = input.readByte();
+        if (isFlagSet(header, IDS_FLAG)) {
+            if (isFlagSet(header, COMP_FLAG)) {
+                skipBytesSafely(input, FACTORY_AND_CLASS_ID_BYTE_COMP_LENGTH);
+            } else {
+                skipBytesSafely(input, FACTORY_AND_CLASS_ID_BYTE_LENGTH);
+            }
+        } else {
+            input.readUTF();
+        }
+
+        if (isFlagSet(header, EE_FLAG)) {
+            skipBytesSafely(input, EE_BYTE_LENGTH);
+        }
+        return input;
+    }
+
+    private void skipBytesSafely(ObjectDataInput input, int count) throws IOException {
+        if (input.skipBytes(count) != count) {
+            throw new HazelcastSerializationException("Malformed serialization format");
+        }
+    }
+
 }

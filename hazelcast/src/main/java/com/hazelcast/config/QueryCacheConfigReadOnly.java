@@ -108,7 +108,17 @@ class QueryCacheConfigReadOnly extends QueryCacheConfig {
     }
 
     @Override
-    public String toString() {
-        return "QueryCacheConfigReadOnly{} " + super.toString();
+    public QueryCacheConfig setPredicateConfig(PredicateConfig predicateConfig) {
+        throw new UnsupportedOperationException("This config is read-only query cache: " + getName());
+    }
+
+    @Override
+    public QueryCacheConfig setPopulate(boolean populate) {
+        throw new UnsupportedOperationException("This config is read-only query cache: " + getName());
+    }
+
+    @Override
+    public QueryCacheConfig setCoalesce(boolean coalesce) {
+        throw new UnsupportedOperationException("This config is read-only query cache: " + getName());
     }
 }

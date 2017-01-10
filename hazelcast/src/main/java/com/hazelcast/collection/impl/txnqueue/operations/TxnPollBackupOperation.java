@@ -21,13 +21,14 @@ import com.hazelcast.collection.impl.queue.QueueDataSerializerHook;
 import com.hazelcast.collection.impl.queue.operations.QueueOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
 /**
  * Provides backup operation during transactional poll operation.
  */
-public class TxnPollBackupOperation extends QueueOperation {
+public class TxnPollBackupOperation extends QueueOperation implements MutatingOperation {
 
     private long itemId;
 
@@ -41,7 +42,7 @@ public class TxnPollBackupOperation extends QueueOperation {
 
     @Override
     public void run() throws Exception {
-        QueueContainer queueContainer = getOrCreateContainer();
+        QueueContainer queueContainer = getContainer();
         queueContainer.txnCommitPollBackup(itemId);
         response = true;
     }

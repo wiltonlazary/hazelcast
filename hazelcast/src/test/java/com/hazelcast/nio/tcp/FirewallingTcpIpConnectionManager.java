@@ -22,15 +22,15 @@ import com.hazelcast.logging.LoggingService;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.NodeIOService;
+import com.hazelcast.internal.networking.nonblocking.NonBlockingIOThreadingModel;
 
 import java.nio.channels.ServerSocketChannel;
-import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class FirewallingTcpIpConnectionManager extends TcpIpConnectionManager {
 
-    private final Set<Address> blockedAddresses = Collections.newSetFromMap(new ConcurrentHashMap<Address, Boolean>());
+    private final Set<Address> blockedAddresses = new HashSet<Address>();
 
     public FirewallingTcpIpConnectionManager(
             LoggingService loggingService,
@@ -38,28 +38,45 @@ public class FirewallingTcpIpConnectionManager extends TcpIpConnectionManager {
             NodeIOService ioService,
             MetricsRegistry metricsRegistry,
             ServerSocketChannel serverSocketChannel) {
-        super(ioService, serverSocketChannel, metricsRegistry, threadGroup, loggingService);
+        super(ioService,
+                serverSocketChannel,
+                loggingService,
+                metricsRegistry,
+                new NonBlockingIOThreadingModel(
+                        loggingService,
+                        metricsRegistry,
+                        threadGroup,
+                        ioService.getIoOutOfMemoryHandler(),
+                        ioService.getInputSelectorThreadCount(),
+                        ioService.getOutputSelectorThreadCount(),
+                        ioService.getBalancerIntervalSeconds(),
+                        new SocketWriterInitializerImpl(loggingService.getLogger(SocketWriterInitializerImpl.class)),
+                        new SocketReaderInitializerImpl(loggingService.getLogger(SocketReaderInitializerImpl.class))));
     }
 
     @Override
-    public Connection getOrConnect(Address address, boolean silent) {
+    public synchronized Connection getOrConnect(Address address, boolean silent) {
         Connection connection = getConnection(address);
         if (connection != null) {
             return connection;
         }
         if (blockedAddresses.contains(address)) {
-            connection = new DroppingConnection(address);
+            connection = new DroppingConnection(address, this);
             registerConnection(address, connection);
             return connection;
         }
         return super.getOrConnect(address, silent);
     }
 
-    public void block(Address address) {
+    public synchronized void block(Address address) {
         blockedAddresses.add(address);
+        Connection connection = getConnection(address);
+        if (connection != null && connection instanceof TcpIpConnection) {
+            connection.close("Blocked by connection manager", null);
+        }
     }
 
-    public void unblock(Address address) {
+    public synchronized void unblock(Address address) {
         blockedAddresses.remove(address);
         Connection connection = getConnection(address);
         if (connection instanceof DroppingConnection) {

@@ -30,5 +30,4 @@ public interface SizeEstimator<T> {
     long calculateSize(T object);
 
     void reset();
-
 }

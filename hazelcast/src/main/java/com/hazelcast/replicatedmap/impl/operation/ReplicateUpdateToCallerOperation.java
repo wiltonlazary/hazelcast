@@ -17,7 +17,6 @@
 package com.hazelcast.replicatedmap.impl.operation;
 
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.logging.Logger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -25,7 +24,6 @@ import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapEventPublishingService;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecordStore;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.PartitionAwareOperation;
 import com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl;
 
@@ -35,9 +33,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * This operation will update the local record store with the update received from local/remote partition owner.
  */
-public class ReplicateUpdateToCallerOperation extends AbstractOperation implements PartitionAwareOperation {
+public class ReplicateUpdateToCallerOperation extends AbstractSerializableOperation implements PartitionAwareOperation {
 
-    private static ILogger logger = Logger.getLogger(ReplicateUpdateToCallerOperation.class.getName());
     private String name;
     private long callId;
     private Data dataKey;
@@ -62,31 +59,33 @@ public class ReplicateUpdateToCallerOperation extends AbstractOperation implemen
 
     @Override
     public void run() throws Exception {
+        ILogger logger = getLogger();
         ReplicatedMapService service = getService();
         ReplicatedRecordStore store = service.getReplicatedRecordStore(name, true, getPartitionId());
         long currentVersion = store.getVersion();
         long updateVersion = response.getVersion();
         if (currentVersion >= updateVersion) {
-            logger.finest("Stale update received for replicated map -> " + name + ",  partitionId -> "
-                    + getPartitionId() + " , current version -> " + currentVersion + ", update version -> "
-                    + updateVersion + ", rejecting update!");
+            if (logger.isFineEnabled()) {
+                logger.fine("Rejecting stale update received for replicated map: " + name + "  partitionId="
+                        + getPartitionId() + " current version: " + currentVersion + " update version: " + updateVersion);
+            }
+
             return;
         }
         Object key = store.marshall(dataKey);
         Object value = store.marshall(dataValue);
         if (isRemove) {
-            store.remove(key);
+            store.removeWithVersion(key, updateVersion);
         } else {
-            store.put(key, value, ttl, TimeUnit.MILLISECONDS, true);
+            store.putWithVersion(key, value, ttl, TimeUnit.MILLISECONDS, true, updateVersion);
         }
-        store.setVersion(updateVersion);
-    }
 
+        publishEvent();
+    }
 
     @Override
     public void afterRun() throws Exception {
         notifyCaller();
-        publishEvent();
     }
 
     private void publishEvent() {
@@ -103,7 +102,7 @@ public class ReplicateUpdateToCallerOperation extends AbstractOperation implemen
 
     private void notifyCaller() {
         OperationServiceImpl operationService = (OperationServiceImpl) getNodeEngine().getOperationService();
-        operationService.getResponseHandler().notifyBackupComplete(callId);
+        operationService.getInboundResponseHandler().notifyBackupComplete(callId);
     }
 
     @Override
@@ -127,5 +126,10 @@ public class ReplicateUpdateToCallerOperation extends AbstractOperation implemen
         response.readData(in);
         ttl = in.readLong();
         isRemove = in.readBoolean();
+    }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.REPLICATE_UPDATE_TO_CALLER;
     }
 }

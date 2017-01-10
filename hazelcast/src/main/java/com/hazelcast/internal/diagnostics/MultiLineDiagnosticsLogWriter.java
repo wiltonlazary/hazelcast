@@ -17,13 +17,14 @@
 package com.hazelcast.internal.diagnostics;
 
 import static com.hazelcast.util.StringUtil.LINE_SEPARATOR;
+import static com.hazelcast.util.StringUtil.LOCALE_INTERNAL;
 
 /**
  * A {@link DiagnosticsLogWriter} that writes over multiple lines. Useful for human reading.
  */
 class MultiLineDiagnosticsLogWriter extends DiagnosticsLogWriter {
 
-    private static final String STR_LONG_MIN_VALUE = String.format("%,d", Long.MIN_VALUE);
+    private static final String STR_LONG_MIN_VALUE = String.format(LOCALE_INTERNAL, "%,d", Long.MIN_VALUE);
 
     private static final char[] DIGITS = new char[]{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 
@@ -31,7 +32,9 @@ class MultiLineDiagnosticsLogWriter extends DiagnosticsLogWriter {
             LINE_SEPARATOR + "                          ",
             LINE_SEPARATOR + "                                  ",
             LINE_SEPARATOR + "                                          ",
-            LINE_SEPARATOR + "                                                  ", };
+            LINE_SEPARATOR + "                                                  ",
+            LINE_SEPARATOR + "                                                            ",
+    };
 
     private final StringBuffer tmpSb = new StringBuffer();
 
@@ -39,50 +42,50 @@ class MultiLineDiagnosticsLogWriter extends DiagnosticsLogWriter {
     public void startSection(String name) {
         if (sectionLevel == -1) {
             appendDateTime();
-            sb.append(' ');
+            write(' ');
         }
 
         if (sectionLevel >= 0) {
-            sb.append(INDENTS[sectionLevel]);
+            write(INDENTS[sectionLevel]);
         }
 
-        sb.append(name);
-        sb.append('[');
+        write(name);
+        write('[');
         sectionLevel++;
     }
 
     @Override
     public void endSection() {
-        sb.append(']');
+        write(']');
         sectionLevel--;
 
         if (sectionLevel == -1) {
-            sb.append(LINE_SEPARATOR);
+            write(LINE_SEPARATOR);
         }
     }
 
     @Override
     public void writeEntry(String s) {
-        sb.append(INDENTS[sectionLevel]);
-        sb.append(s);
+        write(INDENTS[sectionLevel]);
+        write(s);
     }
 
     @Override
     public void writeKeyValueEntry(String key, String value) {
         writeKeyValueHead(key);
-        sb.append(value);
+        write(value);
     }
 
     // we can't rely on NumberFormat since it generates a ton of garbage
     @SuppressWarnings("checkstyle:magicnumber")
     void writeLong(long value) {
         if (value == Long.MIN_VALUE) {
-            sb.append(STR_LONG_MIN_VALUE);
+            write(STR_LONG_MIN_VALUE);
             return;
         }
 
         if (value < 0) {
-            sb.append('-');
+            write('-');
             value = -value;
         }
 
@@ -102,14 +105,14 @@ class MultiLineDiagnosticsLogWriter extends DiagnosticsLogWriter {
 
         for (int k = tmpSb.length() - 1; k >= 0; k--) {
             char c = tmpSb.charAt(k);
-            sb.append(c);
+            write(c);
         }
     }
 
     @Override
     public void writeKeyValueEntry(String key, double value) {
         writeKeyValueHead(key);
-        sb.append(value);
+        write(value);
     }
 
     @Override
@@ -121,12 +124,12 @@ class MultiLineDiagnosticsLogWriter extends DiagnosticsLogWriter {
     @Override
     public void writeKeyValueEntry(String key, boolean value) {
         writeKeyValueHead(key);
-        sb.append(value);
+        write(value);
     }
 
     private void writeKeyValueHead(String key) {
-        sb.append(INDENTS[sectionLevel]);
-        sb.append(key);
-        sb.append('=');
+        write(INDENTS[sectionLevel]);
+        write(key);
+        write('=');
     }
 }

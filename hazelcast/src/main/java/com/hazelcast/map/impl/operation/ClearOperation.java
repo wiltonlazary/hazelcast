@@ -17,6 +17,7 @@
 package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.core.EntryEventType;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionAwareOperation;
@@ -24,8 +25,7 @@ import com.hazelcast.spi.impl.MutatingOperation;
 
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
 
-public class ClearOperation extends MapOperation implements BackupAwareOperation,
-        PartitionAwareOperation, MutatingOperation {
+public class ClearOperation extends MapOperation implements BackupAwareOperation, PartitionAwareOperation, MutatingOperation {
 
     private boolean shouldBackup;
     private int numberOfClearedEntries;
@@ -41,10 +41,6 @@ public class ClearOperation extends MapOperation implements BackupAwareOperation
 
     @Override
     public void run() {
-        // near-cache clear will be called multiple times by each clear operation,
-        // but it's still preferred to send a separate operation to clear near-cache.
-        clearNearCache(true);
-
         if (recordStore == null) {
             return;
         }
@@ -56,6 +52,7 @@ public class ClearOperation extends MapOperation implements BackupAwareOperation
     @Override
     public void afterRun() throws Exception {
         super.afterRun();
+        invalidateAllKeysInNearCaches();
         hintMapEvent();
     }
 
@@ -88,5 +85,10 @@ public class ClearOperation extends MapOperation implements BackupAwareOperation
         ClearBackupOperation clearBackupOperation = new ClearBackupOperation(name);
         clearBackupOperation.setServiceName(SERVICE_NAME);
         return clearBackupOperation;
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.CLEAR;
     }
 }

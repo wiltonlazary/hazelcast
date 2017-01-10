@@ -23,7 +23,7 @@ import java.util.Map;
 
 public final class ParameterUtil {
 
-    private static final int UTF8_MAX_BYTES_PER_CHAR = 3;
+    static final int UTF8_MAX_BYTES_PER_CHAR = 3;
 
     private ParameterUtil() { }
 
@@ -49,5 +49,9 @@ public final class ParameterUtil {
 
     public static int calculateDataSize(Boolean data) {
         return Bits.BOOLEAN_SIZE_IN_BYTES;
+    }
+
+    public static int calculateDataSize(Long data) {
+        return Bits.LONG_SIZE_IN_BYTES;
     }
 }

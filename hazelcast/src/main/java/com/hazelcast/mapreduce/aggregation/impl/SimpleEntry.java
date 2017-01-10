@@ -17,6 +17,7 @@
 package com.hazelcast.mapreduce.aggregation.impl;
 
 import com.hazelcast.config.MapAttributeConfig;
+import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.query.impl.getters.Extractors;
@@ -37,7 +38,7 @@ final class SimpleEntry<K, V>
     private V value;
 
     public SimpleEntry() {
-        this.extractors = new Extractors(Collections.<MapAttributeConfig>emptyList());
+        this.extractors = new Extractors(Collections.<MapAttributeConfig>emptyList(), null);
     }
 
     @Override
@@ -76,6 +77,10 @@ final class SimpleEntry<K, V>
 
     void setKey(K key) {
         this.key = key;
+    }
+
+    void setSerializationService(InternalSerializationService serializationService) {
+        this.serializationService = serializationService;
     }
 
 }

@@ -17,6 +17,7 @@
 package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.map.EntryBackupProcessor;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -63,7 +64,7 @@ public class MultipleEntryBackupOperation extends AbstractMultipleEntryBackupOpe
             }
             entryAddedOrUpdatedBackup(entry, key);
 
-            evict();
+            evict(key);
         }
     }
 
@@ -92,5 +93,10 @@ public class MultipleEntryBackupOperation extends AbstractMultipleEntryBackupOpe
     @Override
     public Object getResponse() {
         return true;
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.MULTIPLE_ENTRY_BACKUP;
     }
 }

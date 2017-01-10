@@ -79,6 +79,9 @@ public class CacheSimpleConfig {
     private String cacheLoaderFactory;
     private String cacheWriterFactory;
 
+    private String cacheLoader;
+    private String cacheWriter;
+
     private ExpiryPolicyFactoryConfig expiryPolicyFactoryConfig;
     private List<CacheSimpleEntryListenerConfig> cacheEntryListeners;
 
@@ -310,7 +313,35 @@ public class CacheSimpleConfig {
      * @return The current cache config instance.
      */
     public CacheSimpleConfig setCacheLoaderFactory(String cacheLoaderFactory) {
+        if (cacheLoader != null && cacheLoaderFactory != null) {
+            throw new IllegalStateException("Cannot set cacheLoaderFactory to '" + cacheLoaderFactory
+                    + "', because cacheLoader is already set to '" + cacheLoader + "'.");
+        }
         this.cacheLoaderFactory = cacheLoaderFactory;
+        return this;
+    }
+
+    /**
+     * Get classname of a class to be used as {@link javax.cache.integration.CacheLoader}.
+     *
+     * @return classname to be used as {@link javax.cache.integration.CacheLoader}.
+     */
+    public String getCacheLoader() {
+        return cacheLoader;
+    }
+
+    /**
+     * Set classname of a class to be used as {@link javax.cache.integration.CacheLoader}.
+     *
+     * @param cacheLoader classname to be used as {@link javax.cache.integration.CacheLoader}.
+     * @return The current cache config instance.
+     */
+    public CacheSimpleConfig setCacheLoader(String cacheLoader) {
+        if (cacheLoader != null && cacheLoaderFactory != null) {
+            throw new IllegalStateException("Cannot set cacheLoader to '" + cacheLoader
+                    + "', because cacheLoaderFactory is already set to '" + cacheLoaderFactory + "'.");
+        }
+        this.cacheLoader = cacheLoader;
         return this;
     }
 
@@ -330,7 +361,36 @@ public class CacheSimpleConfig {
      * @return The current cache config instance.
      */
     public CacheSimpleConfig setCacheWriterFactory(String cacheWriterFactory) {
+        if (cacheWriter != null && cacheWriterFactory != null) {
+            throw new IllegalStateException("Cannot set cacheWriterFactory to '" + cacheWriterFactory
+                    + "', because cacheWriter is already set to '" + cacheWriter + "'.");
+        }
         this.cacheWriterFactory = cacheWriterFactory;
+        return this;
+    }
+
+    /**
+     * Get classname of a class to be used as {@link javax.cache.integration.CacheWriter}.
+     *
+     * @return classname to be used as {@link javax.cache.integration.CacheWriter}.
+     */
+    public String getCacheWriter() {
+        return cacheWriter;
+    }
+
+    /**
+     * Set classname of a class to be used as {@link javax.cache.integration.CacheWriter}.
+     *
+     * @param cacheWriter classname to be used as {@link javax.cache.integration.CacheWriter}.
+     * @return The current cache config instance.
+     *
+     */
+    public CacheSimpleConfig setCacheWriter(String cacheWriter) {
+        if (cacheWriter != null && cacheWriterFactory != null) {
+            throw new IllegalStateException("Cannot set cacheWriter to '" + cacheWriter
+                    + "', because cacheWriterFactory is already set to '" + cacheWriterFactory + "'.");
+        }
+        this.cacheWriter = cacheWriter;
         return this;
     }
 
@@ -416,8 +476,8 @@ public class CacheSimpleConfig {
      * @param asyncBackupCount the number of asynchronous synchronous backups to set.
      * @return the updated CacheSimpleConfig
      * @throws IllegalArgumentException if asyncBackupCount smaller than 0,
-     *              or larger than the maximum number of backups,
-     *              or the sum of the backups and async backups is larger than the maximum number of backups.
+     *                                  or larger than the maximum number of backups,
+     *                                  or the sum of the backups and async backups is larger than the maximum number of backups.
      * @see #setBackupCount(int)
      * @see #getAsyncBackupCount()
      */
@@ -440,9 +500,10 @@ public class CacheSimpleConfig {
      *
      * @param backupCount the new backupCount
      * @return the updated CacheSimpleConfig
-     * @throws new IllegalArgumentException if backupCount smaller than 0,
-     *             or larger than the maximum number of backup
-     *             or the sum of the backups and async backups is larger than the maximum number of backups
+     * @throws IllegalArgumentException if backupCount smaller than 0,
+     *                                  or larger than the maximum number of backup
+     *                                  or the sum of the backups and async backups is larger
+     *                                  than the maximum number of backups
      */
     public CacheSimpleConfig setBackupCount(int backupCount) {
         this.backupCount = checkBackupCount(backupCount, asyncBackupCount);
@@ -485,7 +546,7 @@ public class CacheSimpleConfig {
      * @return the updated CacheSimpleConfig.
      */
     public CacheSimpleConfig setEvictionConfig(EvictionConfig evictionConfig) {
-        this.evictionConfig = isNotNull(evictionConfig, "Eviction config cannot be null !");
+        this.evictionConfig = isNotNull(evictionConfig, "evictionConfig");
         return this;
     }
 
@@ -553,7 +614,6 @@ public class CacheSimpleConfig {
      * Associates this cache configuration to a quorum.
      *
      * @param quorumName name of the desired quorum.
-     *
      * @return the updated CacheSimpleConfig.
      */
     public CacheSimpleConfig setQuorumName(String quorumName) {
@@ -566,7 +626,7 @@ public class CacheSimpleConfig {
      * implementation of this cache config.
      *
      * @return the class name of {@link com.hazelcast.cache.CacheMergePolicy}
-     *         implementation of this cache config
+     * implementation of this cache config
      */
     public String getMergePolicy() {
         return mergePolicy;
@@ -585,6 +645,7 @@ public class CacheSimpleConfig {
 
     /**
      * Gets the {@code HotRestartConfig} for this {@code CacheSimpleConfig}
+     *
      * @return hot restart config
      */
     public HotRestartConfig getHotRestartConfig() {
@@ -593,6 +654,7 @@ public class CacheSimpleConfig {
 
     /**
      * Sets the {@code HotRestartConfig} for this {@code CacheSimpleConfig}
+     *
      * @param hotRestartConfig hot restart config
      * @return this {@code CacheSimpleConfig} instance
      */
@@ -605,7 +667,7 @@ public class CacheSimpleConfig {
      * Returns invalidation events disabled status for per entry.
      *
      * @return <tt>true</tt> if invalidation events are disabled for per entry,
-     *         otherwise <tt>false</tt>
+     * otherwise <tt>false</tt>
      */
     public boolean isDisablePerEntryInvalidationEvents() {
         return disablePerEntryInvalidationEvents;

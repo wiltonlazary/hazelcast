@@ -27,6 +27,7 @@ import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.operationservice.impl.operations.Backup;
 
 import static com.hazelcast.internal.partition.InternalPartition.MAX_BACKUP_COUNT;
+import static com.hazelcast.spi.OperationAccessor.hasActiveInvocation;
 import static com.hazelcast.spi.OperationAccessor.setCallId;
 import static java.lang.Math.min;
 
@@ -47,7 +48,29 @@ final class OperationBackupHandler {
         this.backpressureRegulator = operationService.backpressureRegulator;
     }
 
-    public int backup(BackupAwareOperation backupAwareOp) throws Exception {
+    /**
+     * Sends the appropriate backups. This call will not wait till the backups have ACK'ed.
+     *
+     * If this call is made with a none BackupAwareOperation, then 0 is returned.
+     *
+     * @param op the Operation to backup.
+     * @return the number of ACKS required to complete the invocation.
+     * @throws Exception if there is any exception sending the backups.
+     */
+    int sendBackups(Operation op) throws Exception {
+        if (!(op instanceof BackupAwareOperation)) {
+            return 0;
+        }
+
+        int backupAcks = 0;
+        BackupAwareOperation backupAwareOp = (BackupAwareOperation) op;
+        if (backupAwareOp.shouldBackup()) {
+            backupAcks = sendBackups0(backupAwareOp);
+        }
+        return backupAcks;
+    }
+
+    int sendBackups0(BackupAwareOperation backupAwareOp) throws Exception {
         int requestedSyncBackups = requestedSyncBackups(backupAwareOp);
         int requestedAsyncBackups = requestedAsyncBackups(backupAwareOp);
         int requestedTotalBackups = requestedTotalBackups(backupAwareOp);
@@ -105,12 +128,12 @@ final class OperationBackupHandler {
         int backups = op.getSyncBackupCount();
 
         if (backups < 0) {
-            throw new IllegalArgumentException("Can't create backup for Operation:" + op
+            throw new IllegalArgumentException("Can't create backup for " + op
                     + ", sync backup count can't be smaller than 0, but found: " + backups);
         }
 
         if (backups > MAX_BACKUP_COUNT) {
-            throw new IllegalArgumentException("Can't create backup for Operation:" + op
+            throw new IllegalArgumentException("Can't create backup for " + op
                     + ", sync backup count can't be larger than " + MAX_BACKUP_COUNT
                     + ", but found: " + backups);
         }
@@ -121,12 +144,12 @@ final class OperationBackupHandler {
         int backups = op.getAsyncBackupCount();
 
         if (backups < 0) {
-            throw new IllegalArgumentException("Can't create backup for Operation:" + op
+            throw new IllegalArgumentException("Can't create backup for " + op
                     + ", async backup count can't be smaller than 0, but found: " + backups);
         }
 
         if (backups > MAX_BACKUP_COUNT) {
-            throw new IllegalArgumentException("Can't create backup for Operation:" + op
+            throw new IllegalArgumentException("Can't create backup for " + op
                     + ", async backup count can't be larger than " + MAX_BACKUP_COUNT
                     + ", but found: " + backups);
         }
@@ -138,7 +161,7 @@ final class OperationBackupHandler {
         int backups = op.getSyncBackupCount() + op.getAsyncBackupCount();
 
         if (backups > MAX_BACKUP_COUNT) {
-            throw new IllegalArgumentException("Can't create backup for Operation:" + op
+            throw new IllegalArgumentException("Can't create backup for " + op
                     + ", the sum of async and sync backups is larger than " + MAX_BACKUP_COUNT
                     + ", sync backup count is " + op.getSyncBackupCount()
                     + ", async backup count is " + op.getAsyncBackupCount());
@@ -234,8 +257,8 @@ final class OperationBackupHandler {
         return backupOp;
     }
 
-    private Backup newBackup(BackupAwareOperation backupAwareOp, Object backupOp, long[] replicaVersions,
-            int replicaIndex, boolean respondBack) {
+    private static Backup newBackup(BackupAwareOperation backupAwareOp, Object backupOp, long[] replicaVersions,
+                                    int replicaIndex, boolean respondBack) {
         Operation op = (Operation) backupAwareOp;
         Backup backup;
         if (backupOp instanceof Operation) {
@@ -246,10 +269,10 @@ final class OperationBackupHandler {
             throw new IllegalArgumentException("Only 'Data' or 'Operation' typed backup operation is supported!");
         }
 
-        backup.setPartitionId(op.getPartitionId())
-                .setReplicaIndex(replicaIndex);
-        setCallId(backup, op.getCallId());
-
+        backup.setPartitionId(op.getPartitionId()).setReplicaIndex(replicaIndex);
+        if (hasActiveInvocation(op)) {
+            setCallId(backup, op.getCallId());
+        }
         return backup;
     }
 

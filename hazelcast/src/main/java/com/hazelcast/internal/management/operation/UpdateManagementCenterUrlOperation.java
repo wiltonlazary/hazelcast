@@ -17,9 +17,9 @@
 package com.hazelcast.internal.management.operation;
 
 import com.hazelcast.internal.management.ManagementCenterService;
+import com.hazelcast.internal.management.ManagementDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 
 import java.io.IOException;
@@ -27,21 +27,18 @@ import java.io.IOException;
 /**
  * Operation to update Management Center URL configured on the node.
  */
-public class UpdateManagementCenterUrlOperation extends Operation {
+public class UpdateManagementCenterUrlOperation extends AbstractManagementOperation {
 
     private static final int REDO_COUNT = 10;
     private static final int SLEEP_MILLIS = 1000;
     private String newUrl;
 
+    @SuppressWarnings("unused")
     public UpdateManagementCenterUrlOperation() {
     }
 
     public UpdateManagementCenterUrlOperation(String newUrl) {
         this.newUrl = newUrl;
-    }
-
-    @Override
-    public void beforeRun() throws Exception {
     }
 
     @Override
@@ -60,20 +57,6 @@ public class UpdateManagementCenterUrlOperation extends Operation {
     }
 
     @Override
-    public void afterRun() throws Exception {
-    }
-
-    @Override
-    public boolean returnsResponse() {
-        return true;
-    }
-
-    @Override
-    public Object getResponse() {
-        return null;
-    }
-
-    @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         out.writeUTF(newUrl);
     }
@@ -81,5 +64,10 @@ public class UpdateManagementCenterUrlOperation extends Operation {
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         newUrl = in.readUTF();
+    }
+
+    @Override
+    public int getId() {
+        return ManagementDataSerializerHook.UPDATE_MANAGEMENT_CENTER_URL;
     }
 }

@@ -41,7 +41,8 @@ public class InternalPartitionImpl implements InternalPartition {
         this.thisAddress = thisAddress;
     }
 
-    InternalPartitionImpl(int partitionId, PartitionListener listener, Address thisAddress,
+    @SuppressFBWarnings("EI_EXPOSE_REP")
+    public InternalPartitionImpl(int partitionId, PartitionListener listener, Address thisAddress,
             Address[] addresses) {
         this(partitionId, listener, thisAddress);
         this.addresses = addresses;
@@ -74,25 +75,6 @@ public class InternalPartitionImpl implements InternalPartition {
     @Override
     public Address getReplicaAddress(int replicaIndex) {
         return addresses[replicaIndex];
-    }
-
-    // This method is called under InternalPartitionServiceImpl.lock,
-    // so there's no need to guard `addresses` field or to use a CAS.
-    int removeAddress(Address deadAddress) {
-        Address[] currentAddresses = addresses;
-        Address[] newAddresses = Arrays.copyOf(addresses, MAX_REPLICA_COUNT);
-
-        for (int i = 0; i < MAX_REPLICA_COUNT; i++) {
-            if (!deadAddress.equals(currentAddresses[i])) {
-                continue;
-            }
-
-            newAddresses[i] = null;
-            addresses = newAddresses;
-            callPartitionListener(i, deadAddress, null);
-            return i;
-        }
-        return -1;
     }
 
     void swapAddresses(int index1, int index2) {
@@ -172,12 +154,7 @@ public class InternalPartitionImpl implements InternalPartition {
 
     @Override
     public boolean isOwnerOrBackup(Address address) {
-        for (int i = 0; i < MAX_REPLICA_COUNT; i++) {
-            if (address.equals(getReplicaAddress(i))) {
-                return true;
-            }
-        }
-        return false;
+        return getReplicaIndex(address) >= 0;
     }
 
     @Override
@@ -185,6 +162,7 @@ public class InternalPartitionImpl implements InternalPartition {
         return getReplicaIndex(addresses, address);
     }
 
+    /** Return the index of the {@code address} in {@code addresses} or -1 if the {@code address} is null or not present */
     public static int getReplicaIndex(Address[] addresses, Address address) {
         if (address == null) {
             return -1;
@@ -192,6 +170,25 @@ public class InternalPartitionImpl implements InternalPartition {
 
         for (int i = 0; i < MAX_REPLICA_COUNT; i++) {
             if (address.equals(addresses[i])) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    int replaceAddress(Address oldAddress, Address newAddress) {
+        Address[] currentAddresses = addresses;
+        for (int i = 0; i < MAX_REPLICA_COUNT; i++) {
+            Address address = currentAddresses[i];
+            if (address == null) {
+                break;
+            }
+
+            if (address.equals(oldAddress)) {
+                Address[] newAddresses = Arrays.copyOf(currentAddresses, MAX_REPLICA_COUNT);
+                newAddresses[i] = newAddress;
+                addresses = newAddresses;
+                callPartitionListener(i, oldAddress, newAddress);
                 return i;
             }
         }

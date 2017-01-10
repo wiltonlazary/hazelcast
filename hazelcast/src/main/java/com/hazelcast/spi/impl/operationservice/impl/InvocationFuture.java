@@ -20,21 +20,22 @@ import com.hazelcast.core.OperationTimeoutException;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.impl.AbstractInvocationFuture;
 
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import static com.hazelcast.spi.impl.operationservice.impl.InvocationValue.CALL_TIMEOUT;
-import static com.hazelcast.spi.impl.operationservice.impl.InvocationValue.HEARTBEAT_TIMEOUT;
-import static com.hazelcast.spi.impl.operationservice.impl.InvocationValue.INTERRUPTED;
+import static com.hazelcast.spi.impl.operationservice.impl.InvocationConstant.CALL_TIMEOUT;
+import static com.hazelcast.spi.impl.operationservice.impl.InvocationConstant.HEARTBEAT_TIMEOUT;
+import static com.hazelcast.spi.impl.operationservice.impl.InvocationConstant.INTERRUPTED;
+import static com.hazelcast.util.Clock.currentTimeMillis;
 import static com.hazelcast.util.ExceptionUtil.fixAsyncStackTrace;
 import static com.hazelcast.util.StringUtil.timeToString;
-import static java.lang.System.currentTimeMillis;
 
 /**
  * The InvocationFuture is the {@link com.hazelcast.spi.InternalCompletableFuture} that waits on the completion
  * of a {@link Invocation}. The Invocation executes an operation.
- *
+ * <p>
  * In the past the InvocationFuture.get logic was also responsible for detecting the heartbeat for blocking operations
  * using the CONTINUE_WAIT and detecting if an operation is still running using the IsStillRunning functionality. This
  * has been removed from the future and moved into the {@link InvocationMonitor}.
@@ -60,8 +61,8 @@ final class InvocationFuture<E> extends AbstractInvocationFuture<E> {
 
     @Override
     protected TimeoutException newTimeoutException(long timeout, TimeUnit unit) {
-        return new TimeoutException(invocation.op.getClass().getSimpleName() + " failed to complete within "
-                + timeout + " " + unit + ". " + invocation);
+        return new TimeoutException(String.format("%s failed to complete within %d %s. %s",
+                invocation.op.getClass().getSimpleName(), timeout, unit, invocation));
     }
 
     @Override
@@ -70,11 +71,13 @@ final class InvocationFuture<E> extends AbstractInvocationFuture<E> {
     }
 
     @Override
-    protected E resolveAndThrow(Object unresolved) throws ExecutionException, InterruptedException {
+    protected E resolveAndThrowIfException(Object unresolved) throws ExecutionException, InterruptedException {
         Object value = resolve(unresolved);
 
         if (value == null || !(value instanceof Throwable)) {
             return (E) value;
+        } else if (value instanceof CancellationException) {
+            throw (CancellationException) value;
         } else if (value instanceof ExecutionException) {
             throw (ExecutionException) value;
         } else if (value instanceof InterruptedException) {
@@ -120,27 +123,25 @@ final class InvocationFuture<E> extends AbstractInvocationFuture<E> {
         if (heartbeatTimeout) {
             sb.append(invocation.op.getClass().getSimpleName())
                     .append(" invocation failed to complete due to operation-heartbeat-timeout. ");
-
             sb.append("Current time: ").append(timeToString(currentTimeMillis())).append(". ");
-
+            sb.append("Start time: ").append(timeToString(invocation.firstInvocationTimeMillis)).append(". ");
             sb.append("Total elapsed time: ")
                     .append(currentTimeMillis() - invocation.firstInvocationTimeMillis).append(" ms. ");
 
             long lastHeartbeatMillis = invocation.lastHeartbeatMillis;
-            sb.append("Last heartbeat: ");
+            sb.append("Last operation heartbeat: ");
             appendHeartbeat(sb, lastHeartbeatMillis);
 
             long lastHeartbeatFromMemberMillis = invocation.context.invocationMonitor
                     .getLastMemberHeartbeatMillis(invocation.invTarget);
-            sb.append("Last member heartbeat: ");
+            sb.append("Last operation heartbeat from member: ");
             appendHeartbeat(sb, lastHeartbeatFromMemberMillis);
         } else {
             sb.append(invocation.op.getClass().getSimpleName())
                     .append(" got rejected before execution due to not starting within the operation-call-timeout of: ")
                     .append(invocation.callTimeoutMillis).append(" ms. ");
-
             sb.append("Current time: ").append(timeToString(currentTimeMillis())).append(". ");
-
+            sb.append("Start time: ").append(timeToString(invocation.firstInvocationTimeMillis)).append(". ");
             sb.append("Total elapsed time: ")
                     .append(currentTimeMillis() - invocation.firstInvocationTimeMillis).append(" ms. ");
         }
@@ -150,7 +151,7 @@ final class InvocationFuture<E> extends AbstractInvocationFuture<E> {
         return new ExecutionException(msg, new OperationTimeoutException(msg));
     }
 
-    private void appendHeartbeat(StringBuilder sb, long lastHeartbeatMillis) {
+    private static void appendHeartbeat(StringBuilder sb, long lastHeartbeatMillis) {
         if (lastHeartbeatMillis == 0) {
             sb.append("never. ");
         } else {

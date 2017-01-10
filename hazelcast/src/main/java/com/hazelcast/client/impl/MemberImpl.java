@@ -20,6 +20,8 @@ import com.hazelcast.core.Member;
 import com.hazelcast.instance.AbstractMember;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
+import com.hazelcast.version.MemberVersion;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.util.Map;
@@ -30,21 +32,26 @@ import java.util.Map;
  * <p>Caution: This class is required by protocol encoder/decoder which are on the Hazelcast module.
  * So this implementation also stays in the same module, although it is totally client side specific.</p>
  */
+@BinaryInterface
 public final class MemberImpl extends AbstractMember implements Member {
 
     public MemberImpl() {
     }
 
-    public MemberImpl(Address address) {
-        super(address);
+    public MemberImpl(Address address, MemberVersion version) {
+        super(address, version);
     }
 
-    public MemberImpl(Address address, String uuid) {
-        super(address, uuid);
+    public MemberImpl(Address address, MemberVersion version, String uuid) {
+        super(address, version, uuid);
     }
 
     public MemberImpl(Address address, String uuid, Map<String, Object> attributes, boolean liteMember) {
-        super(address, uuid, attributes, liteMember);
+        super(address, MemberVersion.UNKNOWN, uuid, attributes, liteMember);
+    }
+
+    public MemberImpl(Address address, MemberVersion version, String uuid, Map<String, Object> attributes, boolean liteMember) {
+        super(address, version, uuid, attributes, liteMember);
     }
 
     public MemberImpl(AbstractMember member) {

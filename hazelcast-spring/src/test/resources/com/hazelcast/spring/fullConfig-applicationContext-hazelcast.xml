@@ -65,6 +65,7 @@
                     </hz:properties>
                 </hz:wan-publisher>
                 <hz:wan-publisher group-name="istanbul" class-name="com.hazelcast.wan.custom.CustomPublisher">
+                    <hz:queue-full-behavior>THROW_EXCEPTION_ONLY_IF_REPLICATION_ACTIVE</hz:queue-full-behavior>
                     <hz:properties>
                         <hz:property name="custom.prop.publisher">prop.publisher</hz:property>
                     </hz:properties>
@@ -74,6 +75,9 @@
                         <hz:property name="custom.prop.consumer">prop.consumer</hz:property>
                     </hz:properties>
                 </hz:wan-consumer>
+            </hz:wan-replication>
+            <hz:wan-replication name="testWan2">
+                <hz:wan-consumer implementation="wanConsumer"/>
             </hz:wan-replication>
             <hz:network port="${cluster.port}" port-auto-increment="false">
                 <hz:outbound-ports>
@@ -148,10 +152,15 @@
                                  queue-capacity="300"
                                  statistics-enabled="false"
             />
-            <hz:queue name="testQ"
-                      max-size="1000"
-            >
+            <hz:durable-executor-service name="durableExec"
+                                         pool-size="10"
+                                         durability="5"
+                                         capacity="200"/>
 
+            <hz:scheduled-executor-service name="scheduledExec"
+                                           pool-size="10"
+                                           durability="5"/>
+            <hz:queue name="testQ" max-size="1000">
                 <hz:item-listeners>
                     <hz:item-listener class-name="com.hazelcast.spring.DummyItemListener" include-value="true"/>
                 </hz:item-listeners>
@@ -161,8 +170,57 @@
                       backup-count="1"
                       async-backup-count="1"
                       statistics-enabled="false"
-                      empty-queue-ttl="100"
-            />
+                      empty-queue-ttl="100">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+            </hz:queue>
+
+            <hz:queue name="queueWithStore1">
+                <hz:queue-store enabled="true" class-name="com.hazelcast.spring.DummyQueueStore"/>
+            </hz:queue>
+            <hz:queue name="queueWithStore2">
+                <hz:queue-store enabled="true" factory-class-name="com.hazelcast.spring.DummyQueueStoreFactory"/>
+            </hz:queue>
+            <hz:queue name="queueWithStore3">
+                <hz:queue-store enabled="true" store-implementation="dummyQueueStore"/>
+            </hz:queue>
+            <hz:queue name="queueWithStore4">
+                <hz:queue-store enabled="true" factory-implementation="dummyQueueStoreFactory"/>
+            </hz:queue>
+
+            <hz:lock name="lock">
+                <hz:quorum-ref>my-quorum</hz:quorum-ref>
+            </hz:lock>
+
+            <hz:ringbuffer name="testRingbuffer"
+                           in-memory-format="OBJECT"
+                           capacity="100"
+                           backup-count="1"
+                           async-backup-count="1"
+                           time-to-live-seconds="20">
+                <hz:ringbuffer-store enabled="true" class-name="com.hazelcast.spring.DummyRingbufferStore"/>
+            </hz:ringbuffer>
+
+            <hz:ringbuffer name="testRingbuffer2">
+                <hz:ringbuffer-store enabled="true" factory-class-name="com.hazelcast.spring.DummyRingbufferStoreFactory"/>
+            </hz:ringbuffer>
+
+            <hz:ringbuffer name="testRingbuffer3">
+                <hz:ringbuffer-store enabled="true" implementation="dummyRingbufferStore"/>
+            </hz:ringbuffer>
+
+            <hz:ringbuffer name="testRingbuffer4">
+                <hz:ringbuffer-store enabled="true" factory-implementation="dummyRingbufferStoreFactory"/>
+            </hz:ringbuffer>
+
+            <hz:semaphore name="testSemaphore" async-backup-count="1" backup-count="1" initial-permits="10" />
+
+            <hz:reliable-topic name="testReliableTopic" topic-overload-policy="BLOCK" read-batch-size="10"
+                               statistics-enabled="false">
+                <hz:message-listeners>
+                    <hz:message-listener class-name="com.hazelcast.spring.DummyMessageListener"/>
+                </hz:message-listeners>
+            </hz:reliable-topic>
+
             <hz:map name="testMap"
                     backup-count="2"
                     max-size="0"
@@ -416,8 +474,12 @@
                 </hz:quorum-listeners>
             </hz:quorum>
 
-            <hz:hot-restart-persistence enabled="true" validation-timeout-seconds="1111" data-load-timeout-seconds="2222">
+            <hz:hot-restart-persistence enabled="true"
+                                        validation-timeout-seconds="1111"
+                                        data-load-timeout-seconds="2222"
+                                        cluster-data-recovery-policy="PARTIAL_RECOVERY_MOST_COMPLETE">
                 <hz:base-dir>/mnt/hot-restart/</hz:base-dir>
+                <hz:backup-dir>/mnt/hot-backup/</hz:backup-dir>
             </hz:hot-restart-persistence>
         </hz:config>
     </hz:hazelcast>
@@ -444,6 +506,10 @@
 
     <bean id="dummyMapStore" class="com.hazelcast.spring.DummyStore"/>
     <bean id="dummyMapStoreFactory" class="com.hazelcast.spring.DummyStoreFactory"/>
+    <bean id="dummyQueueStore" class="com.hazelcast.spring.DummyQueueStore"/>
+    <bean id="dummyQueueStoreFactory" class="com.hazelcast.spring.DummyQueueStoreFactory"/>
+    <bean id="dummyRingbufferStore" class="com.hazelcast.spring.DummyRingbufferStore"/>
+    <bean id="dummyRingbufferStoreFactory" class="com.hazelcast.spring.DummyRingbufferStoreFactory"/>
     <bean id="dummyMapEvictionPolicy" class="com.hazelcast.spring.DummyMapEvictionPolicy"/>
     <bean id="dummyWanReplication" class="com.hazelcast.spring.DummyWanReplication"/>
     <bean id="dummyMembershipListener" class="com.hazelcast.spring.DummyMembershipListener"/>
@@ -455,5 +521,6 @@
     <bean id="dummyDiscoveryStrategyFactory" class="com.hazelcast.spring.DummyDiscoveryStrategyFactory"/>
     <bean id="dummyDiscoveryServiceProvider" class="com.hazelcast.spring.DummyDiscoveryServiceProvider"/>
     <bean id="dummyService" class="com.hazelcast.spring.MyService"/>
+    <bean id="wanConsumer" class="com.hazelcast.spring.DummyWanConsumer"/>
 
 </beans>

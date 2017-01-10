@@ -16,11 +16,11 @@
 
 package com.hazelcast.map.impl.operation;
 
-import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.spi.BackupOperation;
 import com.hazelcast.spi.impl.MutatingOperation;
 
-public class ClearBackupOperation extends MapOperation implements BackupOperation, MutatingOperation, DataSerializable {
+public class ClearBackupOperation extends MapOperation implements BackupOperation, MutatingOperation {
 
     public ClearBackupOperation() {
         this(null);
@@ -33,12 +33,13 @@ public class ClearBackupOperation extends MapOperation implements BackupOperatio
 
     @Override
     public void run() {
-        // clear near-cache also on this backup operation, there is a possibility that no owner partition exists on this
-        // node but a near-cache exists.
-        clearNearCache(false);
-
         if (recordStore != null) {
             recordStore.clear();
         }
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.CLEAR_BACKUP;
     }
 }

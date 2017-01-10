@@ -16,12 +16,14 @@
 
 package com.hazelcast.ringbuffer.impl.operations;
 
+import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.ringbuffer.StaleSequenceException;
 import com.hazelcast.ringbuffer.impl.RingbufferContainer;
 import com.hazelcast.ringbuffer.impl.RingbufferService;
-import com.hazelcast.spi.AbstractOperation;
+import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionAwareOperation;
 
 import java.io.IOException;
@@ -29,7 +31,15 @@ import java.io.IOException;
 import static com.hazelcast.ringbuffer.impl.RingbufferDataSerializerHook.F_ID;
 import static com.hazelcast.ringbuffer.impl.RingbufferService.SERVICE_NAME;
 
-public abstract class AbstractRingBufferOperation extends AbstractOperation
+/**
+ * Common logic for all ring buffer operations :
+ * <ul>
+ * <li>getting the ring buffer container or creating a new one if necessary</li>
+ * <li>serialization/deserialization of ring buffer name</li>
+ * <li>defines the factory ID for the {@link IdentifiedDataSerializable}</li>
+ * </ul>
+ */
+public abstract class AbstractRingBufferOperation extends Operation
         implements IdentifiedDataSerializable, PartitionAwareOperation {
 
     protected String name;
@@ -47,6 +57,13 @@ public abstract class AbstractRingBufferOperation extends AbstractOperation
         return SERVICE_NAME;
     }
 
+    /**
+     * Returns an {@link RingbufferContainer} or creates a new one if necessary by calling
+     * {@link RingbufferService#getContainer(String)}. Also calls the {@link RingbufferContainer#cleanup()} before returning
+     * the container. This will currently remove any expired items.
+     *
+     * @return the ring buffer container
+     */
     RingbufferContainer getRingBufferContainer() {
         if (ringbuffer != null) {
             return ringbuffer;
@@ -57,6 +74,20 @@ public abstract class AbstractRingBufferOperation extends AbstractOperation
         ringbuffer.cleanup();
         this.ringbuffer = ringbuffer;
         return ringbuffer;
+    }
+
+    @Override
+    public void logError(Throwable e) {
+        if (e instanceof StaleSequenceException) {
+            ILogger logger = getLogger();
+            if (logger.isFinestEnabled()) {
+                logger.finest(e.getMessage(), e);
+            } else if (logger.isFineEnabled()) {
+                logger.fine(e.getClass().getSimpleName() + ": " + e.getMessage());
+            }
+        } else {
+            super.logError(e);
+        }
     }
 
     @Override

@@ -17,6 +17,9 @@
 package com.hazelcast.map.impl.recordstore;
 
 import com.hazelcast.map.impl.SizeEstimator;
+import com.hazelcast.map.impl.iterator.MapEntriesWithCursor;
+import com.hazelcast.map.impl.iterator.MapKeysWithCursor;
+import com.hazelcast.spi.serialization.SerializationService;
 
 import java.util.Collection;
 
@@ -34,6 +37,14 @@ public interface Storage<K, R> {
     void updateRecordValue(K key, R record, Object value);
 
     R get(K key);
+
+    /**
+     * Gives the same result as {@link #get(Object)}, but with the additional constraint
+     * that the supplied key must not just be equal to, but be exactly the same key blob (at the
+     * same memory address) as the one stored. The implementation of this method is only needed
+     * for the HD memory-based implementations.
+     */
+    R getIfSameKey(K key);
 
     void removeRecord(R record);
 
@@ -62,4 +73,9 @@ public interface Storage<K, R> {
      * @return sampled entries.
      */
     Iterable<LazyEntryViewFromRecord> getRandomSamples(int sampleCount);
+
+    MapKeysWithCursor fetchKeys(int tableIndex, int size);
+
+    MapEntriesWithCursor fetchEntries(int tableIndex, int size, SerializationService serializationService);
+
 }

@@ -16,8 +16,10 @@
 
 package com.hazelcast.map.impl;
 
+import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.MapConfig;
+import com.hazelcast.config.PartitioningStrategyConfig;
 import com.hazelcast.core.PartitioningStrategy;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.map.MapInterceptor;
@@ -25,15 +27,30 @@ import com.hazelcast.map.impl.event.MapEventPublisher;
 import com.hazelcast.map.impl.event.MapEventPublisherImpl;
 import com.hazelcast.map.impl.eviction.ExpirationManager;
 import com.hazelcast.map.impl.mapstore.MapDataStore;
-import com.hazelcast.map.impl.nearcache.NearCacheProvider;
+import com.hazelcast.map.impl.nearcache.MapNearCacheManager;
 import com.hazelcast.map.impl.operation.BasePutOperation;
 import com.hazelcast.map.impl.operation.BaseRemoveOperation;
 import com.hazelcast.map.impl.operation.GetOperation;
 import com.hazelcast.map.impl.operation.MapOperationProvider;
 import com.hazelcast.map.impl.operation.MapOperationProviders;
 import com.hazelcast.map.impl.operation.MapPartitionDestroyTask;
+import com.hazelcast.map.impl.query.AccumulationExecutor;
+import com.hazelcast.map.impl.query.AggregationResult;
+import com.hazelcast.map.impl.query.AggregationResultProcessor;
+import com.hazelcast.map.impl.query.CallerRunsAccumulationExecutor;
+import com.hazelcast.map.impl.query.CallerRunsPartitionScanExecutor;
 import com.hazelcast.map.impl.query.MapQueryEngine;
 import com.hazelcast.map.impl.query.MapQueryEngineImpl;
+import com.hazelcast.map.impl.query.ParallelAccumulationExecutor;
+import com.hazelcast.map.impl.query.ParallelPartitionScanExecutor;
+import com.hazelcast.map.impl.query.PartitionScanExecutor;
+import com.hazelcast.map.impl.query.PartitionScanRunner;
+import com.hazelcast.map.impl.query.QueryResult;
+import com.hazelcast.map.impl.query.QueryResultProcessor;
+import com.hazelcast.map.impl.query.QueryRunner;
+import com.hazelcast.map.impl.query.ResultProcessorRegistry;
+import com.hazelcast.map.impl.querycache.NodeQueryCacheContext;
+import com.hazelcast.map.impl.querycache.QueryCacheContext;
 import com.hazelcast.map.impl.recordstore.DefaultRecordStore;
 import com.hazelcast.map.impl.recordstore.RecordStore;
 import com.hazelcast.map.listener.MapPartitionLostListener;
@@ -50,9 +67,12 @@ import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.eventservice.impl.TrueEventFilter;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
 import com.hazelcast.spi.partition.IPartitionService;
+import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
+import com.hazelcast.util.ContextMutexFactory;
 import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.util.executor.ManagedExecutorService;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -71,6 +91,10 @@ import static com.hazelcast.map.impl.ListenerAdapters.createListenerAdapter;
 import static com.hazelcast.map.impl.MapListenerFlagOperator.setAndGetListenerFlags;
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
 import static com.hazelcast.query.impl.predicates.QueryOptimizerFactory.newOptimizer;
+import static com.hazelcast.spi.ExecutionService.QUERY_EXECUTOR;
+import static com.hazelcast.spi.properties.GroupProperty.AGGREGATION_ACCUMULATION_PARALLEL_EVALUATION;
+import static com.hazelcast.spi.properties.GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS;
+import static com.hazelcast.spi.properties.GroupProperty.QUERY_PREDICATE_PARALLEL_EVALUATION;
 
 /**
  * Default implementation of map service context.
@@ -86,8 +110,7 @@ class MapServiceContextImpl implements MapServiceContext {
         public MapContainer createNew(String mapName) {
             final MapServiceContext mapServiceContext = getService().getMapServiceContext();
             final Config config = nodeEngine.getConfig();
-            final MapConfig mapConfig = config.findMapConfig(mapName);
-            return new MapContainer(mapName, mapConfig, mapServiceContext);
+            return new MapContainer(mapName, config, mapServiceContext);
         }
     };
     /**
@@ -98,64 +121,118 @@ class MapServiceContextImpl implements MapServiceContext {
      */
     protected final AtomicInteger writeBehindQueueItemCounter = new AtomicInteger(0);
     protected final ExpirationManager expirationManager;
-    protected final NearCacheProvider nearCacheProvider;
+    protected final MapNearCacheManager mapNearCacheManager;
     protected final LocalMapStatsProvider localMapStatsProvider;
     protected final MergePolicyProvider mergePolicyProvider;
     protected final MapQueryEngine mapQueryEngine;
+    protected final QueryRunner mapQueryRunner;
+    protected final PartitionScanRunner partitionScanRunner;
     protected final QueryOptimizer queryOptimizer;
+    protected final ContextMutexFactory contextMutexFactory = new ContextMutexFactory();
+    protected final PartitioningStrategyFactory partitioningStrategyFactory;
+    protected final QueryCacheContext queryCacheContext;
     protected MapEventPublisher mapEventPublisher;
     protected MapService mapService;
     protected EventService eventService;
     protected MapOperationProviders operationProviders;
+    protected ResultProcessorRegistry resultProcessorRegistry;
 
     MapServiceContextImpl(NodeEngine nodeEngine) {
         this.nodeEngine = nodeEngine;
+        this.queryCacheContext = new NodeQueryCacheContext(this);
         this.partitionContainers = createPartitionContainers();
         this.mapContainers = new ConcurrentHashMap<String, MapContainer>();
         this.ownedPartitions = new AtomicReference<Collection<Integer>>();
-        this.expirationManager = new ExpirationManager(this, nodeEngine);
-        this.nearCacheProvider = createNearCacheProvider();
+        this.expirationManager = new ExpirationManager(partitionContainers, nodeEngine);
+        this.mapNearCacheManager = createMapNearCacheManager();
         this.localMapStatsProvider = createLocalMapStatsProvider();
         this.mergePolicyProvider = new MergePolicyProvider(nodeEngine);
         this.mapEventPublisher = createMapEventPublisherSupport();
         this.queryOptimizer = newOptimizer(nodeEngine.getProperties());
-        this.mapQueryEngine = createMapQueryEngine(queryOptimizer);
+        this.resultProcessorRegistry = createResultProcessorRegistry(nodeEngine.getSerializationService());
+        this.partitionScanRunner = createPartitionScanRunner();
+        this.mapQueryEngine = createMapQueryEngine();
+        this.mapQueryRunner = createMapQueryRunner(nodeEngine, queryOptimizer, resultProcessorRegistry, partitionScanRunner);
         this.eventService = nodeEngine.getEventService();
         this.operationProviders = createOperationProviders();
+        this.partitioningStrategyFactory = new PartitioningStrategyFactory(nodeEngine.getConfigClassLoader());
     }
 
+    MapNearCacheManager createMapNearCacheManager() {
+        return new MapNearCacheManager(this);
+    }
+
+    // this method is overridden in another context.
     MapOperationProviders createOperationProviders() {
         return new MapOperationProviders(this);
     }
 
     // this method is overridden in another context.
-    LocalMapStatsProvider createLocalMapStatsProvider() {
-        return new LocalMapStatsProvider(this);
-    }
-
-    // this method is overridden in another context.
-    MapQueryEngineImpl createMapQueryEngine(QueryOptimizer queryOptimizer) {
-        return new MapQueryEngineImpl(this, queryOptimizer);
-    }
-
-    // this method is overridden in another context.
-    NearCacheProvider createNearCacheProvider() {
-        return new NearCacheProvider(this);
-    }
-
-    PartitionContainer[] createPartitionContainers() {
-        int partitionCount = nodeEngine.getPartitionService().getPartitionCount();
-        return new PartitionContainer[partitionCount];
-    }
-
-    // this method is overridden.
     MapEventPublisherImpl createMapEventPublisherSupport() {
         return new MapEventPublisherImpl(this);
     }
 
+    private LocalMapStatsProvider createLocalMapStatsProvider() {
+        return new LocalMapStatsProvider(this);
+    }
+
+    private MapQueryEngineImpl createMapQueryEngine() {
+        return new MapQueryEngineImpl(this);
+    }
+
+    private PartitionScanRunner createPartitionScanRunner() {
+        return new PartitionScanRunner(this);
+    }
+
+    protected QueryRunner createMapQueryRunner(NodeEngine nodeEngine, QueryOptimizer queryOptimizer,
+                                               ResultProcessorRegistry resultProcessorRegistry,
+                                               PartitionScanRunner partitionScanRunner) {
+        boolean parallelEvaluation = nodeEngine.getProperties().getBoolean(QUERY_PREDICATE_PARALLEL_EVALUATION);
+        PartitionScanExecutor partitionScanExecutor;
+        if (parallelEvaluation) {
+            int opTimeoutInMillis = nodeEngine.getProperties().getInteger(OPERATION_CALL_TIMEOUT_MILLIS);
+            ManagedExecutorService queryExecutorService = nodeEngine.getExecutionService().getExecutor(QUERY_EXECUTOR);
+            partitionScanExecutor = new ParallelPartitionScanExecutor(partitionScanRunner, queryExecutorService,
+                    opTimeoutInMillis);
+        } else {
+            partitionScanExecutor = new CallerRunsPartitionScanExecutor(partitionScanRunner);
+        }
+        return new QueryRunner(this, queryOptimizer, partitionScanExecutor, resultProcessorRegistry);
+    }
+
+    private ResultProcessorRegistry createResultProcessorRegistry(SerializationService ss) {
+        ResultProcessorRegistry registry = new ResultProcessorRegistry();
+        registry.registerProcessor(QueryResult.class, createQueryResultProcessor(ss));
+        registry.registerProcessor(AggregationResult.class, createAggregationResultProcessor(ss));
+        return registry;
+    }
+
+    private QueryResultProcessor createQueryResultProcessor(SerializationService ss) {
+        return new QueryResultProcessor(ss);
+    }
+
+    private AggregationResultProcessor createAggregationResultProcessor(SerializationService ss) {
+        boolean parallelAccumulation = nodeEngine.getProperties().getBoolean(AGGREGATION_ACCUMULATION_PARALLEL_EVALUATION);
+        int opTimeoutInMillis = nodeEngine.getProperties().getInteger(OPERATION_CALL_TIMEOUT_MILLIS);
+        AccumulationExecutor accumulationExecutor;
+        if (parallelAccumulation) {
+            ManagedExecutorService queryExecutorService = nodeEngine.getExecutionService().getExecutor(QUERY_EXECUTOR);
+            accumulationExecutor = new ParallelAccumulationExecutor(queryExecutorService, ss, opTimeoutInMillis);
+        } else {
+            accumulationExecutor = new CallerRunsAccumulationExecutor(ss);
+        }
+
+        return new AggregationResultProcessor(accumulationExecutor, nodeEngine.getSerializationService());
+    }
+
+    private PartitionContainer[] createPartitionContainers() {
+        int partitionCount = nodeEngine.getPartitionService().getPartitionCount();
+        return new PartitionContainer[partitionCount];
+    }
+
     @Override
     public MapContainer getMapContainer(String mapName) {
-        return ConcurrencyUtil.getOrPutSynchronized(mapContainers, mapName, mapContainers, mapConstructor);
+        return ConcurrencyUtil.getOrPutSynchronized(mapContainers, mapName, contextMutexFactory, mapConstructor);
     }
 
 
@@ -257,7 +334,7 @@ class MapServiceContextImpl implements MapServiceContext {
             return;
         }
         mapContainer.getMapStoreContext().stop();
-        nearCacheProvider.destroyNearCache(mapName);
+        mapNearCacheManager.destroyNearCache(mapName);
         nodeEngine.getEventService().deregisterAllListeners(SERVICE_NAME, mapName);
         localMapStatsProvider.destroyLocalMapStatsImpl(mapContainer.getName());
 
@@ -282,19 +359,14 @@ class MapServiceContextImpl implements MapServiceContext {
     @Override
     public void reset() {
         clearPartitions(false);
-        getNearCacheProvider().reset();
+        mapNearCacheManager.reset();
     }
 
     @Override
     public void shutdown() {
         clearPartitions(true);
-        nearCacheProvider.shutdown();
+        mapNearCacheManager.shutdown();
         mapContainers.clear();
-    }
-
-    @Override
-    public NearCacheProvider getNearCacheProvider() {
-        return nearCacheProvider;
     }
 
     @Override
@@ -360,6 +432,11 @@ class MapServiceContextImpl implements MapServiceContext {
     @Override
     public MapQueryEngine getMapQueryEngine(String mapName) {
         return mapQueryEngine;
+    }
+
+    @Override
+    public QueryRunner getMapQueryRunner(String name) {
+        return mapQueryRunner;
     }
 
     @Override
@@ -566,6 +643,11 @@ class MapServiceContextImpl implements MapServiceContext {
     }
 
     @Override
+    public MapOperationProvider getMapOperationProvider(MapConfig mapConfig) {
+        return operationProviders.getOperationProvider(mapConfig);
+    }
+
+    @Override
     public Extractors getExtractors(String mapName) {
         MapContainer mapContainer = getMapContainer(mapName);
         return mapContainer.getExtractors();
@@ -583,13 +665,81 @@ class MapServiceContextImpl implements MapServiceContext {
         }
     }
 
+    @Override
     public RecordStore createRecordStore(MapContainer mapContainer, int partitionId, MapKeyLoader keyLoader) {
         ILogger logger = nodeEngine.getLogger(DefaultRecordStore.class);
         return new DefaultRecordStore(mapContainer, partitionId, keyLoader, logger);
     }
 
     @Override
-    public void removeMapContainer(MapContainer mapContainer) {
-        mapContainers.remove(mapContainer.getName(), mapContainer);
+    public boolean removeMapContainer(MapContainer mapContainer) {
+        return mapContainers.remove(mapContainer.getName(), mapContainer);
+    }
+
+    @Override
+    public PartitioningStrategy getPartitioningStrategy(String mapName, PartitioningStrategyConfig config) {
+        return partitioningStrategyFactory.getPartitioningStrategy(mapName, config);
+    }
+
+    @Override
+    public void removePartitioningStrategyFromCache(String mapName) {
+        partitioningStrategyFactory.removePartitioningStrategyFromCache(mapName);
+    }
+
+    @Override
+    public PartitionContainer[] getPartitionContainers() {
+        return partitionContainers;
+    }
+
+    @Override
+    public void onClusterStateChange(ClusterState newState) {
+        if (newState == ClusterState.PASSIVE) {
+            expirationManager.stop();
+        } else {
+            expirationManager.start();
+        }
+    }
+
+    @Override
+    public PartitionScanRunner getPartitionScanRunner() {
+        return partitionScanRunner;
+    }
+
+    @Override
+    public ResultProcessorRegistry getResultProcessorRegistry() {
+        return resultProcessorRegistry;
+    }
+
+    @Override
+    public MapNearCacheManager getMapNearCacheManager() {
+        return mapNearCacheManager;
+    }
+
+    @Override
+    public String addListenerAdapter(ListenerAdapter listenerAdaptor, EventFilter eventFilter, String mapName) {
+        EventRegistration registration = getNodeEngine().getEventService().
+                registerListener(MapService.SERVICE_NAME, mapName, eventFilter, listenerAdaptor);
+        return registration.getId();
+    }
+
+    @Override
+    public String addListenerAdapter(String cacheName, ListenerAdapter listenerAdaptor) {
+        EventService eventService = getNodeEngine().getEventService();
+        EventRegistration registration
+                = eventService.registerListener(MapService.SERVICE_NAME,
+                cacheName, TrueEventFilter.INSTANCE, listenerAdaptor);
+        return registration.getId();
+    }
+
+    @Override
+    public String addLocalListenerAdapter(ListenerAdapter adapter, String mapName) {
+        EventService eventService = getNodeEngine().getEventService();
+        EventRegistration registration = eventService.registerLocalListener(MapService.SERVICE_NAME, mapName, adapter);
+        return registration.getId();
+    }
+
+    @Override
+    public QueryCacheContext getQueryCacheContext() {
+        return queryCacheContext;
     }
 }

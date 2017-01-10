@@ -16,7 +16,9 @@
 
 package com.hazelcast.map.impl.operation;
 
+import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.map.EntryProcessor;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.nio.ObjectDataInput;
@@ -43,38 +45,74 @@ import java.util.Set;
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
 import static com.hazelcast.util.CollectionUtil.isEmpty;
 import static com.hazelcast.util.CollectionUtil.toIntArray;
+import static com.hazelcast.util.MapUtil.isNullOrEmpty;
+import static com.hazelcast.util.collection.InflatableSet.newBuilder;
+import static java.util.Collections.emptySet;
 
-public class PartitionWideEntryWithPredicateOperationFactory implements PartitionAwareOperationFactory {
+public class PartitionWideEntryWithPredicateOperationFactory extends PartitionAwareOperationFactory {
 
     private String name;
     private EntryProcessor entryProcessor;
     private Predicate predicate;
 
-    private transient Set<Data> keySet;
-    private transient NodeEngine nodeEngine;
-    private transient boolean hasIndex;
-    private transient Map<Integer, List<Data>> partitionIdToKeys;
+    private transient Map<Integer, List<Data>> partitionIdToKeysMap;
 
     public PartitionWideEntryWithPredicateOperationFactory() {
     }
 
     public PartitionWideEntryWithPredicateOperationFactory(String name, EntryProcessor entryProcessor,
-                                                           Predicate predicate) {
+                                                           Predicate predicate, Map<Integer, List<Data>> partitionIdToKeysMap) {
+        this(name, entryProcessor, predicate);
+        this.partitionIdToKeysMap = partitionIdToKeysMap;
+        this.partitions = isNullOrEmpty(partitionIdToKeysMap) ? null : toIntArray(partitionIdToKeysMap.keySet());
+    }
+
+    public PartitionWideEntryWithPredicateOperationFactory(String name, EntryProcessor entryProcessor, Predicate predicate) {
         this.name = name;
         this.entryProcessor = entryProcessor;
         this.predicate = predicate;
     }
 
     @Override
-    public void init(NodeEngine nodeEngine) {
-        this.nodeEngine = nodeEngine;
-        queryIndex();
+    public PartitionAwareOperationFactory createFactoryOnRunner(NodeEngine nodeEngine) {
+        Set<Data> keys = getKeysFromIndex(nodeEngine);
+        Map<Integer, List<Data>> partitionIdToKeysMap
+                = getPartitionIdToKeysMap(keys, ((InternalPartitionService) nodeEngine.getPartitionService()));
+
+        return new PartitionWideEntryWithPredicateOperationFactory(name, entryProcessor, predicate, partitionIdToKeysMap);
     }
 
-    private void queryIndex() {
+    @Override
+    public Operation createPartitionOperation(int partition) {
+        if (isNullOrEmpty(partitionIdToKeysMap)) {
+            // fallback here if we cannot find anything from indexes.
+            return new PartitionWideEntryWithPredicateOperation(name, entryProcessor, predicate);
+        }
+
+        List<Data> keyList = partitionIdToKeysMap.get(partition);
+        InflatableSet<Data> keys = newBuilder(keyList).build();
+        return new MultipleEntryWithPredicateOperation(name, keys, entryProcessor, predicate);
+    }
+
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(name);
+        out.writeObject(entryProcessor);
+        out.writeObject(predicate);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        name = in.readUTF();
+        entryProcessor = in.readObject();
+        predicate = in.readObject();
+    }
+
+    private Set<Data> getKeysFromIndex(NodeEngine nodeEngine) {
         // Do not use index in this case, because it requires full-table-scan.
         if (predicate == TruePredicate.INSTANCE) {
-            return;
+            return emptySet();
         }
 
         // get indexes
@@ -87,7 +125,7 @@ public class PartitionWideEntryWithPredicateOperationFactory implements Partitio
 
         Set<QueryableEntry> querySet = indexes.query(predicate);
         if (querySet == null) {
-            return;
+            return emptySet();
         }
 
         List<Data> keys = null;
@@ -98,39 +136,17 @@ public class PartitionWideEntryWithPredicateOperationFactory implements Partitio
             keys.add(e.getKeyData());
         }
 
-        hasIndex = true;
-        keySet = keys == null ? Collections.<Data>emptySet() : InflatableSet.newBuilder(keys).build();
+        return keys == null ? Collections.<Data>emptySet() : newBuilder(keys).build();
     }
 
-    @Override
-    public Operation createPartitionOperation(int partition) {
-        if (hasIndex) {
-            List<Data> keys = partitionIdToKeys.get(partition);
-            InflatableSet<Data> keySet = InflatableSet.newBuilder(keys).build();
-            return new MultipleEntryWithPredicateOperation(name, keySet, entryProcessor, predicate);
-        }
-
-        return createOperation();
-    }
-
-    @Override
-    public int[] getPartitions() {
-        if (!hasIndex) {
-            return null;
-        }
-
-        partitionIdToKeys = getPartitionIdToKeysMap();
-        return toIntArray(partitionIdToKeys.keySet());
-    }
-
-    private Map<Integer, List<Data>> getPartitionIdToKeysMap() {
-        if (isEmpty(keySet)) {
+    private Map<Integer, List<Data>> getPartitionIdToKeysMap(Set<Data> keys, InternalPartitionService partitionService) {
+        if (isEmpty(keys)) {
             return Collections.emptyMap();
         }
 
         Map<Integer, List<Data>> partitionToKeys = new Int2ObjectHashMap<List<Data>>();
-        for (Data key : keySet) {
-            int partitionId = nodeEngine.getPartitionService().getPartitionId(key);
+        for (Data key : keys) {
+            int partitionId = partitionService.getPartitionId(key);
             List<Data> keyList = partitionToKeys.get(partitionId);
             if (keyList == null) {
                 keyList = new ArrayList<Data>();
@@ -147,16 +163,12 @@ public class PartitionWideEntryWithPredicateOperationFactory implements Partitio
     }
 
     @Override
-    public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(name);
-        out.writeObject(entryProcessor);
-        out.writeObject(predicate);
+    public int getFactoryId() {
+        return MapDataSerializerHook.F_ID;
     }
 
     @Override
-    public void readData(ObjectDataInput in) throws IOException {
-        name = in.readUTF();
-        entryProcessor = in.readObject();
-        predicate = in.readObject();
+    public int getId() {
+        return MapDataSerializerHook.PARTITION_WIDE_PREDICATE_ENTRY_FACTORY;
     }
 }

@@ -20,12 +20,13 @@ import com.hazelcast.cache.HazelcastCachingProvider;
 import com.hazelcast.cache.impl.AbstractHazelcastCacheManager;
 import com.hazelcast.cache.impl.ICacheInternal;
 import com.hazelcast.cache.impl.ICacheService;
-import com.hazelcast.cache.impl.nearcache.NearCacheManager;
+import com.hazelcast.internal.nearcache.NearCacheManager;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.client.impl.HazelcastClientProxy;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.util.ExceptionUtil;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.net.URI;
 import java.util.Iterator;
@@ -37,13 +38,11 @@ import java.util.concurrent.ConcurrentMap;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 
 /**
- * <p>
- * CacheManager implementation for client side
- * <p/>
- * Provides client side cacheManager functionality
+ * {@link javax.cache.CacheManager} implementation for client side.
+ *
+ * Provides client side CacheManager functionality.
  */
-public final class HazelcastClientCacheManager
-        extends AbstractHazelcastCacheManager {
+public final class HazelcastClientCacheManager extends AbstractHazelcastCacheManager {
 
     private final HazelcastClientInstanceImpl client;
     private final ClientCacheProxyFactory clientCacheProxyFactory;
@@ -86,10 +85,10 @@ public final class HazelcastClientCacheManager
         checkIfManagerNotClosed();
         checkNotNull(cacheName, "cacheName cannot be null");
         ClientCacheHelper.enableStatisticManagementOnNodes(client, getCacheNameWithPrefix(cacheName),
-                                                           statOrMan, enabled);
+                statOrMan, enabled);
     }
 
-    @edu.umd.cs.findbugs.annotations.SuppressWarnings({"RV_RETURN_VALUE_OF_PUTIFABSENT_IGNORED"})
+    @SuppressFBWarnings("RV_RETURN_VALUE_OF_PUTIFABSENT_IGNORED")
     @Override
     protected <K, V> void addCacheConfigIfAbsent(CacheConfig<K, V> cacheConfig) {
         configs.putIfAbsent(cacheConfig.getNameWithPrefix(), cacheConfig);
@@ -112,7 +111,8 @@ public final class HazelcastClientCacheManager
         clientCacheProxyFactory.addCacheConfig(cacheConfig.getNameWithPrefix(), cacheConfig);
         try {
             ClientCacheProxy<K, V> clientCacheProxy =
-                    (ClientCacheProxy<K, V>) client.getCacheByFullName(cacheConfig.getNameWithPrefix());
+                    (ClientCacheProxy<K, V>) client.getCacheManager()
+                            .getCacheByFullName(cacheConfig.getNameWithPrefix());
             clientCacheProxy.setCacheManager(this);
             return clientCacheProxy;
         } catch (Throwable t) {
@@ -140,7 +140,7 @@ public final class HazelcastClientCacheManager
     protected <K, V> CacheConfig<K, V> createCacheConfig(String cacheName, CacheConfig<K, V> config,
                                                          boolean createAlsoOnOthers, boolean syncCreate) {
         return ClientCacheHelper.createCacheConfig(client, configs, cacheName, config,
-                                                   createAlsoOnOthers, syncCreate);
+                createAlsoOnOthers, syncCreate);
     }
 
     @Override
@@ -169,6 +169,10 @@ public final class HazelcastClientCacheManager
         }
     }
 
+    @Override
+    protected void onShuttingDown() {
+    }
+
     /**
      * Gets the related {@link NearCacheManager} with the underlying client instance.
      *
@@ -177,5 +181,4 @@ public final class HazelcastClientCacheManager
     public NearCacheManager getNearCacheManager() {
         return client.getNearCacheManager();
     }
-
 }

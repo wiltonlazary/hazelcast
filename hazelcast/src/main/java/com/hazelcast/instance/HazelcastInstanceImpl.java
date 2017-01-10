@@ -16,9 +16,8 @@
 
 package com.hazelcast.instance;
 
-import com.hazelcast.cache.HazelcastCacheManager;
-import com.hazelcast.cache.ICache;
-import com.hazelcast.cache.impl.ICacheService;
+import com.hazelcast.cardinality.CardinalityEstimator;
+import com.hazelcast.cardinality.impl.CardinalityEstimatorService;
 import com.hazelcast.client.impl.ClientServiceProxy;
 import com.hazelcast.collection.impl.list.ListService;
 import com.hazelcast.collection.impl.queue.QueueService;
@@ -34,7 +33,6 @@ import com.hazelcast.core.ClientService;
 import com.hazelcast.core.Cluster;
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.core.DistributedObjectListener;
-import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceAware;
 import com.hazelcast.core.IAtomicLong;
@@ -54,9 +52,11 @@ import com.hazelcast.core.Member;
 import com.hazelcast.core.MultiMap;
 import com.hazelcast.core.PartitionService;
 import com.hazelcast.core.ReplicatedMap;
+import com.hazelcast.durableexecutor.DurableExecutorService;
+import com.hazelcast.durableexecutor.impl.DistributedDurableExecutorService;
 import com.hazelcast.executor.impl.DistributedExecutorService;
-import com.hazelcast.internal.jmx.ManagementService;
 import com.hazelcast.internal.diagnostics.HealthMonitor;
+import com.hazelcast.internal.jmx.ManagementService;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.LoggingService;
@@ -69,9 +69,10 @@ import com.hazelcast.quorum.QuorumService;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.ringbuffer.Ringbuffer;
 import com.hazelcast.ringbuffer.impl.RingbufferService;
+import com.hazelcast.scheduledexecutor.IScheduledExecutorService;
+import com.hazelcast.scheduledexecutor.impl.DistributedScheduledExecutorService;
 import com.hazelcast.spi.ProxyService;
 import com.hazelcast.spi.annotation.PrivateApi;
-import com.hazelcast.spi.exception.ServiceNotFoundException;
 import com.hazelcast.topic.impl.TopicService;
 import com.hazelcast.topic.impl.reliable.ReliableTopicService;
 import com.hazelcast.transaction.HazelcastXAResource;
@@ -88,7 +89,6 @@ import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import static com.hazelcast.core.LifecycleEvent.LifecycleState.STARTING;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 
 @PrivateApi
@@ -112,6 +112,9 @@ public class HazelcastInstanceImpl implements HazelcastInstance {
 
     final HealthMonitor healthMonitor;
 
+    final HazelcastInstanceCacheManager hazelcastCacheManager;
+
+    @SuppressWarnings("checkstyle:executablestatementcount")
     protected HazelcastInstanceImpl(String name, Config config, NodeContext nodeContext)
             throws Exception {
         this.name = name;
@@ -128,17 +131,22 @@ public class HazelcastInstanceImpl implements HazelcastInstance {
 
         try {
             logger = node.getLogger(getClass().getName());
-            lifecycleService.fireLifecycleEvent(STARTING);
 
             node.start();
+
             if (!node.isRunning()) {
-                throw new IllegalStateException("Node failed to start!");
+                    throw new IllegalStateException("Node failed to start!");
             }
 
             managementService = new ManagementService(this);
             initManagedContext(configuredManagedContext);
 
             this.healthMonitor = new HealthMonitor(node).start();
+            this.hazelcastCacheManager = new HazelcastInstanceCacheManager(this);
+            ClassLoader classLoader = node.getConfigClassLoader();
+            if (classLoader instanceof HazelcastInstanceAware) {
+                ((HazelcastInstanceAware) classLoader).setHazelcastInstance(this);
+            }
         } catch (Throwable e) {
             try {
                 // Terminate the node by terminating node engine,
@@ -263,6 +271,12 @@ public class HazelcastInstanceImpl implements HazelcastInstance {
     }
 
     @Override
+    public DurableExecutorService getDurableExecutorService(String name) {
+        checkNotNull(name, "Retrieving a durable executor instance with a null name is not allowed!");
+        return getDistributedObject(DistributedDurableExecutorService.SERVICE_NAME, name);
+    }
+
+    @Override
     public IdGenerator getIdGenerator(String name) {
         checkNotNull(name, "Retrieving an id-generator instance with a null name is not allowed!");
         return getDistributedObject(IdGeneratorService.SERVICE_NAME, name);
@@ -299,22 +313,8 @@ public class HazelcastInstanceImpl implements HazelcastInstance {
     }
 
     @Override
-    public <K, V> ICache<K, V> getCache(String name) {
-        checkNotNull(name, "Retrieving a cache instance with a null name is not allowed!");
-        return getCacheByFullName(HazelcastCacheManager.CACHE_MANAGER_PREFIX + name);
-    }
-
-    public <K, V> ICache<K, V> getCacheByFullName(String fullName) {
-        checkNotNull(fullName, "Retrieving a cache instance with a null name is not allowed!");
-        try {
-            return getDistributedObject(ICacheService.SERVICE_NAME, fullName);
-        } catch (HazelcastException e) {
-            if (e.getCause() instanceof ServiceNotFoundException) {
-                throw new IllegalStateException(ICacheService.CACHE_SUPPORT_NOT_AVAILABLE_ERROR_MESSAGE);
-            } else {
-                throw e;
-            }
-        }
+    public HazelcastInstanceCacheManager getCacheManager() {
+        return hazelcastCacheManager;
     }
 
     @Override
@@ -324,7 +324,7 @@ public class HazelcastInstanceImpl implements HazelcastInstance {
 
     @Override
     public Member getLocalEndpoint() {
-        return node.clusterService.getLocalMember();
+        return node.getLocalMember();
     }
 
     @Override
@@ -403,6 +403,16 @@ public class HazelcastInstanceImpl implements HazelcastInstance {
     @Override
     public HazelcastXAResource getXAResource() {
         return getDistributedObject(XAService.SERVICE_NAME, XAService.SERVICE_NAME);
+    }
+
+    @Override
+    public CardinalityEstimator getCardinalityEstimator(String name) {
+        return getDistributedObject(CardinalityEstimatorService.SERVICE_NAME, name);
+    }
+
+    @Override
+    public IScheduledExecutorService getScheduledExecutorService(String name) {
+        return getDistributedObject(DistributedScheduledExecutorService.SERVICE_NAME, name);
     }
 
     @Override

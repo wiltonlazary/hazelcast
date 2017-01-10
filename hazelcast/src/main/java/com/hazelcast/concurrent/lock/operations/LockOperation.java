@@ -26,14 +26,20 @@ import com.hazelcast.spi.BlockingOperation;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 
-public class LockOperation extends AbstractLockOperation implements BlockingOperation, BackupAwareOperation {
+public class LockOperation extends AbstractLockOperation implements BlockingOperation, BackupAwareOperation, MutatingOperation {
 
     public LockOperation() {
     }
 
     public LockOperation(ObjectNamespace namespace, Data key, long threadId, long leaseTime, long timeout) {
         super(namespace, key, threadId, leaseTime, timeout);
+    }
+
+    public LockOperation(ObjectNamespace namespace, Data key, long threadId, long leaseTime, long timeout, long referenceId) {
+        super(namespace, key, threadId, leaseTime, timeout);
+        setReferenceCallId(referenceId);
     }
 
     @Override

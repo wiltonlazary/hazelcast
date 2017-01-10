@@ -31,9 +31,10 @@ import com.hazelcast.client.spi.EventHandler;
 import com.hazelcast.client.spi.impl.listener.ClientListenerServiceImpl;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.metrics.ProbeLevel;
-import com.hazelcast.internal.util.collection.MPSCQueue;
+import com.hazelcast.internal.util.concurrent.MPSCQueue;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Connection;
+import com.hazelcast.spi.exception.TargetDisconnectedException;
 import com.hazelcast.spi.properties.HazelcastProperty;
 
 import java.io.IOException;
@@ -48,36 +49,38 @@ import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.client.spi.properties.ClientProperty.MAX_CONCURRENT_INVOCATIONS;
 import static com.hazelcast.instance.OutOfMemoryErrorDispatcher.onOutOfMemory;
-import static com.hazelcast.spi.exception.TargetDisconnectedException.newTargetDisconnectedExceptionCausedByHeartBeat;
-import static com.hazelcast.spi.impl.operationservice.impl.AsyncResponseHandler.getIdleStrategy;
-
+import static com.hazelcast.spi.impl.operationservice.impl.AsyncInboundResponseHandler.getIdleStrategy;
 
 abstract class ClientInvocationServiceSupport implements ClientInvocationService {
-    public static final HazelcastProperty IDLE_STRATEGY
+
+    private static final HazelcastProperty IDLE_STRATEGY
             = new HazelcastProperty("hazelcast.client.responsequeue.idlestrategy", "block");
 
     private static final int WAIT_TIME_FOR_PACKETS_TO_BE_CONSUMED_THRESHOLD = 5000;
+
     protected final HazelcastClientInstanceImpl client;
+    protected final ILogger invocationLogger;
+
     protected ClientConnectionManager connectionManager;
     protected ClientPartitionService partitionService;
-    protected ClientExecutionService executionService;
-    protected ClientListenerServiceImpl clientListenerService;
-    protected final ILogger invocationLogger;
-    private ResponseThread responseThread;
-
-    @Probe(name = "pendingCalls", level = ProbeLevel.MANDATORY)
-    private ConcurrentMap<Long, ClientInvocation> callIdMap
-            = new ConcurrentHashMap<Long, ClientInvocation>();
+    private ClientListenerServiceImpl clientListenerService;
 
     private final CallIdSequence callIdSequence;
+
+    @Probe(name = "pendingCalls", level = ProbeLevel.MANDATORY)
+    private ConcurrentMap<Long, ClientInvocation> callIdMap = new ConcurrentHashMap<Long, ClientInvocation>();
+
+    private ResponseThread responseThread;
     private ClientExceptionFactory clientExceptionFactory;
+
     private volatile boolean isShutdown;
 
     public ClientInvocationServiceSupport(HazelcastClientInstanceImpl client) {
-        this.client = client;
         int maxAllowedConcurrentInvocations = client.getProperties().getInteger(MAX_CONCURRENT_INVOCATIONS);
-        callIdSequence = new CallIdSequence.CallIdSequenceFailFast(maxAllowedConcurrentInvocations);
-        invocationLogger = client.getLoggingService().getLogger(ClientInvocationService.class);
+
+        this.client = client;
+        this.invocationLogger = client.getLoggingService().getLogger(ClientInvocationService.class);
+        this.callIdSequence = new CallIdSequence.CallIdSequenceFailFast(maxAllowedConcurrentInvocations);
 
         client.getMetricsRegistry().scanAndRegister(this, "invocations");
     }
@@ -85,19 +88,18 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
     @Override
     public void start() {
         connectionManager = client.getConnectionManager();
-        executionService = client.getClientExecutionService();
         clientListenerService = (ClientListenerServiceImpl) client.getListenerService();
         partitionService = client.getClientPartitionService();
         clientExceptionFactory = initClientExceptionFactory();
         responseThread = new ResponseThread(client.getThreadGroup(), client.getName() + ".response-",
                 client.getClientConfig().getClassLoader());
         responseThread.start();
+        ClientExecutionService executionService = client.getClientExecutionService();
         executionService.scheduleWithRepetition(new CleanResourcesTask(), 1, 1, TimeUnit.SECONDS);
     }
 
-
     private ClientExceptionFactory initClientExceptionFactory() {
-        boolean jcacheAvailable = JCacheDetector.isJcacheAvailable(client.getClientConfig().getClassLoader());
+        boolean jcacheAvailable = JCacheDetector.isJCacheAvailable(client.getClientConfig().getClassLoader());
         return new ClientExceptionFactory(jcacheAvailable);
     }
 
@@ -118,7 +120,7 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
             ClientInvocation clientInvocation = deRegisterCallId(callId);
             if (clientInvocation != null) {
                 callIdSequence.complete();
-                throw new IOException("Packet not send to " + connection.getRemoteEndpoint());
+                throw new IOException("Packet not send to " + connection.getEndPoint());
             } else {
                 if (invocationLogger.isFinestEnabled()) {
                     invocationLogger.finest("Invocation not found to deregister for call id " + callId);
@@ -137,7 +139,7 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
     private boolean isAllowedToSendRequest(ClientConnection connection, ClientInvocation invocation) {
         if (!connection.isHeartBeating()) {
             if (invocation.shouldBypassHeartbeatCheck()) {
-                //ping and removeAllListeners should be send even though heart is not beating
+                // ping and removeAllListeners should be send even though heart is not beating
                 return true;
             }
 
@@ -170,11 +172,11 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
         return callIdMap.remove(callId);
     }
 
-
     public boolean isShutdown() {
         return isShutdown;
     }
 
+    @Override
     public void shutdown() {
         isShutdown = true;
         responseThread.interrupt();
@@ -200,6 +202,7 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
                 if (connection == null) {
                     continue;
                 }
+
                 if (connection.isHeartBeating()) {
                     continue;
                 }
@@ -218,13 +221,28 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
                 }
 
                 iter.remove();
-                Exception ex = newTargetDisconnectedExceptionCausedByHeartBeat(connection.getRemoteEndpoint(),
-                        connection.getLastHeartbeatMillis(), connection.getCloseCause());
-                invocation.notifyException(ex);
+
+                notifyException(invocation, connection);
             }
             if (expiredConnections != null) {
                 logExpiredConnections(expiredConnections);
             }
+        }
+
+        private void notifyException(ClientInvocation invocation, ClientConnection connection) {
+            Exception ex;
+            /**
+             * Connection may be closed(e.g. remote member shutdown) in which case the isAlive is set to false or the
+             * heartbeat failure occurs. The order of the following check matters. We need to first check for isAlive since
+             * the connection.isHeartBeating also checks for isAlive as well.
+             */
+            if (!connection.isAlive()) {
+                ex = new TargetDisconnectedException(connection.getCloseReason(), connection.getCloseCause());
+            } else {
+                ex = new TargetDisconnectedException("Heartbeat timed out to " + connection);
+            }
+
+            invocation.notifyException(ex);
         }
 
         private void logExpiredConnections(Collection<ClientConnection> expiredConnections) {
@@ -232,8 +250,8 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
                 int pendingPacketCount = expiredConnection.getPendingPacketCount();
                 if (pendingPacketCount != 0) {
                     invocationLogger.warning("There are " + pendingPacketCount
-                            + " packets which are not processed "
-                            + " on " + expiredConnection.getRemoteEndpoint());
+                            + " packets which are not processed on "
+                            + expiredConnection.getEndPoint());
                 }
             }
         }
@@ -245,24 +263,26 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
     }
 
     private static class ClientPacket {
+
         private final ClientConnection clientConnection;
         private final ClientMessage clientMessage;
 
-        public ClientPacket(ClientConnection clientConnection, ClientMessage clientMessage) {
+        ClientPacket(ClientConnection clientConnection, ClientMessage clientMessage) {
             this.clientConnection = clientConnection;
             this.clientMessage = clientMessage;
         }
 
-        public ClientConnection getClientConnection() {
+        private ClientConnection getClientConnection() {
             return clientConnection;
         }
 
-        public ClientMessage getClientMessage() {
+        private ClientMessage getClientMessage() {
             return clientMessage;
         }
     }
 
     private class ResponseThread extends Thread {
+
         private final BlockingQueue<ClientPacket> responseQueue;
 
         ResponseThread(ThreadGroup threadGroup, String name, ClassLoader classLoader) {
@@ -329,8 +349,5 @@ abstract class ClientInvocationServiceSupport implements ClientInvocationService
                 future.notify(clientMessage);
             }
         }
-
     }
-
-
 }

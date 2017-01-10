@@ -29,6 +29,7 @@ import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.HazelcastOverloadException;
 import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.core.OperationTimeoutException;
+import com.hazelcast.durableexecutor.StaleTaskIdException;
 import com.hazelcast.internal.cluster.impl.ConfigMismatchException;
 import com.hazelcast.map.QueryResultSizeExceededException;
 import com.hazelcast.map.ReachedMaxSizeException;
@@ -41,6 +42,8 @@ import com.hazelcast.query.QueryException;
 import com.hazelcast.quorum.QuorumException;
 import com.hazelcast.replicatedmap.ReplicatedMapCantBeCreatedOnLiteMemberException;
 import com.hazelcast.ringbuffer.StaleSequenceException;
+import com.hazelcast.scheduledexecutor.DuplicateTaskException;
+import com.hazelcast.scheduledexecutor.StaleTaskException;
 import com.hazelcast.spi.exception.CallerNotMemberException;
 import com.hazelcast.spi.exception.DistributedObjectDestroyedException;
 import com.hazelcast.spi.exception.PartitionMigratingException;
@@ -573,10 +576,37 @@ public class ClientExceptionFactory {
                 return new ServiceNotFoundException(message);
             }
         });
-    }
+        register(ClientProtocolErrorCodes.STALE_TASK_ID, StaleTaskIdException.class, new ExceptionFactory() {
+            @Override
+            public Throwable createException(String message, Throwable cause) {
+                return new StaleTaskIdException(message);
+            }
+        });
+        register(ClientProtocolErrorCodes.DUPLICATE_TASK, DuplicateTaskException.class, new ExceptionFactory() {
+            @Override
+            public Throwable createException(String message, Throwable cause) {
+                return new DuplicateTaskException(message);
+            }
+        });
+        register(ClientProtocolErrorCodes.STALE_TASK, StaleTaskException.class, new ExceptionFactory() {
+            @Override
+            public Throwable createException(String message, Throwable cause) {
+                return new StaleTaskException(message);
+            }
+        });
+        register(ClientProtocolErrorCodes.CANCELLED_TASK, CancellationException.class, new ExceptionFactory() {
+            @Override
+            public Throwable createException(String message, Throwable cause) {
+                return new CancellationException(message);
+            }
+        });
+        register(ClientProtocolErrorCodes.REJECTED_TASK, RejectedExecutionException.class, new ExceptionFactory() {
+            @Override
+            public Throwable createException(String message, Throwable cause) {
+                return new RejectedExecutionException(message);
+            }
+        });
 
-    interface ExceptionFactory {
-        Throwable createException(String message, Throwable cause);
 
     }
 
@@ -627,12 +657,17 @@ public class ClientExceptionFactory {
         intToFactory.put(errorCode, exceptionFactory);
     }
 
-
     private int getErrorCode(Throwable e) {
         Integer errorCode = classToInt.get(e.getClass());
         if (errorCode == null) {
             return ClientProtocolErrorCodes.UNDEFINED;
         }
         return errorCode;
+    }
+
+
+    interface ExceptionFactory {
+        Throwable createException(String message, Throwable cause);
+
     }
 }

@@ -5,7 +5,6 @@ import com.hazelcast.test.ExpectedRuntimeException;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -28,7 +27,7 @@ public class AbstractInvocationFuture_GetSafely extends AbstractInvocationFuture
         Future joinFuture = spawn(new Callable<Object>() {
             @Override
             public Object call() throws Exception {
-                return future.getSafely();
+                return future.join();
             }
         });
 
@@ -44,7 +43,7 @@ public class AbstractInvocationFuture_GetSafely extends AbstractInvocationFuture
         Future joinFuture = spawn(new Callable<Object>() {
             @Override
             public Object call() throws Exception {
-                return future.getSafely();
+                return future.join();
             }
         });
 
@@ -65,7 +64,7 @@ public class AbstractInvocationFuture_GetSafely extends AbstractInvocationFuture
         Future joinFuture = spawn(new Callable<Object>() {
             @Override
             public Object call() throws Exception {
-                return future.getSafely();
+                return future.join();
             }
         });
 

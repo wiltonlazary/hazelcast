@@ -17,13 +17,15 @@
 package com.hazelcast.multimap.impl.operations;
 
 import com.hazelcast.config.MultiMapConfig;
+import com.hazelcast.multimap.impl.MultiMapDataSerializerHook;
 import com.hazelcast.multimap.impl.MultiMapRecord;
 import com.hazelcast.multimap.impl.MultiMapService;
 import com.hazelcast.multimap.impl.MultiMapValue;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.AbstractOperation;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.spi.Operation;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -33,7 +35,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-public class MultiMapMigrationOperation extends AbstractOperation {
+public class MultiMapMigrationOperation extends Operation implements IdentifiedDataSerializable {
 
     Map<String, Map> map;
 
@@ -107,5 +109,13 @@ public class MultiMapMigrationOperation extends AbstractOperation {
         }
     }
 
+    @Override
+    public int getFactoryId() {
+        return MultiMapDataSerializerHook.F_ID;
+    }
 
+    @Override
+    public int getId() {
+        return MultiMapDataSerializerHook.MULTIMAP_MIGRATION_OPERATION;
+    }
 }

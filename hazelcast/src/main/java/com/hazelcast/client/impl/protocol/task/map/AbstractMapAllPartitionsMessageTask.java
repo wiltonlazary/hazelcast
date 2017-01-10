@@ -24,6 +24,8 @@ import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.operation.MapOperationProvider;
 import com.hazelcast.nio.Connection;
 
+import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
+
 abstract class AbstractMapAllPartitionsMessageTask<P> extends AbstractAllPartitionsMessageTask<P> {
 
     AbstractMapAllPartitionsMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
@@ -31,7 +33,7 @@ abstract class AbstractMapAllPartitionsMessageTask<P> extends AbstractAllPartiti
     }
 
     protected final MapOperationProvider getOperationProvider(String mapName) {
-        MapService mapService = getService(MapService.SERVICE_NAME);
+        MapService mapService = getService(SERVICE_NAME);
         MapServiceContext mapServiceContext = mapService.getMapServiceContext();
         return mapServiceContext.getMapOperationProvider(mapName);
     }

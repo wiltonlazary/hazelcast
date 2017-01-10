@@ -19,14 +19,14 @@ package com.hazelcast.client.impl.protocol.task.cache;
 import com.hazelcast.cache.impl.CacheContext;
 import com.hazelcast.cache.impl.CacheEventListener;
 import com.hazelcast.cache.impl.CacheService;
-import com.hazelcast.cache.impl.client.CacheBatchInvalidationMessage;
-import com.hazelcast.cache.impl.client.CacheInvalidationMessage;
-import com.hazelcast.cache.impl.client.CacheSingleInvalidationMessage;
 import com.hazelcast.client.ClientEndpoint;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.CacheAddInvalidationListenerCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
 import com.hazelcast.instance.Node;
+import com.hazelcast.internal.nearcache.impl.invalidation.BatchNearCacheInvalidation;
+import com.hazelcast.internal.nearcache.impl.invalidation.Invalidation;
+import com.hazelcast.internal.nearcache.impl.invalidation.SingleNearCacheInvalidation;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.EventRegistration;
@@ -35,6 +35,10 @@ import com.hazelcast.spi.NotifiableEventListener;
 import java.security.Permission;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+
+import static com.hazelcast.client.impl.protocol.codec.CacheAddInvalidationListenerCodec.encodeCacheBatchInvalidationEvent;
+import static com.hazelcast.client.impl.protocol.codec.CacheAddInvalidationListenerCodec.encodeCacheInvalidationEvent;
 
 public class CacheAddInvalidationListenerTask
         extends AbstractCallableMessageTask<CacheAddInvalidationListenerCodec.RequestParameters> {
@@ -55,11 +59,19 @@ public class CacheAddInvalidationListenerTask
         return registrationId;
     }
 
-    private final class CacheInvalidationEventListener
-            implements CacheEventListener, NotifiableEventListener<CacheService> {
+    private final class CacheInvalidationEventListener implements CacheEventListener, NotifiableEventListener<CacheService> {
 
         private final ClientEndpoint endpoint;
         private final CacheContext cacheContext;
+
+        /**
+         * This listener is called by member and in the listener we are sending invalidations to client.
+         * `batchOrderKey` is used by clients'-striped-executor to find a worker for processing invalidation.
+         * By using `batchOrderKey` we are putting all invalidations coming from the same member into the same workers' queue.
+         * So if there is more than one member all members will have their own worker to process invalidations. This provides
+         * more granular processing.
+         */
+        private final int batchOrderKey = nodeEngine.getLocalMember().hashCode();
 
         private CacheInvalidationEventListener(ClientEndpoint endpoint, CacheContext cacheContext) {
             this.endpoint = endpoint;
@@ -68,42 +80,65 @@ public class CacheAddInvalidationListenerTask
 
         @Override
         public void handleEvent(Object eventObject) {
-            if (!endpoint.isAlive()) {
+            if (!endpoint.isAlive() || !(eventObject instanceof Invalidation)) {
                 return;
             }
-            if (eventObject instanceof CacheInvalidationMessage) {
-                String targetUuid = endpoint.getUuid();
-                if (eventObject instanceof CacheSingleInvalidationMessage) {
-                    CacheSingleInvalidationMessage message = (CacheSingleInvalidationMessage) eventObject;
-                    if (!targetUuid.equals(message.getSourceUuid())) {
-                        // Since we already filtered as source uuid, no need to send source uuid to client
-                        // TODO Maybe don't send name also to client
-                        ClientMessage eventMessage =
-                                CacheAddInvalidationListenerCodec
-                                        .encodeCacheInvalidationEvent(message.getName(),
-                                                                      message.getKey(),
-                                                                      null);
-                        sendClientMessage(message.getName(), eventMessage);
-                    }
-                } else if (eventObject instanceof CacheBatchInvalidationMessage) {
-                    CacheBatchInvalidationMessage message = (CacheBatchInvalidationMessage) eventObject;
-                    List<CacheSingleInvalidationMessage> invalidationMessages =
-                            message.getInvalidationMessages();
-                    List<Data> filteredKeys = new ArrayList<Data>(invalidationMessages.size());
-                    for (CacheSingleInvalidationMessage invalidationMessage : invalidationMessages) {
-                        if (!targetUuid.equals(invalidationMessage.getSourceUuid())) {
-                            filteredKeys.add(invalidationMessage.getKey());
-                        }
-                    }
-                    // Since we already filtered keys as source uuid, no need to send source uuid list to client
-                    // TODO Maybe don't send name also to client
-                    ClientMessage eventMessage =
-                            CacheAddInvalidationListenerCodec
-                                .encodeCacheBatchInvalidationEvent(message.getName(),
-                                                                   filteredKeys,
-                                                                   null);
-                    sendClientMessage(message.getName(), eventMessage);
-                }
+
+            sendInvalidation(((Invalidation) eventObject));
+        }
+
+        private void sendInvalidation(Invalidation invalidation) {
+            if (invalidation instanceof BatchNearCacheInvalidation) {
+                ExtractedParams params = extractParams(((BatchNearCacheInvalidation) invalidation));
+                ClientMessage message = encodeCacheBatchInvalidationEvent(invalidation.getName(), params.keys,
+                        params.sourceUuids, params.partitionUuids, params.sequences);
+
+                sendClientMessage(batchOrderKey, message);
+                return;
+            }
+
+            if (invalidation instanceof SingleNearCacheInvalidation) {
+                ClientMessage message = encodeCacheInvalidationEvent(invalidation.getName(), invalidation.getKey(),
+                        invalidation.getSourceUuid(), invalidation.getPartitionUuid(), invalidation.getSequence());
+
+                sendClientMessage(invalidation.getKey(), message);
+                return;
+            }
+
+            throw new IllegalArgumentException("Unknown invalidation message type " + invalidation);
+        }
+
+        private ExtractedParams extractParams(BatchNearCacheInvalidation batch) {
+            List<Invalidation> invalidations = batch.getInvalidations();
+
+            int size = invalidations.size();
+            List<Data> keys = new ArrayList<Data>(size);
+            List<String> sourceUuids = new ArrayList<String>(size);
+            List<UUID> partitionUuids = new ArrayList<UUID>(size);
+            List<Long> sequences = new ArrayList<Long>(size);
+
+            for (Invalidation invalidation : invalidations) {
+                keys.add(invalidation.getKey());
+                sourceUuids.add(invalidation.getSourceUuid());
+                partitionUuids.add(invalidation.getPartitionUuid());
+                sequences.add(invalidation.getSequence());
+            }
+
+            return new ExtractedParams(keys, sourceUuids, partitionUuids, sequences);
+        }
+
+        private final class ExtractedParams {
+            private final List<Data> keys;
+            private final List<String> sourceUuids;
+            private final List<UUID> partitionUuids;
+            private final List<Long> sequences;
+
+            public ExtractedParams(List<Data> keys, List<String> sourceUuids,
+                                   List<UUID> partitionUuids, List<Long> sequences) {
+                this.keys = keys;
+                this.sourceUuids = sourceUuids;
+                this.partitionUuids = partitionUuids;
+                this.sequences = sequences;
             }
         }
 

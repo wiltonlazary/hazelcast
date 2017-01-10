@@ -23,24 +23,29 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.AbstractOperation;
+import com.hazelcast.spi.NamedOperation;
 import com.hazelcast.spi.ObjectNamespace;
+import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionAwareOperation;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
-public abstract class AbstractLockOperation extends AbstractOperation
-        implements PartitionAwareOperation, IdentifiedDataSerializable {
+public abstract class AbstractLockOperation extends Operation
+        implements PartitionAwareOperation, IdentifiedDataSerializable, NamedOperation {
 
     public static final int ANY_THREAD = 0;
+
+    private static final AtomicLongFieldUpdater<AbstractLockOperation> REFERENCE_CALL_ID =
+            AtomicLongFieldUpdater.newUpdater(AbstractLockOperation.class, "referenceCallId");
 
     protected ObjectNamespace namespace;
     protected Data key;
     protected long threadId;
     protected long leaseTime = -1L;
     protected transient Object response;
+    private volatile long referenceCallId;
     private transient boolean asyncBackup;
-    private long referenceCallId;
 
     public AbstractLockOperation() {
     }
@@ -98,18 +103,16 @@ public abstract class AbstractLockOperation extends AbstractOperation
     }
 
     @Override
-    protected void onSetCallId() {
-        if (referenceCallId == 0L) {
-            referenceCallId = getCallId();
-        }
-    }
-
-    protected final void setReferenceCallId(long refCallId) {
-        this.referenceCallId = refCallId;
+    protected void onSetCallId(long callId) {
+        REFERENCE_CALL_ID.compareAndSet(this, 0, callId);
     }
 
     protected final long getReferenceCallId() {
         return referenceCallId != 0 ? referenceCallId : getCallId();
+    }
+
+    protected final void setReferenceCallId(long refCallId) {
+        this.referenceCallId = refCallId;
     }
 
     @Override
@@ -119,6 +122,11 @@ public abstract class AbstractLockOperation extends AbstractOperation
 
     public final Data getKey() {
         return key;
+    }
+
+    @Override
+    public String getName() {
+        return namespace.getObjectName();
     }
 
     @Override
@@ -149,7 +157,7 @@ public abstract class AbstractLockOperation extends AbstractOperation
     @Override
     protected void toString(StringBuilder sb) {
         super.toString(sb);
-
         sb.append(", namespace=").append(namespace);
+        sb.append(", threadId=").append(threadId);
     }
 }

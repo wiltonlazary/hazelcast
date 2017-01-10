@@ -40,7 +40,6 @@ import java.util.concurrent.TimeUnit;
  * tm.setTransactionTimeout(60);
  * tm.begin();
  *
- *
  * HazelcastXAResource xaResource = client.getXAResource();
  * Transaction transaction = tm.getTransaction();
  * transaction.enlistResource(xaResource);
@@ -76,14 +75,18 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * Transactional implementation of {@link IMap#containsKey(Object)}.
      *
      * @see IMap#containsKey(Object)
+     * @throws NullPointerException if the specified key is null.
      */
+    @Override
     boolean containsKey(Object key);
 
     /**
      * Transactional implementation of {@link IMap#get(Object)}.
      *
      * @see IMap#get(Object)
+     * @throws NullPointerException if the specified key is null.
      */
+    @Override
     V get(Object key);
 
     /**
@@ -91,6 +94,7 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * Lock will be released at the end of the transaction (either commit or rollback).
      *
      * @see IMap#get(Object)
+     * @throws NullPointerException if the specified key is null.
      */
     V getForUpdate(Object key);
 
@@ -99,6 +103,7 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      *
      * @see IMap#size()
      */
+    @Override
     int size();
 
     /**
@@ -106,6 +111,7 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      *
      * @see IMap#isEmpty()
      */
+    @Override
     boolean isEmpty();
 
     /**
@@ -114,7 +120,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * The object to be put will be accessible only in the current transaction context till transaction is committed.
      *
      * @see IMap#put(Object, Object)
+     * @throws NullPointerException if the specified key or value is null.
      */
+    @Override
     V put(K key, V value);
 
     /**
@@ -123,6 +131,7 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * The object to be put will be accessible only in the current transaction context till transaction is committed.
      *
      * @see IMap#put(Object, Object, long, java.util.concurrent.TimeUnit)
+     * @throws NullPointerException if the specified key, value or timeunit is null.
      */
     V put(K key, V value, long ttl, TimeUnit timeunit);
 
@@ -132,7 +141,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * The object to be set will be accessible only in the current transaction context till transaction is committed.
      *
      * @see IMap#set(Object, Object)
+     * @throws NullPointerException if the specified key or value is null.
      */
+    @Override
     void set(K key, V value);
 
     /**
@@ -141,7 +152,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * The object to be put will be accessible only in the current transaction context until the transaction is committed.
      *
      * @see IMap#putIfAbsent(Object, Object)
+     * @throws NullPointerException if the specified key or value is null.
      */
+    @Override
     V putIfAbsent(K key, V value);
 
     /**
@@ -150,7 +163,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * The object to be replaced will be accessible only in the current transaction context until the transaction is committed.
      *
      * @see IMap#replace(Object, Object)
+     * @throws NullPointerException if the specified key or null.
      */
+    @Override
     V replace(K key, V value);
 
     /**
@@ -159,7 +174,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * The object to be replaced will be accessible only in the current transaction context until the transaction is committed.
      *
      * @see IMap#replace(Object, Object, Object)
+     * @throws NullPointerException if the specified key, oldValue or newValue is null.
      */
+    @Override
     boolean replace(K key, V oldValue, V newValue);
 
     /**
@@ -168,7 +185,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * The object to be removed will be removed from only the current transaction context until the transaction is committed.
      *
      * @see IMap#remove(Object)
+     * @throws NullPointerException if the specified key is null.
      */
+    @Override
     V remove(Object key);
 
     /**
@@ -177,7 +196,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * The object to be deleted will be removed from only the current transaction context until the transaction is committed.
      *
      * @see IMap#delete(Object)
+     * @throws NullPointerException if the specified key is null.
      */
+    @Override
     void delete(Object key);
 
     /**
@@ -186,7 +207,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * The object to be removed will be removed from only the current transaction context until the transaction is committed.
      *
      * @see IMap#remove(Object, Object)
+     * @throws NullPointerException if the specified key or value null.
      */
+    @Override
     boolean remove(Object key, Object value);
 
     /**
@@ -200,6 +223,7 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * Transactional implementation of {@link IMap#keySet(com.hazelcast.query.Predicate)}.
      *
      * @see IMap#keySet(com.hazelcast.query.Predicate)
+     * @throws NullPointerException if the specified predicate is null.
      */
     Set<K> keySet(Predicate predicate);
 
@@ -214,6 +238,7 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * Transactional implementation of {@link IMap#values(com.hazelcast.query.Predicate)}.
      *
      * @see IMap#values(com.hazelcast.query.Predicate)
+     * @throws NullPointerException if the specified predicate is null.
      */
     Collection<V> values(Predicate predicate);
 }

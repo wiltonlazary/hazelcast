@@ -16,7 +16,9 @@
 
 package com.hazelcast.map.impl;
 
+import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.core.DistributedObject;
+import com.hazelcast.internal.cluster.ClusterStateListener;
 import com.hazelcast.map.impl.event.MapEventPublishingService;
 import com.hazelcast.monitor.LocalMapStats;
 import com.hazelcast.spi.ClientAwareService;
@@ -38,6 +40,7 @@ import com.hazelcast.spi.ReplicationSupportingService;
 import com.hazelcast.spi.SplitBrainHandlerService;
 import com.hazelcast.spi.StatisticsAwareService;
 import com.hazelcast.spi.TransactionalService;
+import com.hazelcast.spi.impl.CountingMigrationAwareService;
 import com.hazelcast.spi.partition.IPartitionLostEvent;
 import com.hazelcast.transaction.TransactionalObject;
 import com.hazelcast.transaction.impl.Transaction;
@@ -68,12 +71,12 @@ import static com.hazelcast.core.EntryEventType.INVALIDATION;
 public class MapService implements ManagedService, MigrationAwareService,
         TransactionalService, RemoteService, EventPublishingService<Object, ListenerAdapter>,
         PostJoinAwareService, SplitBrainHandlerService, ReplicationSupportingService, StatisticsAwareService,
-        PartitionAwareService, ClientAwareService, QuorumAwareService, NotifiableEventListener {
+        PartitionAwareService, ClientAwareService, QuorumAwareService, NotifiableEventListener, ClusterStateListener {
 
     public static final String SERVICE_NAME = "hz:impl:mapService";
 
     protected ManagedService managedService;
-    protected MigrationAwareService migrationAwareService;
+    protected CountingMigrationAwareService migrationAwareService;
     protected TransactionalService transactionalService;
     protected RemoteService remoteService;
     protected EventPublishingService eventPublishingService;
@@ -208,5 +211,14 @@ public class MapService implements ManagedService, MigrationAwareService,
 
         MapContainer mapContainer = mapServiceContext.getMapContainer(topic);
         mapContainer.decreaseInvalidationListenerCount();
+    }
+
+    public int getOwnerMigrationsInFlight() {
+        return migrationAwareService.getOwnerMigrationsInFlight();
+    }
+
+    @Override
+    public void onClusterStateChange(ClusterState newState) {
+        mapServiceContext.onClusterStateChange(newState);
     }
 }

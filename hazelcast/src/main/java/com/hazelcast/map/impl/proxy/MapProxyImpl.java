@@ -16,6 +16,8 @@
 
 package com.hazelcast.map.impl.proxy;
 
+import com.hazelcast.aggregation.Aggregator;
+import com.hazelcast.config.MapConfig;
 import com.hazelcast.core.EntryListener;
 import com.hazelcast.core.EntryView;
 import com.hazelcast.core.ExecutionCallback;
@@ -25,11 +27,22 @@ import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.core.IMap;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.MapInterceptor;
+import com.hazelcast.map.QueryCache;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.SimpleEntryView;
+import com.hazelcast.map.impl.iterator.MapPartitionIterator;
+import com.hazelcast.map.impl.query.AggregationResult;
 import com.hazelcast.map.impl.query.MapQueryEngine;
+import com.hazelcast.map.impl.query.Query;
 import com.hazelcast.map.impl.query.QueryResult;
-import com.hazelcast.map.impl.query.QueryResultCollection;
+import com.hazelcast.map.impl.query.QueryResultUtils;
+import com.hazelcast.map.impl.query.Target;
+import com.hazelcast.map.impl.querycache.QueryCacheContext;
+import com.hazelcast.map.impl.querycache.subscriber.InternalQueryCache;
+import com.hazelcast.map.impl.querycache.subscriber.NodeQueryCacheEndToEndConstructor;
+import com.hazelcast.map.impl.querycache.subscriber.QueryCacheEndToEndProvider;
+import com.hazelcast.map.impl.querycache.subscriber.QueryCacheRequest;
+import com.hazelcast.map.impl.querycache.subscriber.SubscriberContext;
 import com.hazelcast.map.listener.MapListener;
 import com.hazelcast.map.listener.MapPartitionLostListener;
 import com.hazelcast.mapreduce.Collator;
@@ -44,29 +57,39 @@ import com.hazelcast.mapreduce.ReducingSubmittableJob;
 import com.hazelcast.mapreduce.aggregation.Aggregation;
 import com.hazelcast.mapreduce.aggregation.Supplier;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.projection.Projection;
 import com.hazelcast.query.PagingPredicate;
+import com.hazelcast.query.PartitionPredicate;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.TruePredicate;
 import com.hazelcast.spi.InitializingObject;
+import com.hazelcast.spi.InternalCompletableFuture;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.util.CollectionUtil;
+import com.hazelcast.util.ConstructorFunction;
 import com.hazelcast.util.IterationType;
 import com.hazelcast.util.MapUtil;
+import com.hazelcast.util.UuidUtil;
 import com.hazelcast.util.executor.DelegatingFuture;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import static com.hazelcast.config.InMemoryFormat.NATIVE;
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
+import static com.hazelcast.map.impl.querycache.subscriber.QueryCacheRequests.newQueryCacheRequest;
+import static com.hazelcast.util.Preconditions.checkNotInstanceOf;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 import static com.hazelcast.util.Preconditions.checkPositive;
+import static com.hazelcast.util.Preconditions.checkTrue;
 import static com.hazelcast.util.Preconditions.isNotNull;
 import static java.util.Collections.emptyMap;
 
@@ -76,10 +99,11 @@ import static java.util.Collections.emptyMap;
  * @param <K> the key type of map.
  * @param <V> the value type of map.
  */
+@SuppressWarnings("checkstyle:classfanoutcomplexity")
 public class MapProxyImpl<K, V> extends MapProxySupport implements IMap<K, V>, InitializingObject {
 
-    public MapProxyImpl(String name, MapService mapService, NodeEngine nodeEngine) {
-        super(name, mapService, nodeEngine);
+    public MapProxyImpl(String name, MapService mapService, NodeEngine nodeEngine, MapConfig mapConfig) {
+        super(name, mapService, nodeEngine, mapConfig);
     }
 
     @Override
@@ -196,6 +220,13 @@ public class MapProxyImpl<K, V> extends MapProxySupport implements IMap<K, V>, I
         Data key = toData(k, partitionStrategy);
         Data value = toData(v);
         return removeInternal(key, value);
+    }
+
+    @Override
+    public void removeAll(Predicate<K, V> predicate) {
+        checkNotNull(predicate, "predicate cannot be null");
+
+        removeAllInternal(predicate);
     }
 
     @Override
@@ -553,14 +584,14 @@ public class MapProxyImpl<K, V> extends MapProxySupport implements IMap<K, V>, I
 
     @Override
     public void loadAll(boolean replaceExistingValues) {
-        checkNotNull(getMapStore(), "First you should configure a map store");
+        checkTrue(isMapStoreEnabled(), "First you should configure a map store");
 
         loadAllInternal(replaceExistingValues);
     }
 
     @Override
     public void loadAll(Set<K> keys, boolean replaceExistingValues) {
-        checkNotNull(getMapStore(), "First you should configure a map store");
+        checkTrue(isMapStoreEnabled(), "First you should configure a map store");
         checkNotNull(keys, "Parameter keys should not be null.");
 
         Iterable<Data> dataKeys = convertToData(keys);
@@ -601,16 +632,7 @@ public class MapProxyImpl<K, V> extends MapProxySupport implements IMap<K, V>, I
     @Override
     @SuppressWarnings("unchecked")
     public Set<K> keySet(Predicate predicate) {
-        checkNotNull(predicate, NULL_PREDICATE_IS_NOT_ALLOWED);
-
-        MapQueryEngine queryEngine = getMapQueryEngine();
-        if (predicate instanceof PagingPredicate) {
-            return queryEngine.queryAllPartitionsWithPagingPredicate(name, (PagingPredicate) predicate, IterationType.KEY);
-        } else {
-            QueryResult result = queryEngine.invokeQueryAllPartitions(name, predicate, IterationType.KEY);
-            return new QueryResultCollection<K>(
-                    getNodeEngine().getSerializationService(), IterationType.KEY, false, true, result);
-        }
+        return executePredicate(predicate, IterationType.KEY, true);
     }
 
     @Override
@@ -620,16 +642,7 @@ public class MapProxyImpl<K, V> extends MapProxySupport implements IMap<K, V>, I
 
     @Override
     public Set entrySet(Predicate predicate) {
-        checkNotNull(predicate, NULL_PREDICATE_IS_NOT_ALLOWED);
-
-        MapQueryEngine queryEngine = getMapQueryEngine();
-        if (predicate instanceof PagingPredicate) {
-            return queryEngine.queryAllPartitionsWithPagingPredicate(name, (PagingPredicate) predicate, IterationType.ENTRY);
-        } else {
-            QueryResult result = queryEngine.invokeQueryAllPartitions(name, predicate, IterationType.ENTRY);
-            return new QueryResultCollection<Map.Entry<K, V>>(
-                    getNodeEngine().getSerializationService(), IterationType.ENTRY, false, true, result);
-        }
+        return executePredicate(predicate, IterationType.ENTRY, true);
     }
 
     @Override
@@ -640,16 +653,32 @@ public class MapProxyImpl<K, V> extends MapProxySupport implements IMap<K, V>, I
     @Override
     @SuppressWarnings("unchecked")
     public Collection<V> values(Predicate predicate) {
-        checkNotNull(predicate, NULL_PREDICATE_IS_NOT_ALLOWED);
+        return executePredicate(predicate, IterationType.VALUE, false);
+    }
 
+    private Set executePredicate(Predicate predicate, IterationType iterationType, boolean uniqueResult) {
+        checkNotNull(predicate, NULL_PREDICATE_IS_NOT_ALLOWED);
         MapQueryEngine queryEngine = getMapQueryEngine();
-        if (predicate instanceof PagingPredicate) {
-            return queryEngine.queryAllPartitionsWithPagingPredicate(name, (PagingPredicate) predicate, IterationType.VALUE);
+        QueryResult result;
+        if (predicate instanceof PartitionPredicate) {
+            PartitionPredicate partitionPredicate = (PartitionPredicate) predicate;
+            Data key = toData(partitionPredicate.getPartitionKey());
+            int partitionId = getNodeEngine().getPartitionService().getPartitionId(key);
+            Query query = Query.of()
+                    .mapName(getName())
+                    .predicate(partitionPredicate.getTarget())
+                    .iterationType(iterationType)
+                    .build();
+            result = queryEngine.execute(query, Target.of().partitionOwner(partitionId).build());
         } else {
-            QueryResult result = queryEngine.invokeQueryAllPartitions(name, predicate, IterationType.VALUE);
-            return new QueryResultCollection<V>(
-                    getNodeEngine().getSerializationService(), IterationType.VALUE, false, false, result);
+            Query query = Query.of()
+                    .mapName(getName())
+                    .predicate(predicate)
+                    .iterationType(iterationType)
+                    .build();
+            result = queryEngine.execute(query, Target.ALL_NODES);
         }
+        return QueryResultUtils.transformToSet(serializationService, result, predicate, iterationType, uniqueResult);
     }
 
     @Override
@@ -663,14 +692,13 @@ public class MapProxyImpl<K, V> extends MapProxySupport implements IMap<K, V>, I
         checkNotNull(predicate, NULL_PREDICATE_IS_NOT_ALLOWED);
 
         MapQueryEngine queryEngine = getMapQueryEngine();
-        if (predicate instanceof PagingPredicate) {
-            return queryEngine.queryLocalPartitionsWithPagingPredicate(name, (PagingPredicate) predicate, IterationType.KEY);
-        } else {
-            QueryResult result = queryEngine.invokeQueryLocalPartitions(name, predicate, IterationType.KEY);
-            // TODO: unique is not needed since map keys are unique by nature
-            return new QueryResultCollection<K>(
-                    getNodeEngine().getSerializationService(), IterationType.KEY, false, true, result);
-        }
+        Query query = Query.of()
+                .mapName(getName())
+                .predicate(predicate)
+                .iterationType(IterationType.KEY)
+                .build();
+        QueryResult result = queryEngine.execute(query, Target.LOCAL_NODE);
+        return QueryResultUtils.transformToSet(serializationService, result, predicate, IterationType.KEY, false);
     }
 
     @Override
@@ -710,7 +738,7 @@ public class MapProxyImpl<K, V> extends MapProxySupport implements IMap<K, V>, I
 
         MapService service = getService();
         Data keyData = toData(key, partitionStrategy);
-        ICompletableFuture f = executeOnKeyInternal(keyData, entryProcessor, null);
+        InternalCompletableFuture f = executeOnKeyInternal(keyData, entryProcessor, null);
         return new DelegatingFuture(f, service.getMapServiceContext().getNodeEngine().getSerializationService());
     }
 
@@ -740,8 +768,86 @@ public class MapProxyImpl<K, V> extends MapProxySupport implements IMap<K, V>, I
     }
 
     @Override
+    public <R> R aggregate(Aggregator<Map.Entry<K, V>, R> aggregator) {
+        checkNotNull(aggregator, NULL_AGGREGATOR_IS_NOT_ALLOWED);
+
+        MapQueryEngine queryEngine = getMapQueryEngine();
+        aggregator = serializationService.toObject(serializationService.toData(aggregator));
+
+        Query query = Query.of()
+                .mapName(getName())
+                .predicate(TruePredicate.INSTANCE)
+                .iterationType(IterationType.ENTRY)
+                .aggregator(aggregator)
+                .build();
+        AggregationResult result = queryEngine.execute(query, Target.ALL_NODES);
+        return result.<R>getAggregator().aggregate();
+    }
+
+    @Override
+    public <R> R aggregate(Aggregator<Map.Entry<K, V>, R> aggregator, Predicate<K, V> predicate) {
+        checkNotNull(aggregator, NULL_AGGREGATOR_IS_NOT_ALLOWED);
+        checkNotNull(predicate, NULL_PREDICATE_IS_NOT_ALLOWED);
+
+        aggregator = serializationService.toObject(serializationService.toData(aggregator));
+        MapQueryEngine queryEngine = getMapQueryEngine();
+        if (predicate instanceof PagingPredicate) {
+            throw new IllegalArgumentException("PagingPredicate now allowed with EntryAggregator.");
+        }
+
+        Query query = Query.of()
+                .mapName(getName())
+                .predicate(predicate)
+                .iterationType(IterationType.ENTRY)
+                .aggregator(aggregator)
+                .build();
+        AggregationResult result = queryEngine.execute(query, Target.ALL_NODES);
+        return result.<R>getAggregator().aggregate();
+    }
+
+    @Override
+    public <R> Collection<R> project(Projection<Map.Entry<K, V>, R> projection) {
+        checkNotNull(projection, NULL_PROJECTION_IS_NOT_ALLOWED);
+
+        MapQueryEngine queryEngine = getMapQueryEngine();
+        projection = serializationService.toObject(serializationService.toData(projection));
+
+        Query query = Query.of()
+                .mapName(getName())
+                .predicate(TruePredicate.INSTANCE)
+                .iterationType(IterationType.VALUE)
+                .projection(projection)
+                .build();
+        QueryResult result = queryEngine.execute(query, Target.ALL_NODES);
+        return QueryResultUtils.transformToSet(serializationService, result, TruePredicate.INSTANCE,
+                IterationType.VALUE, false);
+    }
+
+    @Override
+    public <R> Collection<R> project(Projection<Map.Entry<K, V>, R> projection, Predicate<K, V> predicate) {
+        checkNotNull(projection, NULL_PROJECTION_IS_NOT_ALLOWED);
+        checkNotNull(predicate, NULL_PREDICATE_IS_NOT_ALLOWED);
+
+        projection = serializationService.toObject(serializationService.toData(projection));
+        MapQueryEngine queryEngine = getMapQueryEngine();
+
+        Query query = Query.of()
+                .mapName(getName())
+                .predicate(predicate)
+                .iterationType(IterationType.VALUE)
+                .projection(projection)
+                .build();
+        queryEngine.execute(query, Target.ALL_NODES);
+        QueryResult result = queryEngine.execute(query, Target.ALL_NODES);
+        return QueryResultUtils.transformToSet(serializationService, result, predicate,
+                IterationType.VALUE, false);
+    }
+
+    @Override
     public <SuppliedValue, Result> Result aggregate(Supplier<K, V, SuppliedValue> supplier,
                                                     Aggregation<K, SuppliedValue, Result> aggregation) {
+        checkTrue(NATIVE != mapConfig.getInMemoryFormat(), "NATIVE storage format is not supported for MapReduce");
+
         HazelcastInstance hazelcastInstance = getNodeEngine().getHazelcastInstance();
         JobTracker jobTracker = hazelcastInstance.getJobTracker("hz::aggregation-map-" + getName());
         return aggregate(supplier, aggregation, jobTracker);
@@ -751,6 +857,8 @@ public class MapProxyImpl<K, V> extends MapProxySupport implements IMap<K, V>, I
     public <SuppliedValue, Result> Result aggregate(Supplier<K, V, SuppliedValue> supplier,
                                                     Aggregation<K, SuppliedValue, Result> aggregation,
                                                     JobTracker jobTracker) {
+        checkTrue(NATIVE != mapConfig.getInMemoryFormat(), "NATIVE storage format is not supported for MapReduce");
+
         try {
             isNotNull(jobTracker, "jobTracker");
             KeyValueSource<K, V> keyValueSource = KeyValueSource.fromMap(this);
@@ -787,8 +895,62 @@ public class MapProxyImpl<K, V> extends MapProxySupport implements IMap<K, V>, I
         return returnObj;
     }
 
+    public Iterator<Entry<K, V>> iterator(int fetchSize, int partitionId, boolean prefetchValues) {
+        return new MapPartitionIterator<K, V>(this, fetchSize, partitionId, prefetchValues);
+    }
+
     @Override
     public String toString() {
         return "IMap{name='" + name + '\'' + '}';
+    }
+
+    @Override
+    public QueryCache<K, V> getQueryCache(String name) {
+        checkNotNull(name, "name cannot be null");
+
+        return getQueryCacheInternal(name, null, null, null, this);
+    }
+
+    @Override
+    public QueryCache<K, V> getQueryCache(String name, Predicate<K, V> predicate, boolean includeValue) {
+        checkNotNull(name, "name cannot be null");
+        checkNotNull(predicate, "predicate cannot be null");
+        checkNotInstanceOf(PagingPredicate.class, predicate, "predicate");
+
+        return getQueryCacheInternal(name, null, predicate, includeValue, this);
+    }
+
+    @Override
+    public QueryCache<K, V> getQueryCache(String name, MapListener listener, Predicate<K, V> predicate, boolean includeValue) {
+        checkNotNull(name, "name cannot be null");
+        checkNotNull(predicate, "predicate cannot be null");
+        checkNotInstanceOf(PagingPredicate.class, predicate, "predicate");
+
+        return getQueryCacheInternal(name, listener, predicate, includeValue, this);
+    }
+
+    private QueryCache<K, V> getQueryCacheInternal(String name, MapListener listener, Predicate<K, V> predicate,
+                                             Boolean includeValue, IMap<K, V> map) {
+        QueryCacheContext queryCacheContext = mapServiceContext.getQueryCacheContext();
+
+        QueryCacheRequest request = newQueryCacheRequest()
+                .forMap(map)
+                .withCacheName(UuidUtil.newUnsecureUuidString())
+                .withUserGivenCacheName(name)
+                .withListener(listener)
+                .withPredicate(predicate)
+                .withIncludeValue(includeValue)
+                .withContext(queryCacheContext);
+
+        return createQueryCache(request);
+    }
+
+    private QueryCache<K, V> createQueryCache(QueryCacheRequest request) {
+        ConstructorFunction<String, InternalQueryCache> constructorFunction = new NodeQueryCacheEndToEndConstructor(request);
+        QueryCacheContext queryCacheContext = request.getContext();
+        SubscriberContext subscriberContext = queryCacheContext.getSubscriberContext();
+        QueryCacheEndToEndProvider queryCacheEndToEndProvider = subscriberContext.getEndToEndQueryCacheProvider();
+        return queryCacheEndToEndProvider.getOrCreateQueryCache(request.getMapName(),
+                request.getUserGivenCacheName(), constructorFunction);
     }
 }

@@ -16,7 +16,7 @@
 
 package com.hazelcast.internal.management.operation;
 
-import com.hazelcast.spi.AbstractOperation;
+import com.hazelcast.spi.AbstractLocalOperation;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.wan.WanReplicationService;
 
@@ -24,14 +24,11 @@ import com.hazelcast.wan.WanReplicationService;
  * Enables/Disable publishing events to target cluster in WAN Replication {@link com.hazelcast.wan.WanReplicationService}
  * on a node. This operation does not block adding new events to event queue.
  */
-public class ChangeWanStateOperation extends AbstractOperation {
+public class ChangeWanStateOperation extends AbstractLocalOperation {
 
     private String schemeName;
     private String publisherName;
     private boolean start;
-
-    public ChangeWanStateOperation() {
-    }
 
     public ChangeWanStateOperation(String schemeName, String publisherName, boolean start) {
         this.schemeName = schemeName;

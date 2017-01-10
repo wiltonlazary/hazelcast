@@ -16,6 +16,7 @@
 package com.hazelcast.executor;
 
 import com.hazelcast.config.Config;
+import com.hazelcast.config.DurableExecutorConfig;
 import com.hazelcast.config.ExecutorConfig;
 import com.hazelcast.core.ExecutionCallback;
 import com.hazelcast.core.HazelcastInstance;
@@ -24,6 +25,7 @@ import com.hazelcast.core.IExecutorService;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.MultiExecutionCallback;
 import com.hazelcast.core.PartitionAware;
+import com.hazelcast.durableexecutor.DurableExecutorService;
 import com.hazelcast.spi.impl.executionservice.InternalExecutionService;
 import com.hazelcast.test.HazelcastTestSupport;
 
@@ -44,15 +46,31 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         return createSingleNodeExecutorService(name, ExecutorConfig.DEFAULT_POOL_SIZE);
     }
 
+    protected DurableExecutorService createSingleNodeDurableExecutorService(String name) {
+        return createSingleNodeDurableExecutorService(name, DurableExecutorConfig.DEFAULT_POOL_SIZE);
+    }
+
     IExecutorService createSingleNodeExecutorService(String name, int poolSize) {
-        final HazelcastInstance instance = createHazelcastInstance(
-                new Config().addExecutorConfig(new ExecutorConfig(name, poolSize)));
+        return createSingleNodeExecutorService(name, poolSize, true);
+    }
+
+    IExecutorService createSingleNodeExecutorService(String name, int poolSize, boolean statsEnabled) {
+        ExecutorConfig executorConfig = new ExecutorConfig(name, poolSize).setStatisticsEnabled(statsEnabled);
+        HazelcastInstance instance = createHazelcastInstance(new Config().addExecutorConfig(executorConfig));
         return instance.getExecutorService(name);
     }
 
-    int findNextKeyForMember(HazelcastInstance instance, Member localMember) {
+    protected DurableExecutorService createSingleNodeDurableExecutorService(String name, int poolSize) {
+        DurableExecutorConfig executorConfig = new DurableExecutorConfig(name).setPoolSize(poolSize);
+        HazelcastInstance instance = createHazelcastInstance(new Config().addDurableExecutorConfig(executorConfig));
+        return instance.getDurableExecutorService(name);
+    }
+
+    protected int findNextKeyForMember(HazelcastInstance instance, Member localMember) {
         int key = 0;
-        while (!localMember.equals(instance.getPartitionService().getPartition(++key).getOwner())) ;
+        while (!localMember.equals(instance.getPartitionService().getPartition(key).getOwner())) {
+            key++;
+        }
         return key;
     }
 
@@ -60,20 +78,18 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         return getNode(instance).getNodeEngine().getExecutionService();
     }
 
-    static class CountDownLatchAwaitingCallable
-            implements Callable<String> {
+    public static class CountDownLatchAwaitingCallable implements Callable<String> {
 
         public static String RESULT = "Success";
 
         private final CountDownLatch latch;
 
-        public CountDownLatchAwaitingCallable(CountDownLatch latch) {
+        CountDownLatchAwaitingCallable(CountDownLatch latch) {
             this.latch = latch;
         }
 
         @Override
-        public String call()
-                throws Exception {
+        public String call() throws Exception {
             latch.await(30, TimeUnit.SECONDS);
             return RESULT;
         }
@@ -81,9 +97,8 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
 
     public static class CountingDownExecutionCallback<T> implements ExecutionCallback<T> {
 
-        private final CountDownLatch latch;
-
         private final AtomicReference<Object> result = new AtomicReference<Object>();
+        private final CountDownLatch latch;
 
         public CountingDownExecutionCallback(int count) {
             this.latch = new CountDownLatch(count);
@@ -96,7 +111,8 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         @Override
         public void onResponse(T response) {
             if (!result.compareAndSet(null, response)) {
-                System.out.println("New response received after result is set. Response: " + response + " Resuilt: " + result.get());
+                System.out.println("New response received after result is set. Response: " + response
+                        + " Result: " + result.get());
             }
             latch.countDown();
         }
@@ -104,7 +120,7 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         @Override
         public void onFailure(Throwable t) {
             if (!result.compareAndSet(null, t)) {
-                System.out.println("Failure received after result is set. Failure: " + t + " Resuilt: " + result.get());
+                System.out.println("Failure received after result is set. Failure: " + t + " Result: " + result.get());
             }
             latch.countDown();
         }
@@ -118,8 +134,8 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
     }
 
-    static class BasicTestCallable
-            implements Callable<String>, Serializable, PartitionAware {
+    public static class BasicTestCallable implements Callable<String>, Serializable, PartitionAware {
+
         public static String RESULT = "Task completed";
 
         @Override
@@ -133,8 +149,8 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
     }
 
-    static class SleepingTask
-            implements Callable<Boolean>, Serializable, PartitionAware {
+    public static class SleepingTask implements Callable<Boolean>, Serializable, PartitionAware {
+
         long sleepSeconds;
 
         public SleepingTask(long sleepSeconds) {
@@ -153,7 +169,8 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
     }
 
-    static class NestedExecutorTask implements Callable<String>, Serializable, HazelcastInstanceAware {
+    public static class NestedExecutorTask implements Callable<String>, Serializable, HazelcastInstanceAware {
+
         private HazelcastInstance instance;
 
         @Override
@@ -168,7 +185,8 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
     }
 
-    static class MemberCheck implements Callable<Member>, Serializable, HazelcastInstanceAware {
+    public static class MemberCheck implements Callable<Member>, Serializable, HazelcastInstanceAware {
+
         private Member localMember;
 
         @Override
@@ -182,14 +200,16 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
     }
 
-    static class FailingTestTask implements Callable<String>, Serializable {
+    public static class FailingTestTask implements Callable<String>, Serializable {
+
         @Override
         public String call() throws Exception {
             throw new IllegalStateException();
         }
     }
 
-    static class HazelcastInstanceAwareRunnable implements Runnable, HazelcastInstanceAware, Serializable {
+    public static class HazelcastInstanceAwareRunnable implements Runnable, HazelcastInstanceAware, Serializable {
+
         private transient boolean initializeCalled;
 
         @Override
@@ -205,7 +225,7 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
     }
 
-    static class IncrementAtomicLongIfMemberUUIDNotMatchRunnable implements Runnable, Serializable, HazelcastInstanceAware {
+    public static class IncrementAtomicLongIfMemberUUIDNotMatchRunnable implements Runnable, Serializable, HazelcastInstanceAware {
 
         private final String uuid;
         private final String name;
@@ -230,7 +250,8 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
     }
 
-    static class NullResponseCountingCallback<T> implements ExecutionCallback<T> {
+    @SuppressWarnings("unused")
+    public static class NullResponseCountingCallback<T> implements ExecutionCallback<T> {
 
         private final AtomicInteger nullResponseCount = new AtomicInteger(0);
 
@@ -245,7 +266,6 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
             if (response == null) {
                 nullResponseCount.incrementAndGet();
             }
-
             responseLatch.countDown();
         }
 
@@ -268,20 +288,22 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
     }
 
-    static class ResponseCountingMultiExecutionCallback implements MultiExecutionCallback {
+    public static class ResponseCountingMultiExecutionCallback implements MultiExecutionCallback {
 
         private final AtomicInteger count = new AtomicInteger();
 
         private final CountDownLatch latch;
 
-        public ResponseCountingMultiExecutionCallback(int count) {
+        ResponseCountingMultiExecutionCallback(int count) {
             this.latch = new CountDownLatch(count);
         }
 
+        @Override
         public void onResponse(Member member, Object value) {
             count.incrementAndGet();
         }
 
+        @Override
         public void onComplete(Map<Member, Object> values) {
             latch.countDown();
         }
@@ -295,13 +317,9 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
     }
 
-    ;
-
-    static class BooleanSuccessResponseCountingCallback
-            implements ExecutionCallback<Boolean> {
+    public static class BooleanSuccessResponseCountingCallback implements ExecutionCallback<Boolean> {
 
         private final AtomicInteger successResponseCount = new AtomicInteger(0);
-
         private final CountDownLatch responseLatch;
 
         public BooleanSuccessResponseCountingCallback(int count) {
@@ -318,7 +336,6 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
 
         @Override
         public void onFailure(Throwable t) {
-
         }
 
         public int getSuccessResponseCount() {
@@ -330,7 +347,7 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
     }
 
-    static class IncrementAtomicLongRunnable implements Runnable, Serializable, HazelcastInstanceAware {
+    public static class IncrementAtomicLongRunnable implements Runnable, Serializable, HazelcastInstanceAware {
 
         private final String name;
 
@@ -351,7 +368,7 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
     }
 
-    static class IncrementAtomicLongCallable implements Callable<Long>, Serializable, HazelcastInstanceAware {
+    public static class IncrementAtomicLongCallable implements Callable<Long>, Serializable, HazelcastInstanceAware {
 
         private final String name;
 
@@ -371,25 +388,23 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         }
 
         @Override
-        public Long call()
-                throws Exception {
+        public Long call() throws Exception {
             return instance.getAtomicLong(name).incrementAndGet();
         }
     }
 
-    static class MemberUUIDCheckCallable implements Callable<Boolean>, HazelcastInstanceAware, Serializable {
+    public static class MemberUUIDCheckCallable implements Callable<Boolean>, HazelcastInstanceAware, Serializable {
 
         private final String uuid;
+
+        private HazelcastInstance instance;
 
         public MemberUUIDCheckCallable(String uuid) {
             this.uuid = uuid;
         }
 
-        private HazelcastInstance instance;
-
         @Override
-        public Boolean call()
-                throws Exception {
+        public Boolean call() throws Exception {
             return instance.getCluster().getLocalMember().getUuid().equals(uuid);
         }
 
@@ -403,11 +418,11 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
 
         private final String name;
 
+        private transient HazelcastInstance instance;
+
         public ResultSettingRunnable(String name) {
             this.name = name;
         }
-
-        private transient HazelcastInstance instance;
 
         @Override
         public void setHazelcastInstance(HazelcastInstance instance) {
@@ -419,11 +434,9 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
             final Member member = instance.getCluster().getLocalMember();
             instance.getMap(name).put(member, true);
         }
-
     }
 
     public static class LocalMemberReturningCallable implements Callable<Member>, HazelcastInstanceAware, Serializable {
-
 
         private transient HazelcastInstance instance;
 
@@ -436,7 +449,6 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
         public Member call() {
             return instance.getCluster().getLocalMember();
         }
-
     }
 
     public static class ResultHoldingMultiExecutionCallback implements MultiExecutionCallback {
@@ -449,7 +461,6 @@ public class ExecutorServiceTestSupport extends HazelcastTestSupport {
 
         @Override
         public void onResponse(Member member, Object value) {
-            // ignored
         }
 
         @Override

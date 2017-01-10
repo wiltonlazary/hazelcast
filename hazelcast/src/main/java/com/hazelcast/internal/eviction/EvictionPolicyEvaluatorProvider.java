@@ -18,21 +18,17 @@ package com.hazelcast.internal.eviction;
 
 import com.hazelcast.internal.eviction.impl.comparator.LFUEvictionPolicyComparator;
 import com.hazelcast.internal.eviction.impl.comparator.LRUEvictionPolicyComparator;
+import com.hazelcast.internal.eviction.impl.comparator.RandomEvictionPolicyComparator;
 import com.hazelcast.internal.eviction.impl.evaluator.DefaultEvictionPolicyEvaluator;
 import com.hazelcast.nio.ClassLoaderUtil;
-import com.hazelcast.util.ExceptionUtil;
 import com.hazelcast.util.StringUtil;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import static com.hazelcast.util.ExceptionUtil.rethrow;
 
 /**
  * Provider to get any kind ({@link EvictionPolicyType}) of {@link EvictionPolicyEvaluator}.
  */
 public final class EvictionPolicyEvaluatorProvider {
-
-    private static final ConcurrentMap<EvictionPolicyType, EvictionPolicyEvaluator> EVICTION_POLICY_COMPARATOR_MAP =
-            new ConcurrentHashMap<EvictionPolicyType, EvictionPolicyEvaluator>();
 
     private EvictionPolicyEvaluatorProvider() {
     }
@@ -43,35 +39,37 @@ public final class EvictionPolicyEvaluatorProvider {
                 return new LRUEvictionPolicyComparator();
             case LFU:
                 return new LFUEvictionPolicyComparator();
+            case RANDOM:
+                return new RandomEvictionPolicyComparator();
+            case NONE:
+                return null;
             default:
                 throw new IllegalArgumentException("Unsupported eviction policy type: " + evictionPolicyType);
         }
     }
 
     /**
-     * Gets the {@link EvictionPolicyEvaluator} implementation specified with <code>evictionPolicy</code>.
+     * Gets the {@link EvictionPolicyEvaluator} implementation specified with {@code evictionPolicy}.
      *
      * @param evictionConfig {@link EvictionConfiguration} for requested {@link EvictionPolicyEvaluator} implementation
-     * @param classLoader the {@link java.lang.ClassLoader} to be used
-     *                    while creating custom {@link EvictionPolicyComparator} if it is specified in the config
-     *
+     * @param classLoader    the {@link java.lang.ClassLoader} to be used
+     *                       while creating custom {@link EvictionPolicyComparator} if it is specified in the config
      * @return the requested {@link EvictionPolicyEvaluator} implementation
      */
-    public static EvictionPolicyEvaluator getEvictionPolicyEvaluator(EvictionConfiguration evictionConfig,
-                                                                     ClassLoader classLoader) {
+    public static <A, E extends Evictable> EvictionPolicyEvaluator<A, E> getEvictionPolicyEvaluator(
+            EvictionConfiguration evictionConfig, ClassLoader classLoader) {
         if (evictionConfig == null) {
             return null;
         }
 
-        EvictionPolicyComparator evictionPolicyComparator = null;
+        EvictionPolicyComparator evictionPolicyComparator;
 
         String evictionPolicyComparatorClassName = evictionConfig.getComparatorClassName();
         if (!StringUtil.isNullOrEmpty(evictionPolicyComparatorClassName)) {
             try {
-                evictionPolicyComparator =
-                        ClassLoaderUtil.newInstance(classLoader, evictionPolicyComparatorClassName);
+                evictionPolicyComparator = ClassLoaderUtil.newInstance(classLoader, evictionPolicyComparatorClassName);
             } catch (Exception e) {
-                ExceptionUtil.rethrow(e);
+                throw rethrow(e);
             }
         } else {
             EvictionPolicyComparator comparator = evictionConfig.getComparator();
@@ -86,7 +84,6 @@ public final class EvictionPolicyEvaluatorProvider {
             }
         }
 
-        return new DefaultEvictionPolicyEvaluator(evictionPolicyComparator);
+        return new DefaultEvictionPolicyEvaluator<A, E>(evictionPolicyComparator);
     }
-
 }

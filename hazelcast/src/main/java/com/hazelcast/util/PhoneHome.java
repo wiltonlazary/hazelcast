@@ -147,7 +147,7 @@ public final class PhoneHome {
         Long clusterUpTime = clusterService.getClusterClock().getClusterUpTime();
         PhoneHomeParameterCreator parameterCreator = new PhoneHomeParameterCreator();
         parameterCreator.addParam("version", version);
-        parameterCreator.addParam("m", hazelcastNode.getLocalMember().getUuid());
+        parameterCreator.addParam("m", hazelcastNode.getThisUuid());
         parameterCreator.addParam("e", Boolean.toString(isEnterprise));
         parameterCreator.addParam("l", MD5Util.toMD5String(hazelcastNode.getConfig().getLicenseKey()));
         parameterCreator.addParam("p", downloadId);
@@ -158,6 +158,8 @@ public final class PhoneHome {
         parameterCreator.addParam("ccpp", Integer.toString(clusterClientStats.get(ClientType.CPP)));
         parameterCreator.addParam("cdn", Integer.toString(clusterClientStats.get(ClientType.CSHARP)));
         parameterCreator.addParam("cjv", Integer.toString(clusterClientStats.get(ClientType.JAVA)));
+        parameterCreator.addParam("cnjs", Integer.toString(clusterClientStats.get(ClientType.NODEJS)));
+        parameterCreator.addParam("cpy", Integer.toString(clusterClientStats.get(ClientType.PYTHON)));
         parameterCreator.addParam("cuptm", Long.toString(clusterUpTime));
         parameterCreator.addParam("nuptm", Long.toString(runtimeMxBean.getUptime()));
         parameterCreator.addParam("jvmn", runtimeMxBean.getVmName());

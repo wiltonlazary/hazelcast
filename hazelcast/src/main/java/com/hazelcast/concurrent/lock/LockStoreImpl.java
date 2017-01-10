@@ -20,8 +20,9 @@ import com.hazelcast.concurrent.lock.operations.AwaitOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.ObjectNamespace;
+import com.hazelcast.spi.WaitNotifyKey;
 import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
 import com.hazelcast.util.scheduler.EntryTaskScheduler;
@@ -35,7 +36,10 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-public final class LockStoreImpl implements DataSerializable, LockStore {
+import static com.hazelcast.concurrent.lock.LockDataSerializerHook.F_ID;
+import static com.hazelcast.concurrent.lock.LockDataSerializerHook.LOCK_STORE;
+
+public final class LockStoreImpl implements IdentifiedDataSerializable, LockStore {
 
     private final transient ConstructorFunction<Data, LockResourceImpl> lockConstructor =
             new ConstructorFunction<Data, LockResourceImpl>() {
@@ -45,6 +49,10 @@ public final class LockStoreImpl implements DataSerializable, LockStore {
             };
 
     private final ConcurrentMap<Data, LockResourceImpl> locks = new ConcurrentHashMap<Data, LockResourceImpl>();
+
+    // warning: the namespace field is unreliable if this LockStoreImpl was created for ILock proxy
+    // ObjectNameSpace.getObjectName() can give you a wrong name because LockStoreImpl instances
+    // are shared for ILock proxies. see InternalLockNamespace for details.
     private ObjectNamespace namespace;
     private int backupCount;
     private int asyncBackupCount;
@@ -192,6 +200,13 @@ public final class LockStoreImpl implements DataSerializable, LockStore {
         }
     }
 
+    void cleanWaitersAndSignalsFor(Data key, String uuid) {
+        LockResourceImpl lockResource = locks.get(key);
+        if (lockResource != null) {
+            lockResource.cleanWaitersAndSignalsFor(uuid);
+        }
+    }
+
     public int getVersion(Data key) {
         LockResourceImpl lock = locks.get(key);
         if (lock != null) {
@@ -258,32 +273,30 @@ public final class LockStoreImpl implements DataSerializable, LockStore {
         return backupCount + asyncBackupCount;
     }
 
-    public boolean addAwait(Data key, String conditionId, String caller, long threadId) {
+    public void addAwait(Data key, String conditionId, String caller, long threadId) {
         LockResourceImpl lock = getLock(key);
-        return lock.addAwait(conditionId, caller, threadId);
+        lock.addAwait(conditionId, caller, threadId);
     }
 
-    public boolean removeAwait(Data key, String conditionId, String caller, long threadId) {
+    public void removeAwait(Data key, String conditionId, String caller, long threadId) {
         LockResourceImpl lock = getLock(key);
-        return lock.removeAwait(conditionId, caller, threadId);
+        lock.removeAwait(conditionId, caller, threadId);
     }
 
-    public boolean startAwaiting(Data key, String conditionId, String caller, long threadId) {
+    public void signal(Data key, String conditionId, int maxSignalCount, String objectName) {
         LockResourceImpl lock = getLock(key);
-        return lock.startAwaiting(conditionId, caller, threadId);
+        lock.signal(conditionId, maxSignalCount, objectName);
     }
 
-    public int getAwaitCount(Data key, String conditionId) {
-        LockResourceImpl lock = getLock(key);
-        return lock.getAwaitCount(conditionId);
+    public WaitNotifyKey getNotifiedKey(Data key) {
+        ConditionKey conditionKey = getSignalKey(key);
+        if (conditionKey == null) {
+            return new LockWaitNotifyKey(namespace, key);
+        }
+        return conditionKey;
     }
 
-    public void registerSignalKey(ConditionKey conditionKey) {
-        LockResourceImpl lock = getLock(conditionKey.getKey());
-        lock.registerSignalKey(conditionKey);
-    }
-
-    public ConditionKey getSignalKey(Data key) {
+    private ConditionKey getSignalKey(Data key) {
         LockResourceImpl lock = locks.get(key);
         if (lock == null) {
             return null;
@@ -297,6 +310,14 @@ public final class LockStoreImpl implements DataSerializable, LockStore {
         if (lock != null) {
             lock.removeSignalKey(conditionKey);
         }
+    }
+
+    public boolean hasSignalKey(ConditionKey conditionKey) {
+        LockResourceImpl lock = locks.get(conditionKey.getKey());
+        if (lock == null) {
+            return false;
+        }
+        return lock.hasSignalKey(conditionKey);
     }
 
     public void registerExpiredAwaitOp(AwaitOperation awaitResponse) {
@@ -322,6 +343,16 @@ public final class LockStoreImpl implements DataSerializable, LockStore {
         } else {
             return "Owner: " + lock.getOwner() + ", thread-id: " + lock.getThreadId();
         }
+    }
+
+    @Override
+    public int getFactoryId() {
+        return F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return LOCK_STORE;
     }
 
     @Override

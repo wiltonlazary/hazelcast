@@ -26,11 +26,12 @@ import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.BlockingOperation;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
 public class AwaitOperation extends AbstractLockOperation
-        implements BlockingOperation, BackupAwareOperation {
+        implements BlockingOperation, BackupAwareOperation, MutatingOperation {
 
     private String conditionId;
     private boolean expired;
@@ -43,12 +44,11 @@ public class AwaitOperation extends AbstractLockOperation
         this.conditionId = conditionId;
     }
 
-    @Override
-    public void beforeRun() throws Exception {
-        if (!expired) {
-            LockStoreImpl lockStore = getLockStore();
-            lockStore.startAwaiting(key, conditionId, getCallerUuid(), threadId);
-        }
+    public AwaitOperation(ObjectNamespace namespace, Data key, long threadId, long timeout, String conditionId,
+                          long referenceId) {
+        super(namespace, key, threadId, timeout);
+        this.conditionId = conditionId;
+        setReferenceCallId(referenceId);
     }
 
     @Override
@@ -68,27 +68,27 @@ public class AwaitOperation extends AbstractLockOperation
         }
     }
 
+    void runExpired() {
+        LockStoreImpl lockStore = getLockStore();
+        boolean locked = lockStore.lock(key, getCallerUuid(), threadId, getReferenceCallId(), leaseTime);
+        assert locked : "Expired await operation should have acquired the lock!";
+        sendResponse(false);
+    }
+
     @Override
     public ConditionKey getWaitKey() {
-        return new ConditionKey(namespace.getObjectName(), key, conditionId);
+        return new ConditionKey(namespace.getObjectName(), key, conditionId, getCallerUuid(), threadId);
     }
 
     @Override
     public boolean shouldWait() {
         LockStoreImpl lockStore = getLockStore();
-
-        ConditionKey signalKey = lockStore.getSignalKey(key);
-        if (signalKey == null) {
-            return true;
-        }
-
         boolean canAcquireLock = lockStore.canAcquireLock(key, getCallerUuid(), threadId);
-
         if (!canAcquireLock) {
             return true;
         }
 
-        return !conditionId.equals(signalKey.getConditionId());
+        return !lockStore.hasSignalKey(getWaitKey());
     }
 
     @Override

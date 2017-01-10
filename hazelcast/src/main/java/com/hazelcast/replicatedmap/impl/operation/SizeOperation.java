@@ -20,16 +20,14 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecordStore;
-import com.hazelcast.spi.AbstractOperation;
 
 import java.io.IOException;
 import java.util.Collection;
 
-public class SizeOperation extends AbstractOperation {
+public class SizeOperation extends AbstractSerializableOperation {
 
     private String name;
     private transient int response;
-
 
     public SizeOperation() {
     }
@@ -50,11 +48,6 @@ public class SizeOperation extends AbstractOperation {
     }
 
     @Override
-    public boolean returnsResponse() {
-        return true;
-    }
-
-    @Override
     public Object getResponse() {
         return response;
     }
@@ -67,5 +60,10 @@ public class SizeOperation extends AbstractOperation {
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         name = in.readUTF();
+    }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.SIZE;
     }
 }

@@ -30,8 +30,7 @@ import org.junit.runner.RunWith;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-import static com.hazelcast.nio.Packet.FLAG_EVENT;
-import static com.hazelcast.nio.Packet.FLAG_OP;
+import static com.hazelcast.nio.Packet.FLAG_OP_CONTROL;
 import static com.hazelcast.nio.Packet.FLAG_URGENT;
 import static com.hazelcast.nio.serialization.SerializationConcurrencyTest.Address;
 import static com.hazelcast.nio.serialization.SerializationConcurrencyTest.FACTORY_ID;
@@ -40,6 +39,7 @@ import static com.hazelcast.nio.serialization.SerializationConcurrencyTest.Porta
 import static com.hazelcast.nio.serialization.SerializationConcurrencyTest.PortablePerson;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastSerialClassRunner.class)
@@ -52,7 +52,8 @@ public class PacketTest {
             new PortableAddress("street", 567));
 
     private SerializationServiceBuilder createSerializationServiceBuilder() {
-        final PortableFactory portableFactory = new PortableFactory() {
+        PortableFactory portableFactory = new PortableFactory() {
+            @Override
             public Portable create(int classId) {
                 switch (classId) {
                     case 1:
@@ -96,30 +97,39 @@ public class PacketTest {
     }
 
     @Test
-    public void setFlag() {
+    public void raiseFlags() {
         Packet packet = new Packet();
-        packet.setFlag(FLAG_OP);
-        packet.setFlag(FLAG_URGENT);
+        packet.raiseFlags(FLAG_URGENT);
 
-        assertEquals(FLAG_OP | FLAG_URGENT, packet.getFlags());
+        assertEquals(FLAG_URGENT, packet.getFlags());
+    }
+
+    @Test
+    public void setPacketType() {
+        Packet packet = new Packet();
+        for (Packet.Type type : Packet.Type.values()) {
+            packet.setPacketType(type);
+            assertSame(type, packet.getPacketType());
+        }
     }
 
     @Test
     public void isFlagSet() {
         Packet packet = new Packet();
-        packet.setFlag(FLAG_OP);
-        packet.setFlag(FLAG_URGENT);
+        packet.setPacketType(Packet.Type.OPERATION);
+        packet.raiseFlags(FLAG_URGENT);
 
-        assertTrue(packet.isFlagSet(FLAG_OP));
-        assertTrue(packet.isFlagSet(FLAG_URGENT));
-        assertFalse(packet.isFlagSet(FLAG_EVENT));
+        assertSame(Packet.Type.OPERATION, packet.getPacketType());
+        assertTrue(packet.isFlagRaised(FLAG_URGENT));
+        assertFalse(packet.isFlagRaised(FLAG_OP_CONTROL));
     }
 
     @Test
-    public void setAllFlags() {
-        Packet packet = new Packet();
-        packet.setAllFlags(FLAG_OP | FLAG_URGENT);
+    public void resetFlagsTo() {
+        Packet packet = new Packet().setPacketType(Packet.Type.OPERATION);
+        packet.resetFlagsTo(FLAG_URGENT);
 
-        assertEquals(FLAG_OP | FLAG_URGENT, packet.getFlags());
+        assertSame(Packet.Type.NULL, packet.getPacketType());
+        assertEquals(FLAG_URGENT, packet.getFlags());
     }
 }

@@ -17,11 +17,12 @@
 package com.hazelcast.util;
 
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 /**
  * Utility methods to getOrPutSynchronized and getOrPutIfAbsent in a thread safe way
- * from ConcurrentMap with a ConstructorFunction.
+ * from a {@link ConcurrentMap} with a {@link ConstructorFunction}.
  */
 public final class ConcurrencyUtil {
 
@@ -29,8 +30,10 @@ public final class ConcurrencyUtil {
     }
 
     /**
-     * Atomically sets the max value. If the current value is larger than the provided value, the call is ignored. So it
-     * will not happen that a smaller value will overwrite a larger value.
+     * Atomically sets the max value.
+     *
+     * If the current value is larger than the provided value, the call is ignored.
+     * So it will not happen that a smaller value will overwrite a larger value.
      */
     public static <E> void setMax(E obj, AtomicLongFieldUpdater<E> updater, long value) {
         for (; ; ) {
@@ -45,8 +48,20 @@ public final class ConcurrencyUtil {
         }
     }
 
-    public static <K, V> V getOrPutSynchronized(ConcurrentMap<K, V> map, K key,
-                                                final Object mutex, ConstructorFunction<K, V> func) {
+    public static boolean setIfGreaterThan(AtomicLong oldValue, long newValue) {
+        while (true) {
+            long local = oldValue.get();
+            if (newValue <= local) {
+                return false;
+            }
+            if (oldValue.compareAndSet(local, newValue)) {
+                return true;
+            }
+        }
+    }
+
+    public static <K, V> V getOrPutSynchronized(ConcurrentMap<K, V> map, K key, final Object mutex,
+                                                ConstructorFunction<K, V> func) {
         if (mutex == null) {
             throw new NullPointerException();
         }
@@ -58,6 +73,29 @@ public final class ConcurrencyUtil {
                     value = func.createNew(key);
                     map.put(key, value);
                 }
+            }
+        }
+        return value;
+    }
+
+    public static <K, V> V getOrPutSynchronized(ConcurrentMap<K, V> map, K key, ContextMutexFactory contextMutexFactory,
+                                                ConstructorFunction<K, V> func) {
+        if (contextMutexFactory == null) {
+            throw new NullPointerException();
+        }
+        V value = map.get(key);
+        if (value == null) {
+            ContextMutexFactory.Mutex mutex = contextMutexFactory.mutexFor(key);
+            try {
+                synchronized (mutex) {
+                    value = map.get(key);
+                    if (value == null) {
+                        value = func.createNew(key);
+                        map.put(key, value);
+                    }
+                }
+            } finally {
+                mutex.close();
             }
         }
         return value;

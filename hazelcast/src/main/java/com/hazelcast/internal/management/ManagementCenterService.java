@@ -20,9 +20,6 @@ import com.eclipsesource.json.JsonObject;
 import com.eclipsesource.json.JsonValue;
 import com.hazelcast.config.GroupConfig;
 import com.hazelcast.config.ManagementCenterConfig;
-import com.hazelcast.core.LifecycleEvent;
-import com.hazelcast.core.LifecycleEvent.LifecycleState;
-import com.hazelcast.core.LifecycleListener;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.MemberAttributeEvent;
 import com.hazelcast.core.MembershipEvent;
@@ -34,6 +31,7 @@ import com.hazelcast.internal.management.operation.UpdateManagementCenterUrlOper
 import com.hazelcast.internal.management.request.AsyncConsoleRequest;
 import com.hazelcast.internal.management.request.ChangeClusterStateRequest;
 import com.hazelcast.internal.management.request.ChangeWanStateRequest;
+import com.hazelcast.internal.management.request.ClearWanQueuesRequest;
 import com.hazelcast.internal.management.request.ClusterPropsRequest;
 import com.hazelcast.internal.management.request.ConsoleCommandRequest;
 import com.hazelcast.internal.management.request.ConsoleRequest;
@@ -47,6 +45,7 @@ import com.hazelcast.internal.management.request.MemberConfigRequest;
 import com.hazelcast.internal.management.request.RunGcRequest;
 import com.hazelcast.internal.management.request.ShutdownClusterRequest;
 import com.hazelcast.internal.management.request.ThreadDumpRequest;
+import com.hazelcast.internal.management.request.TriggerPartialStartRequest;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.monitor.TimedMemberState;
@@ -75,12 +74,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static com.hazelcast.instance.OutOfMemoryErrorDispatcher.inspectOutputMemoryError;
+import static com.hazelcast.instance.OutOfMemoryErrorDispatcher.inspectOutOfMemoryError;
 import static com.hazelcast.nio.IOUtil.closeResource;
 import static com.hazelcast.spi.ExecutionService.ASYNC_EXECUTOR;
 import static com.hazelcast.util.EmptyStatement.ignore;
 import static com.hazelcast.util.JsonUtil.getInt;
 import static com.hazelcast.util.JsonUtil.getObject;
+import static java.net.URLEncoder.encode;
 
 /**
  * ManagementCenterService is responsible for sending statistics data to the Management Center.
@@ -124,19 +124,14 @@ public class ManagementCenterService {
         this.timedMemberStateFactory = new TimedMemberStateFactory(instance);
         this.identifier = newManagementCenterIdentifier();
 
-        registerListeners();
+        if (this.managementCenterConfig.isEnabled()) {
+            this.instance.getCluster().addMembershipListener(new ManagementCenterService.MemberListenerImpl());
+            start();
+        }
     }
 
     private String getManagementCenterUrl() {
         return managementCenterConfig.getUrl();
-    }
-
-    private void registerListeners() {
-        if (!managementCenterConfig.isEnabled()) {
-            return;
-        }
-        instance.getLifecycleService().addLifecycleListener(new LifecycleListenerImpl());
-        instance.getCluster().addMembershipListener(new MemberListenerImpl());
     }
 
     private ManagementCenterConfig getManagementCenterConfig() {
@@ -161,7 +156,7 @@ public class ManagementCenterService {
         return url.endsWith("/") ? url : url + '/';
     }
 
-    public void start() {
+    private void start() {
         if (managementCenterUrl == null) {
             logger.warning("Can't start Hazelcast Management Center Service: web-server URL is null!");
             return;
@@ -306,7 +301,7 @@ public class ManagementCenterService {
                     sleep();
                 }
             } catch (Throwable throwable) {
-                inspectOutputMemoryError(throwable);
+                inspectOutOfMemoryError(throwable);
                 if (!(throwable instanceof InterruptedException)) {
                     logger.warning("Hazelcast Management Center Service will be shutdown due to exception.", throwable);
                     shutdown();
@@ -346,7 +341,7 @@ public class ManagementCenterService {
                     sleepIfPossible(endMs - startMs);
                 }
             } catch (Throwable throwable) {
-                inspectOutputMemoryError(throwable);
+                inspectOutOfMemoryError(throwable);
                 if (!(throwable instanceof InterruptedException)) {
                     logger.warning("Exception occurred while calculating stats", throwable);
                 }
@@ -444,6 +439,8 @@ public class ManagementCenterService {
             register(new ChangeClusterStateRequest());
             register(new ShutdownClusterRequest());
             register(new ForceStartNodeRequest());
+            register(new TriggerPartialStartRequest());
+            register(new ClearWanQueuesRequest());
         }
 
         public void register(ConsoleRequest consoleRequest) {
@@ -479,7 +476,7 @@ public class ManagementCenterService {
                 }
             } catch (Throwable throwable) {
                 if (!(throwable instanceof InterruptedException)) {
-                    inspectOutputMemoryError(throwable);
+                    inspectOutOfMemoryError(throwable);
                     logger.warning("Problem on Hazelcast Management Center Service while polling for a task.", throwable);
                 }
             }
@@ -565,13 +562,13 @@ public class ManagementCenterService {
             return connection;
         }
 
-        private URL newGetTaskUrl() throws MalformedURLException {
+        private URL newGetTaskUrl() throws IOException {
             GroupConfig groupConfig = instance.getConfig().getGroupConfig();
 
             Address localAddress = instance.node.getClusterService().getLocalMember().getAddress();
 
             String urlString = cleanupUrl(managementCenterUrl) + "getTask.do?member=" + localAddress.getHost()
-                    + ":" + localAddress.getPort() + "&cluster=" + groupConfig.getName();
+                    + ":" + localAddress.getPort() + "&cluster=" + encode(groupConfig.getName(), "UTF-8");
             return new URL(urlString);
         }
 
@@ -600,23 +597,6 @@ public class ManagementCenterService {
             logger.finest(msg, t);
         } else {
             logger.info(msg);
-        }
-    }
-
-    /**
-     * LifecycleListener for listening for LifecycleState.STARTED event to start
-     * {@link com.hazelcast.internal.management.ManagementCenterService}.
-     */
-    private class LifecycleListenerImpl implements LifecycleListener {
-        @Override
-        public void stateChanged(final LifecycleEvent event) {
-            if (event.getState() == LifecycleState.STARTED) {
-                try {
-                    start();
-                } catch (Exception e) {
-                    logger.severe("ManagementCenterService could not be started!", e);
-                }
-            }
         }
     }
 

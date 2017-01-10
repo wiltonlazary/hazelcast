@@ -21,6 +21,8 @@ import com.hazelcast.core.EntryView;
 import com.hazelcast.core.ExecutionCallback;
 import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapEntries;
+import com.hazelcast.map.impl.iterator.MapEntriesWithCursor;
+import com.hazelcast.map.impl.iterator.MapKeysWithCursor;
 import com.hazelcast.map.impl.mapstore.MapDataStore;
 import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.map.impl.record.RecordFactory;
@@ -189,6 +191,20 @@ public interface RecordStore<R extends Record> extends LocalRecordStoreStats {
     Iterator<Record> iterator(long now, boolean backup);
 
     /**
+     * Fetches specified number of keys from provided tableIndex.
+     *
+     * @return {@link MapKeysWithCursor} which is a holder for keys and next index to read from.
+     */
+    MapKeysWithCursor fetchKeys(int tableIndex, int size);
+
+    /**
+     * Fetches specified number of entries from provided tableIndex.
+     *
+     * @return {@link MapEntriesWithCursor} which is a holder for entries and next index to read from.
+     */
+    MapEntriesWithCursor fetchEntries(int tableIndex, int size);
+
+    /**
      * Iterates over record store entries but first waits map store to load.
      * If an operation needs to wait a data source load like query operations
      * {@link com.hazelcast.core.IMap#keySet(com.hazelcast.query.Predicate)},
@@ -297,10 +313,9 @@ public interface RecordStore<R extends Record> extends LocalRecordStoreStats {
     /**
      * Loads all given keys from defined map store.
      *
-     * @param keys                  keys to be loaded.
-     * @param replaceExistingValues <code>true</code> if need to replace existing values otherwise <code>false</code>
+     * @param keys keys to be loaded.
      */
-    void loadAllFromStore(List<Data> keys, boolean replaceExistingValues);
+    void loadAllFromStore(List<Data> keys);
 
     void updateLoadStatus(boolean lastBatch, Throwable exception);
 
@@ -317,7 +332,12 @@ public interface RecordStore<R extends Record> extends LocalRecordStoreStats {
      */
     R getRecordOrNull(Data key);
 
-    void evictEntries();
+    /**
+     * Evicts entries from this record-store.
+     *
+     * @param excludedKey this key has lowest priority to be selected for eviction
+     */
+    void evictEntries(Data excludedKey);
 
     /**
      * Returns <code>true</code> if eviction is allowed on this record-store, otherwise <code>false</code>

@@ -19,12 +19,12 @@ package com.hazelcast.internal.cluster.impl.operations;
 import com.hazelcast.cluster.Joiner;
 import com.hazelcast.cluster.impl.TcpIpJoiner;
 import com.hazelcast.instance.Node;
+import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 
-public class MasterClaimOperation extends AbstractOperation implements JoinOperation {
+public class MasterClaimOperation extends AbstractJoinOperation {
 
     private transient boolean approvedAsMaster;
 
@@ -44,13 +44,18 @@ public class MasterClaimOperation extends AbstractOperation implements JoinOpera
             approvedAsMaster = false;
             logger.warning("This node requires MulticastJoin strategy!");
         }
-        if (logger.isFinestEnabled()) {
-            logger.finest("Sending '" + approvedAsMaster + "' for master claim of node: " + getCallerAddress());
+        if (logger.isFineEnabled()) {
+            logger.fine("Sending '" + approvedAsMaster + "' for master claim of node: " + getCallerAddress());
         }
     }
 
     @Override
     public Object getResponse() {
         return approvedAsMaster;
+    }
+
+    @Override
+    public int getId() {
+        return ClusterDataSerializerHook.MASTER_CLAIM;
     }
 }

@@ -22,7 +22,6 @@ import com.hazelcast.nio.BufferObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.ByteOrder;
 
 import static com.hazelcast.nio.Bits.CHAR_SIZE_IN_BYTES;
@@ -31,7 +30,7 @@ import static com.hazelcast.nio.Bits.LONG_SIZE_IN_BYTES;
 import static com.hazelcast.nio.Bits.NULL_ARRAY_LENGTH;
 import static com.hazelcast.nio.Bits.SHORT_SIZE_IN_BYTES;
 
-class ByteArrayObjectDataOutput extends OutputStream implements BufferObjectDataOutput {
+class ByteArrayObjectDataOutput extends VersionedObjectDataOutput implements BufferObjectDataOutput {
 
     final int initialSize;
 
@@ -400,11 +399,17 @@ class ByteArrayObjectDataOutput extends OutputStream implements BufferObjectData
 
     @Override
     public byte toByteArray()[] {
+        return toByteArray(0);
+    }
+
+    @Override
+    public byte[] toByteArray(int padding) {
         if (buffer == null || pos == 0) {
-            return new byte[0];
+            return new byte[padding];
         }
-        final byte[] newBuffer = new byte[pos];
-        System.arraycopy(buffer, 0, newBuffer, 0, pos);
+
+        final byte[] newBuffer = new byte[padding + pos];
+        System.arraycopy(buffer, 0, newBuffer, padding, pos);
         return newBuffer;
     }
 

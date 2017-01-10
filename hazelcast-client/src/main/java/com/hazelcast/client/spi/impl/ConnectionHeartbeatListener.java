@@ -19,13 +19,18 @@ package com.hazelcast.client.spi.impl;
 import com.hazelcast.nio.Connection;
 
 /**
- * A listener for the {@link com.hazelcast.client.connection.ClientConnectionManager} to listen to connection heartbeats
+ * A listener for the {@link com.hazelcast.client.connection.ClientConnectionManager} to listen to connection heartbeats.
  */
-
 public interface ConnectionHeartbeatListener {
 
-    void heartBeatStarted(Connection connection);
+    /**
+     * This event will be fired when the heartbeat is resumed for a connection to a member.
+     */
+    void heartbeatResumed(Connection connection);
 
-    void heartBeatStopped(Connection connection);
+    /**
+     * This event will be fired when no heartbeat response is received for
+     * {@link com.hazelcast.client.spi.properties.ClientProperty#HEARTBEAT_TIMEOUT} milliseconds from the member.
+     */
+    void heartbeatStopped(Connection connection);
 }
-

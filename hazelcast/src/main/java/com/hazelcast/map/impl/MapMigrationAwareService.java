@@ -16,7 +16,10 @@
 
 package com.hazelcast.map.impl;
 
+import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataGenerator;
 import com.hazelcast.map.impl.operation.MapReplicationOperation;
+import com.hazelcast.map.impl.querycache.QueryCacheContext;
+import com.hazelcast.map.impl.querycache.publisher.PublisherContext;
 import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.map.impl.record.Records;
 import com.hazelcast.map.impl.recordstore.RecordStore;
@@ -32,6 +35,11 @@ import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.Clock;
 
 import java.util.Iterator;
+
+import static com.hazelcast.spi.partition.MigrationEndpoint.DESTINATION;
+import static com.hazelcast.spi.partition.MigrationEndpoint.SOURCE;
+import static com.hazelcast.map.impl.querycache.publisher.AccumulatorSweeper.flushAccumulator;
+import static com.hazelcast.map.impl.querycache.publisher.AccumulatorSweeper.removeAccumulator;
 
 /**
  * Defines migration behavior of map service.
@@ -66,9 +74,14 @@ class MapMigrationAwareService implements MigrationAwareService {
     @Override
     public void commitMigration(PartitionMigrationEvent event) {
         migrateIndex(event);
-        if (event.getMigrationEndpoint() == MigrationEndpoint.SOURCE) {
+
+        if (SOURCE == event.getMigrationEndpoint()) {
             clearMapsHavingLesserBackupCountThan(event.getPartitionId(), event.getNewReplicaIndex());
+            getMetaDataGenerator().resetMetadata(event.getPartitionId());
+        } else if (DESTINATION == event.getMigrationEndpoint()) {
+            getMetaDataGenerator().getOrCreateUuid(event.getPartitionId());
         }
+
         PartitionContainer partitionContainer = mapServiceContext.getPartitionContainer(event.getPartitionId());
         for (RecordStore recordStore : partitionContainer.getAllRecordStores()) {
             // in case the record store has been created without loading during migration trigger again
@@ -76,13 +89,26 @@ class MapMigrationAwareService implements MigrationAwareService {
             recordStore.startLoading();
         }
         mapServiceContext.reloadOwnedPartitions();
+
+        QueryCacheContext queryCacheContext = mapServiceContext.getQueryCacheContext();
+        PublisherContext publisherContext = queryCacheContext.getPublisherContext();
+
+        if (event.getMigrationEndpoint() == MigrationEndpoint.SOURCE) {
+            int partitionId = event.getPartitionId();
+            flushAccumulator(publisherContext, partitionId);
+            removeAccumulator(publisherContext, partitionId);
+        }
     }
 
     @Override
     public void rollbackMigration(PartitionMigrationEvent event) {
-        if (event.getMigrationEndpoint() == MigrationEndpoint.DESTINATION) {
+        if (DESTINATION == event.getMigrationEndpoint()) {
             clearMapsHavingLesserBackupCountThan(event.getPartitionId(), event.getCurrentReplicaIndex());
+            getMetaDataGenerator().resetMetadata(event.getPartitionId());
+        } else if (SOURCE == event.getMigrationEndpoint()) {
+            getMetaDataGenerator().getOrCreateUuid(event.getPartitionId());
         }
+
         mapServiceContext.reloadOwnedPartitions();
     }
 
@@ -92,6 +118,10 @@ class MapMigrationAwareService implements MigrationAwareService {
         } else {
             mapServiceContext.clearMapsHavingLesserBackupCountThan(partitionId, thresholdReplicaIndex);
         }
+    }
+
+    private MetaDataGenerator getMetaDataGenerator() {
+        return mapServiceContext.getMapNearCacheManager().getInvalidator().getMetaDataGenerator();
     }
 
     private void migrateIndex(PartitionMigrationEvent event) {
@@ -109,7 +139,7 @@ class MapMigrationAwareService implements MigrationAwareService {
             while (iterator.hasNext()) {
                 Record record = iterator.next();
                 Data key = record.getKey();
-                if (event.getMigrationEndpoint() == MigrationEndpoint.SOURCE) {
+                if (event.getMigrationEndpoint() == SOURCE) {
                     assert event.getNewReplicaIndex() != 0 : "Invalid migration event: " + event;
                     Object value = Records.getValueOrCachedValue(record, serializationService);
                     indexes.removeEntryIndex(key, value);

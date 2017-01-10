@@ -16,12 +16,13 @@
 
 package com.hazelcast.client;
 
-import com.hazelcast.cache.impl.nearcache.NearCacheManager;
+import com.hazelcast.internal.nearcache.NearCacheManager;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.client.spi.ClientProxyFactory;
 import com.hazelcast.internal.serialization.InternalSerializationService;
+import com.hazelcast.map.impl.MapService;
 import com.hazelcast.nio.SocketInterceptor;
-import com.hazelcast.nio.tcp.SocketChannelWrapperFactory;
+import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
 
 /**
  * ClientExtension is a client extension mechanism to be able to plug different implementations of
@@ -43,7 +44,7 @@ public interface ClientExtension {
      * Creates a {@link InternalSerializationService} instance to be used by this client.
      *
      * @param version serialization version to be created. Values less than 1 will be ignored and max supported version
-     * will be used
+     *                will be used
      * @return the created {@link InternalSerializationService} instance
      */
     InternalSerializationService createSerializationService(byte version);
@@ -72,7 +73,7 @@ public interface ClientExtension {
     NearCacheManager createNearCacheManager();
 
     /**
-     * Creates a {@code ClientProxyFactory} for the supplied service class.
+     * Creates a {@code ClientProxyFactory} for the supplied service class. Currently only the {@link MapService} is supported.
      *
      * @param service service for the proxy to create.
      * @return {@code ClientProxyFactory} for the service.

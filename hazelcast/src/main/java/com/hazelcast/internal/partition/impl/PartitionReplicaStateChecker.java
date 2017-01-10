@@ -37,13 +37,14 @@ import java.util.logging.Level;
 
 import static com.hazelcast.internal.partition.impl.PartitionServiceState.MIGRATION_LOCAL;
 import static com.hazelcast.internal.partition.impl.PartitionServiceState.MIGRATION_ON_MASTER;
+import static com.hazelcast.internal.partition.impl.PartitionServiceState.REPLICA_NOT_OWNED;
 import static com.hazelcast.internal.partition.impl.PartitionServiceState.REPLICA_NOT_SYNC;
 import static com.hazelcast.internal.partition.impl.PartitionServiceState.SAFE;
 import static com.hazelcast.spi.partition.IPartitionService.SERVICE_NAME;
 
 /**
- *  Verifies up-to-dateness of each of partition replicas owned by this member.
- *  Triggers replica sync process for out-of-date replicas.
+ * Verifies up-to-dateness of each of partition replicas owned by this member.
+ * Triggers replica sync process for out-of-date replicas.
  */
 public class PartitionReplicaStateChecker {
 
@@ -62,17 +63,17 @@ public class PartitionReplicaStateChecker {
 
     PartitionReplicaStateChecker(Node node, InternalPartitionServiceImpl partitionService) {
         this.node = node;
+        this.nodeEngine = node.getNodeEngine();
         this.partitionService = partitionService;
-        nodeEngine = node.nodeEngine;
-        logger = node.getLogger(getClass());
+        this.logger = node.getLogger(getClass());
 
-        partitionStateManager = partitionService.getPartitionStateManager();
-        migrationManager = partitionService.getMigrationManager();
+        this.partitionStateManager = partitionService.getPartitionStateManager();
+        this.migrationManager = partitionService.getMigrationManager();
     }
 
     public PartitionServiceState getPartitionServiceState() {
         if (hasMissingReplicaOwners()) {
-            return REPLICA_NOT_SYNC;
+            return REPLICA_NOT_OWNED;
         }
 
         if (migrationManager.hasOnGoingMigration()) {
@@ -91,16 +92,18 @@ public class PartitionReplicaStateChecker {
     }
 
     public boolean triggerAndWaitForReplicaSync(long timeout, TimeUnit unit) {
-        long timeoutInMillis = unit.toMillis(timeout);
-        long sleep = DEFAULT_PAUSE_MILLIS;
-        while (timeoutInMillis > 0) {
+        return triggerAndWaitForReplicaSync(timeout, unit, DEFAULT_PAUSE_MILLIS);
+    }
 
-            timeoutInMillis = waitForMissingReplicaOwners(Level.FINE, timeoutInMillis, sleep);
+    boolean triggerAndWaitForReplicaSync(long timeout, TimeUnit unit, long sleepMillis) {
+        long timeoutInMillis = unit.toMillis(timeout);
+        while (timeoutInMillis > 0) {
+            timeoutInMillis = waitForMissingReplicaOwners(Level.FINE, timeoutInMillis, sleepMillis);
             if (timeoutInMillis <= 0) {
                 break;
             }
 
-            timeoutInMillis = waitForOngoingMigrations(Level.FINE, timeoutInMillis, sleep);
+            timeoutInMillis = waitForOngoingMigrations(Level.FINE, timeoutInMillis, sleepMillis);
             if (timeoutInMillis <= 0) {
                 break;
             }
@@ -118,7 +121,7 @@ public class PartitionReplicaStateChecker {
             }
             logger.info("Some backup replicas are inconsistent with primary, waiting for synchronization. Timeout: "
                     + timeoutInMillis + "ms");
-            timeoutInMillis = sleepWithBusyWait(timeoutInMillis, sleep);
+            timeoutInMillis = sleepWithBusyWait(timeoutInMillis, sleepMillis);
         }
         return false;
     }
@@ -145,7 +148,7 @@ public class PartitionReplicaStateChecker {
 
         ClusterServiceImpl clusterService = node.getClusterService();
         ClusterState clusterState = clusterService.getClusterState();
-        boolean isClusterNotActive = clusterState == ClusterState.FROZEN || clusterState == ClusterState.PASSIVE;
+        boolean isClusterNotActive = (clusterState == ClusterState.FROZEN || clusterState == ClusterState.PASSIVE);
 
         for (InternalPartition partition : partitionStateManager.getPartitions()) {
             for (int index = 0; index < replicaCount; index++) {
@@ -217,11 +220,12 @@ public class PartitionReplicaStateChecker {
         }
     }
 
+    @SuppressWarnings("checkstyle:npathcomplexity")
     private int invokeReplicaSyncOperations(int maxBackupCount, Semaphore semaphore, AtomicBoolean result) {
         Address thisAddress = node.getThisAddress();
         ExecutionCallback<Object> callback = new ReplicaSyncResponseCallback(result, semaphore);
 
-        ClusterServiceImpl clusterService = node.clusterService;
+        ClusterServiceImpl clusterService = node.getClusterService();
         ClusterState clusterState = clusterService.getClusterState();
         boolean isClusterActive = clusterState == ClusterState.ACTIVE || clusterState == ClusterState.IN_TRANSITION;
 
@@ -236,8 +240,15 @@ public class PartitionReplicaStateChecker {
             if (!thisAddress.equals(owner)) {
                 continue;
             }
-
             ownedCount++;
+
+            if (maxBackupCount == 0) {
+                if (partition.isMigrating()) {
+                    result.set(false);
+                }
+                continue;
+            }
+
             for (int index = 1; index <= maxBackupCount; index++) {
                 Address replicaAddress = partition.getReplicaAddress(index);
 
@@ -287,6 +298,7 @@ public class PartitionReplicaStateChecker {
     }
 
     private static class ReplicaSyncResponseCallback implements ExecutionCallback<Object> {
+
         private final AtomicBoolean result;
         private final Semaphore semaphore;
 

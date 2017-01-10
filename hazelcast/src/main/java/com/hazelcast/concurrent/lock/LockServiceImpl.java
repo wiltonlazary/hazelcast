@@ -19,10 +19,11 @@ package com.hazelcast.concurrent.lock;
 import com.hazelcast.concurrent.lock.operations.LocalLockCleanupOperation;
 import com.hazelcast.concurrent.lock.operations.LockReplicationOperation;
 import com.hazelcast.concurrent.lock.operations.UnlockOperation;
+import com.hazelcast.config.LockConfig;
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.partition.MigrationEndpoint;
+import com.hazelcast.partition.strategy.StringPartitioningStrategy;
 import com.hazelcast.spi.ClientAwareService;
 import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.MemberAttributeServiceEvent;
@@ -35,13 +36,16 @@ import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PartitionReplicationEvent;
+import com.hazelcast.spi.QuorumAwareService;
 import com.hazelcast.spi.RemoteService;
 import com.hazelcast.spi.impl.PartitionSpecificRunnable;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
+import com.hazelcast.spi.partition.MigrationEndpoint;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.util.Clock;
 import com.hazelcast.util.ConstructorFunction;
+import com.hazelcast.util.ContextMutexFactory;
 
 import java.util.Collection;
 import java.util.LinkedList;
@@ -49,16 +53,18 @@ import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import static com.hazelcast.spi.impl.OperationResponseHandlerFactory.createEmptyResponseHandler;
+import static com.hazelcast.util.ConcurrencyUtil.getOrPutSynchronized;
 
+@SuppressWarnings("checkstyle:methodcount")
 public final class LockServiceImpl implements LockService, ManagedService, RemoteService, MembershipAwareService,
-        MigrationAwareService, ClientAwareService {
+        MigrationAwareService, ClientAwareService, QuorumAwareService {
 
     private final NodeEngine nodeEngine;
     private final LockStoreContainer[] containers;
     private final ConcurrentMap<String, ConstructorFunction<ObjectNamespace, LockStoreInfo>> constructors
             = new ConcurrentHashMap<String, ConstructorFunction<ObjectNamespace, LockStoreInfo>>();
-
+    private final ConcurrentMap<String, String> quorumConfigCache = new ConcurrentHashMap<String, String>();
+    private final ContextMutexFactory quorumConfigCacheMutexFactory = new ContextMutexFactory();
     private final long maxLeaseTimeInMillis;
 
     public LockServiceImpl(NodeEngine nodeEngine) {
@@ -179,7 +185,7 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
                 @Override
                 public void run() {
                     for (LockStoreImpl lockStore : container.getLockStores()) {
-                        releaseLock(operationService, uuid, container.getPartitionId(), lockStore);
+                        cleanUpLock(operationService, uuid, container.getPartitionId(), lockStore);
                     }
                 }
 
@@ -192,24 +198,25 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
         }
     }
 
-    private void releaseLock(OperationService operationService, String uuid, int partitionId, LockStoreImpl lockStore) {
+    private void cleanUpLock(OperationService operationService, String uuid, int partitionId, LockStoreImpl lockStore) {
         Collection<LockResource> locks = lockStore.getLocks();
         for (LockResource lock : locks) {
             Data key = lock.getKey();
             if (uuid.equals(lock.getOwner()) && !lock.isTransactional()) {
-                UnlockOperation op = createUnlockOperation(partitionId, lockStore.getNamespace(), key, uuid);
-                operationService.runOperationOnCallingThread(op);
+                UnlockOperation op = createLockCleanupOperation(partitionId, lockStore.getNamespace(), key, uuid);
+                // op will be executed on partition thread locally. Invocation is to handle retries.
+                operationService.invokeOnTarget(SERVICE_NAME, op, nodeEngine.getThisAddress());
             }
+            lockStore.cleanWaitersAndSignalsFor(key, uuid);
         }
     }
 
-    private UnlockOperation createUnlockOperation(int partitionId, ObjectNamespace namespace, Data key, String uuid) {
+    private UnlockOperation createLockCleanupOperation(int partitionId, ObjectNamespace namespace, Data key, String uuid) {
         UnlockOperation op = new LocalLockCleanupOperation(namespace, key, uuid);
         op.setAsyncBackup(true);
         op.setNodeEngine(nodeEngine);
         op.setServiceName(SERVICE_NAME);
         op.setService(LockServiceImpl.this);
-        op.setOperationResponseHandler(createEmptyResponseHandler());
         op.setPartitionId(partitionId);
         op.setValidateTarget(false);
         return op;
@@ -292,11 +299,23 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
 
     @Override
     public void destroyDistributedObject(String objectId) {
-        Data key = nodeEngine.getSerializationService().toData(objectId);
-        for (LockStoreContainer container : containers) {
-            InternalLockNamespace namespace = new InternalLockNamespace(objectId);
-            LockStoreImpl lockStore = container.getOrCreateLockStore(namespace);
-            lockStore.forceUnlock(key);
+        final Data key = nodeEngine.getSerializationService().toData(objectId, StringPartitioningStrategy.INSTANCE);
+        final int partitionId = nodeEngine.getPartitionService().getPartitionId(key);
+        final LockStoreImpl lockStore = containers[partitionId].getLockStore(new InternalLockNamespace(objectId));
+
+        if (lockStore != null) {
+            InternalOperationService operationService = (InternalOperationService) nodeEngine.getOperationService();
+            operationService.execute(new PartitionSpecificRunnable() {
+                @Override
+                public void run() {
+                    lockStore.forceUnlock(key);
+                }
+
+                @Override
+                public int getPartitionId() {
+                    return partitionId;
+                }
+            });
         }
     }
 
@@ -307,5 +326,18 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
 
     public static long getMaxLeaseTimeInMillis(HazelcastProperties hazelcastProperties) {
         return hazelcastProperties.getMillis(GroupProperty.LOCK_MAX_LEASE_TIME_SECONDS);
+    }
+
+    @Override
+    public String getQuorumName(final String name) {
+        // we use caching here because lock operations are often and we should avoid lock config lookup
+        return getOrPutSynchronized(quorumConfigCache, name, quorumConfigCacheMutexFactory,
+                new ConstructorFunction<String, String>() {
+                    @Override
+                    public String createNew(String arg) {
+                        final LockConfig lockConfig = nodeEngine.getConfig().findLockConfig(name);
+                        return lockConfig.getQuorumName();
+                    }
+                });
     }
 }

@@ -16,7 +16,7 @@
 
 package com.hazelcast.mapreduce;
 
-import com.hazelcast.spi.annotation.Beta;
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
 
 /**
  * <p>
@@ -49,8 +49,10 @@ import com.hazelcast.spi.annotation.Beta;
  * @param <KeyOut>   key type for mapped results
  * @param <ValueOut> value type for mapped results
  * @since 3.2
+ * @deprecated Hazelcast Jet will replace, maybe re-implement this API shortly
  */
-@Beta
+@Deprecated
+@BinaryInterface
 public abstract class LifecycleMapperAdapter<KeyIn, ValueIn, KeyOut, ValueOut>
         implements LifecycleMapper<KeyIn, ValueIn, KeyOut, ValueOut> {
 

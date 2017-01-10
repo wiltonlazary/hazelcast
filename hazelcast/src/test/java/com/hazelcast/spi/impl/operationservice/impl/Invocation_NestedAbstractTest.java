@@ -3,7 +3,6 @@ package com.hazelcast.spi.impl.operationservice.impl;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.InternalCompletableFuture;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationService;
@@ -12,9 +11,9 @@ import com.hazelcast.test.HazelcastTestSupport;
 
 import java.io.IOException;
 
-public abstract class Invocation_NestedAbstractTest extends HazelcastTestSupport {
+abstract class Invocation_NestedAbstractTest extends HazelcastTestSupport {
 
-    protected static final int GENERIC_OPERATION = -1;
+    static final int GENERIC_OPERATION = -1;
 
     public static boolean mappedToSameThread(OperationService operationService, int partitionId1, int partitionId2) {
         OperationServiceImpl operationServiceImpl = (OperationServiceImpl) operationService;
@@ -24,7 +23,7 @@ public abstract class Invocation_NestedAbstractTest extends HazelcastTestSupport
         return thread1 == thread2;
     }
 
-    public static class OuterOperation extends AbstractOperation {
+    public static class OuterOperation extends Operation {
 
         public Operation innerOperation;
         public Object result;
@@ -70,7 +69,7 @@ public abstract class Invocation_NestedAbstractTest extends HazelcastTestSupport
         }
     }
 
-    public static class InnerOperation extends AbstractOperation {
+    public static class InnerOperation extends Operation {
         public Object value;
 
         @SuppressWarnings("unused")

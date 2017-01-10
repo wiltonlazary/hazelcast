@@ -18,6 +18,7 @@ package com.hazelcast.spi.impl.servicemanager.impl;
 
 import com.hazelcast.cache.impl.ICacheService;
 import com.hazelcast.cache.impl.JCacheDetector;
+import com.hazelcast.cardinality.impl.CardinalityEstimatorService;
 import com.hazelcast.client.impl.ClientEngineImpl;
 import com.hazelcast.collection.impl.list.ListService;
 import com.hazelcast.collection.impl.queue.QueueService;
@@ -32,6 +33,7 @@ import com.hazelcast.concurrent.semaphore.SemaphoreService;
 import com.hazelcast.config.ServiceConfig;
 import com.hazelcast.config.ServicesConfig;
 import com.hazelcast.core.HazelcastException;
+import com.hazelcast.durableexecutor.impl.DistributedDurableExecutorService;
 import com.hazelcast.executor.impl.DistributedExecutorService;
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.NodeExtension;
@@ -45,6 +47,7 @@ import com.hazelcast.nio.ClassLoaderUtil;
 import com.hazelcast.quorum.impl.QuorumServiceImpl;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.ringbuffer.impl.RingbufferService;
+import com.hazelcast.scheduledexecutor.impl.DistributedScheduledExecutorService;
 import com.hazelcast.spi.ConfigurableService;
 import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.NodeEngine;
@@ -145,6 +148,7 @@ public final class ServiceManagerImpl implements ServiceManager {
         registerService(ListService.SERVICE_NAME, new ListService(nodeEngine));
         registerService(SetService.SERVICE_NAME, new SetService(nodeEngine));
         registerService(DistributedExecutorService.SERVICE_NAME, new DistributedExecutorService());
+        registerService(DistributedDurableExecutorService.SERVICE_NAME, new DistributedDurableExecutorService(nodeEngine));
         registerService(AtomicLongService.SERVICE_NAME, new AtomicLongService());
         registerService(AtomicReferenceService.SERVICE_NAME, new AtomicReferenceService());
         registerService(CountDownLatchService.SERVICE_NAME, new CountDownLatchService());
@@ -154,6 +158,8 @@ public final class ServiceManagerImpl implements ServiceManager {
         registerService(ReplicatedMapService.SERVICE_NAME, new ReplicatedMapService(nodeEngine));
         registerService(RingbufferService.SERVICE_NAME, new RingbufferService(nodeEngine));
         registerService(XAService.SERVICE_NAME, new XAService(nodeEngine));
+        registerService(CardinalityEstimatorService.SERVICE_NAME, new CardinalityEstimatorService());
+        registerService(DistributedScheduledExecutorService.SERVICE_NAME, new DistributedScheduledExecutorService());
         registerCacheServiceIfAvailable();
         readServiceDescriptors();
     }
@@ -190,7 +196,7 @@ public final class ServiceManagerImpl implements ServiceManager {
     private void registerCacheServiceIfAvailable() {
         //CacheService Optional initialization
         //search for jcache api jar on classpath
-        if (JCacheDetector.isJcacheAvailable(nodeEngine.getConfigClassLoader(), logger)) {
+        if (JCacheDetector.isJCacheAvailable(nodeEngine.getConfigClassLoader(), logger)) {
             ICacheService service = createService(ICacheService.class);
             registerService(ICacheService.SERVICE_NAME, service);
         } else {

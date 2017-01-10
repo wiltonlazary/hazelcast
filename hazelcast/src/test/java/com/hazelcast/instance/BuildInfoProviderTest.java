@@ -9,6 +9,7 @@ import org.junit.runner.RunWith;
 
 import java.util.regex.Pattern;
 
+import static com.hazelcast.instance.BuildInfoProvider.HAZELCAST_INTERNAL_OVERRIDE_VERSION;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -72,6 +73,33 @@ public class BuildInfoProviderTest {
         assertEquals(buildInfo.toString(), buildNumber, Integer.parseInt(build));
         assertFalse(buildInfo.toString(), buildInfo.isEnterprise());
 
+    }
+
+    @Test
+    public void testCalculateVersion() {
+        assertEquals(-1, BuildInfo.calculateVersion(null));
+        assertEquals(-1, BuildInfo.calculateVersion(""));
+        assertEquals(-1, BuildInfo.calculateVersion("a.3.7.5"));
+        assertEquals(-1, BuildInfo.calculateVersion("3.a.5"));
+        assertEquals(-1, BuildInfo.calculateVersion("3,7.5"));
+        assertEquals(-1, BuildInfo.calculateVersion("3.7,5"));
+        assertEquals(-1, BuildInfo.calculateVersion("10.99.RC1"));
+
+        assertEquals(30700, BuildInfo.calculateVersion("3.7-SNAPSHOT"));
+        assertEquals(30702, BuildInfo.calculateVersion("3.7.2"));
+        assertEquals(30702, BuildInfo.calculateVersion("3.7.2-SNAPSHOT"));
+        assertEquals(109902, BuildInfo.calculateVersion("10.99.2-SNAPSHOT"));
+        assertEquals(19930, BuildInfo.calculateVersion("1.99.30"));
+        assertEquals(109930, BuildInfo.calculateVersion("10.99.30-SNAPSHOT"));
+        assertEquals(109900, BuildInfo.calculateVersion("10.99-RC1"));
+    }
+
+    @Test
+    public void testOverrideBuildVersion() {
+        System.setProperty(HAZELCAST_INTERNAL_OVERRIDE_VERSION, "99.99.99");
+        BuildInfo buildInfo = BuildInfoProvider.getBuildInfo();
+        assertEquals("99.99.99", buildInfo.getVersion());
+        System.clearProperty(HAZELCAST_INTERNAL_OVERRIDE_VERSION);
     }
 
     @After

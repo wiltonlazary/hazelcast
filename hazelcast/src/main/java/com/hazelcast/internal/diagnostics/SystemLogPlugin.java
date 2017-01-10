@@ -24,6 +24,8 @@ import com.hazelcast.core.MembershipAdapter;
 import com.hazelcast.core.MembershipEvent;
 import com.hazelcast.core.MigrationEvent;
 import com.hazelcast.core.MigrationListener;
+import com.hazelcast.instance.NodeExtension;
+import com.hazelcast.internal.cluster.ClusterVersionListener;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
@@ -32,6 +34,7 @@ import com.hazelcast.nio.ConnectionListener;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.spi.properties.HazelcastProperty;
+import com.hazelcast.version.ClusterVersion;
 
 import java.util.Queue;
 import java.util.Set;
@@ -51,7 +54,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
  * This plugin is very useful to get an idea what is happening inside a cluster; especially when there are connection related
  * problems.
  *
- * This cluster has a low overhead and is meant to run in production.
+ * This plugin has a low overhead and is meant to run in production.
  */
 public class SystemLogPlugin extends DiagnosticsPlugin {
 
@@ -75,30 +78,41 @@ public class SystemLogPlugin extends DiagnosticsPlugin {
      */
     private static final long PERIOD_MILLIS = SECONDS.toMillis(1);
 
-    private final boolean logPartitions;
-    private final Address thisAddress;
-    private final HazelcastInstance hazelcastInstance;
-    private final ConnectionListenable connectionObservable;
     private final Queue<Object> logQueue = new ConcurrentLinkedQueue<Object>();
+    private final ConnectionListenable connectionObservable;
+    private final HazelcastInstance hazelcastInstance;
+    private final Address thisAddress;
+    private final boolean logPartitions;
     private final boolean enabled;
+    private final NodeExtension nodeExtension;
 
     public SystemLogPlugin(NodeEngineImpl nodeEngine) {
         this(nodeEngine.getProperties(),
                 nodeEngine.getNode().connectionManager,
                 nodeEngine.getHazelcastInstance(),
-                nodeEngine.getLogger(SystemLogPlugin.class));
+                nodeEngine.getLogger(SystemLogPlugin.class),
+                nodeEngine.getNode().getNodeExtension());
     }
 
     public SystemLogPlugin(HazelcastProperties properties,
                            ConnectionListenable connectionObservable,
                            HazelcastInstance hazelcastInstance,
                            ILogger logger) {
+        this(properties, connectionObservable, hazelcastInstance, logger, null);
+    }
+
+    public SystemLogPlugin(HazelcastProperties properties,
+                           ConnectionListenable connectionObservable,
+                           HazelcastInstance hazelcastInstance,
+                           ILogger logger,
+                           NodeExtension nodeExtension) {
         super(logger);
         this.connectionObservable = connectionObservable;
         this.hazelcastInstance = hazelcastInstance;
         this.thisAddress = getThisAddress(hazelcastInstance);
         this.logPartitions = properties.getBoolean(LOG_PARTITIONS);
         this.enabled = properties.getBoolean(ENABLED);
+        this.nodeExtension = nodeExtension;
     }
 
     private Address getThisAddress(HazelcastInstance hazelcastInstance) {
@@ -127,6 +141,9 @@ public class SystemLogPlugin extends DiagnosticsPlugin {
             hazelcastInstance.getPartitionService().addMigrationListener(new MigrationListenerImpl());
         }
         hazelcastInstance.getLifecycleService().addLifecycleListener(new LifecycleListenerImpl());
+        if (nodeExtension != null) {
+            nodeExtension.registerListener(new ClusterVersionListenerImpl());
+        }
     }
 
     @Override
@@ -146,6 +163,8 @@ public class SystemLogPlugin extends DiagnosticsPlugin {
             } else if (item instanceof ConnectionEvent) {
                 ConnectionEvent event = (ConnectionEvent) item;
                 render(writer, event);
+            } else if (item instanceof ClusterVersion) {
+                render(writer, (ClusterVersion) item);
             }
         }
     }
@@ -191,7 +210,7 @@ public class SystemLogPlugin extends DiagnosticsPlugin {
         }
         writer.endSection();
 
-        // ending the outer section.
+        // ending the outer section
         writer.endSection();
     }
 
@@ -217,6 +236,7 @@ public class SystemLogPlugin extends DiagnosticsPlugin {
         writer.endSection();
     }
 
+    @SuppressWarnings("ThrowableResultOfMethodCallIgnored")
     private void render(DiagnosticsLogWriter writer, ConnectionEvent event) {
         if (event.added) {
             writer.startSection("ConnectionAdded");
@@ -251,6 +271,12 @@ public class SystemLogPlugin extends DiagnosticsPlugin {
                 writer.endSection();
             }
         }
+        writer.endSection();
+    }
+
+    private void render(DiagnosticsLogWriter writer, ClusterVersion version) {
+        writer.startSection("ClusterVersionChanged");
+        writer.writeEntry(version.toString());
         writer.endSection();
     }
 
@@ -309,6 +335,13 @@ public class SystemLogPlugin extends DiagnosticsPlugin {
         @Override
         public void migrationFailed(MigrationEvent event) {
             logQueue.add(event);
+        }
+    }
+
+    private class ClusterVersionListenerImpl implements ClusterVersionListener {
+        @Override
+        public void onClusterVersionChange(ClusterVersion newVersion) {
+            logQueue.add(newVersion);
         }
     }
 }

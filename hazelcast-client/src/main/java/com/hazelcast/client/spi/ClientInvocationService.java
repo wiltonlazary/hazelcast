@@ -25,7 +25,10 @@ import com.hazelcast.nio.Connection;
 import java.io.IOException;
 
 /**
- * @author mdogan 5/16/13
+ * Invocation service for Hazelcast clients.
+ *
+ * Allows remote invocations on different targets like {@link ClientConnection},
+ * partition owners or {@link Address} based targets.
  */
 public interface ClientInvocationService {
 
@@ -45,4 +48,5 @@ public interface ClientInvocationService {
 
     void handleClientMessage(ClientMessage message, Connection connection);
 
+    ClientConnection getConnection(int partitionId) throws IOException;
 }

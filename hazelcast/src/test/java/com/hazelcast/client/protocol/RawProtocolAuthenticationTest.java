@@ -8,6 +8,7 @@ import com.hazelcast.config.Config;
 import com.hazelcast.config.GroupConfig;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.instance.BuildInfoProvider;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.nio.Address;
 import com.hazelcast.test.HazelcastSerialClassRunner;
@@ -20,7 +21,6 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.EOFException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -28,6 +28,7 @@ import java.nio.channels.SocketChannel;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -85,28 +86,13 @@ public class RawProtocolAuthenticationTest {
         String pass = GroupConfig.DEFAULT_GROUP_PASSWORD;
 
         final ClientMessage authMessage = ClientAuthenticationCodec.encodeRequest(username, pass, null, null,
-                true, ClientTypes.JAVA, InternalSerializationService.VERSION_1);
+                true, ClientTypes.JAVA, InternalSerializationService.VERSION_1, BuildInfoProvider.getBuildInfo().getVersion());
         authMessage.setCorrelationId(1).addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
 
         final ClientProtocolBuffer byteBuffer = authMessage.buffer();
         channel.write(ByteBuffer.wrap(byteBuffer.byteArray(), 0, authMessage.getFrameLength()));
 
-        final ByteBuffer socketBuffer = ByteBuffer.allocate(4096);
-        ClientMessage clientMessage = ClientMessage.create();
-
-        do {
-            int read = channel.read(socketBuffer);
-            if (read < 0) {
-                throw new EOFException();
-            }
-            socketBuffer.flip();
-            clientMessage.readFrom(socketBuffer);
-            if (socketBuffer.hasRemaining()) {
-                socketBuffer.compact();
-            } else {
-                socketBuffer.clear();
-            }
-        } while (!clientMessage.isComplete());
+        ClientMessage clientMessage = readMessageFromChannel();
 
         assertTrue(clientMessage.isComplete());
 
@@ -118,7 +104,7 @@ public class RawProtocolAuthenticationTest {
         assertEquals(resultParameters.serializationVersion, 1);
         assertEquals(resultParameters.ownerUuid, server.getCluster().getLocalMember().getUuid());
         assertNotNull(UUID.fromString(resultParameters.uuid));
-        assertEquals(new Address("127.0.0.1", 5701), resultParameters.address);
+        assertEquals(server.getCluster().getLocalMember().getAddress(), resultParameters.address);
     }
 
     @Test
@@ -132,28 +118,14 @@ public class RawProtocolAuthenticationTest {
         String pass = "TheInvalidPassword";
 
         final ClientMessage authMessage = ClientAuthenticationCodec
-                .encodeRequest(username, pass, null, null, true, ClientTypes.JAVA, InternalSerializationService.VERSION_1);
+                .encodeRequest(username, pass, null, null, true, ClientTypes.JAVA, InternalSerializationService.VERSION_1,
+                        BuildInfoProvider.getBuildInfo().getVersion());
         authMessage.setCorrelationId(1).addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
 
         final ClientProtocolBuffer byteBuffer = authMessage.buffer();
         channel.write(ByteBuffer.wrap(byteBuffer.byteArray(), 0, authMessage.getFrameLength()));
 
-        final ByteBuffer socketBuffer = ByteBuffer.allocate(4096);
-        ClientMessage clientMessage = ClientMessage.create();
-
-        do {
-            int read = channel.read(socketBuffer);
-            if (read < 0) {
-                throw new EOFException();
-            }
-            socketBuffer.flip();
-            clientMessage.readFrom(socketBuffer);
-            if (socketBuffer.hasRemaining()) {
-                socketBuffer.compact();
-            } else {
-                socketBuffer.clear();
-            }
-        } while (!clientMessage.isComplete());
+        ClientMessage clientMessage = readMessageFromChannel();
 
         assertTrue(clientMessage.isComplete());
 
@@ -179,28 +151,14 @@ public class RawProtocolAuthenticationTest {
         String pass = GroupConfig.DEFAULT_GROUP_PASSWORD;
 
         final ClientMessage authMessage = ClientAuthenticationCodec
-                .encodeRequest(username, pass, null, null, true, ClientTypes.JAVA, (byte) 0);
+                .encodeRequest(username, pass, null, null, true, ClientTypes.JAVA, (byte) 0,
+                        BuildInfoProvider.getBuildInfo().getVersion());
         authMessage.setCorrelationId(1).addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
 
         final ClientProtocolBuffer byteBuffer = authMessage.buffer();
         channel.write(ByteBuffer.wrap(byteBuffer.byteArray(), 0, authMessage.getFrameLength()));
 
-        final ByteBuffer socketBuffer = ByteBuffer.allocate(4096);
-        ClientMessage clientMessage = ClientMessage.create();
-
-        do {
-            int read = channel.read(socketBuffer);
-            if (read < 0) {
-                throw new EOFException();
-            }
-            socketBuffer.flip();
-            clientMessage.readFrom(socketBuffer);
-            if (socketBuffer.hasRemaining()) {
-                socketBuffer.compact();
-            } else {
-                socketBuffer.clear();
-            }
-        } while (!clientMessage.isComplete());
+        ClientMessage clientMessage = readMessageFromChannel();
 
         assertTrue(clientMessage.isComplete());
 
@@ -215,7 +173,7 @@ public class RawProtocolAuthenticationTest {
         assertNull(resultParameters.address);
     }
 
-    @Test(expected = EOFException.class)
+    @Test
     public void testAuthenticateWithUsernameAndPassword_with_Invalid_MessageSize()
             throws IOException, InterruptedException {
 
@@ -226,19 +184,32 @@ public class RawProtocolAuthenticationTest {
         String pass = GroupConfig.DEFAULT_GROUP_PASSWORD;
 
         final ClientMessage authMessage = ClientAuthenticationCodec
-                .encodeRequest(username, pass, null, null, true, ClientTypes.JAVA, (byte) 0);
+                .encodeRequest(username, pass, null, null, true, ClientTypes.JAVA, (byte) 0,
+                        BuildInfoProvider.getBuildInfo().getVersion());
         authMessage.setCorrelationId(1).addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
 
-        final ClientProtocolBuffer byteBuffer = authMessage.buffer();
-        channel.write(ByteBuffer.wrap(byteBuffer.byteArray()));
+        //set invalid message size
+        authMessage.setFrameLength(ClientMessage.HEADER_SIZE - 1);
 
+        final ClientProtocolBuffer byteBuffer = authMessage.buffer();
+        channel.write(ByteBuffer.wrap(byteBuffer.byteArray(), 0, authMessage.getFrameLength()));
+
+        ClientMessage clientMessage = readMessageFromChannel();
+
+        assertFalse(clientMessage.isComplete());
+    }
+
+    private ClientMessage readMessageFromChannel()
+            throws IOException {
         final ByteBuffer socketBuffer = ByteBuffer.allocate(4096);
         ClientMessage clientMessage = ClientMessage.create();
-
         do {
             int read = channel.read(socketBuffer);
-            if (read < 0) {
-                throw new EOFException();
+            if (read <= 0) {
+                if (read == -1) {
+                    break;
+                }
+                continue;
             }
             socketBuffer.flip();
             clientMessage.readFrom(socketBuffer);
@@ -248,6 +219,6 @@ public class RawProtocolAuthenticationTest {
                 socketBuffer.clear();
             }
         } while (!clientMessage.isComplete());
+        return clientMessage;
     }
-
 }

@@ -21,6 +21,7 @@ import com.hazelcast.instance.OutOfMemoryErrorDispatcher;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -31,7 +32,6 @@ public final class ExceptionUtil {
     private static final String EXCEPTION_SEPARATOR = "------ submitted from ------";
     private static final String EXCEPTION_MESSAGE_SEPARATOR = "------ %MSG% ------";
 
-    //we don't want instances
     private ExceptionUtil() {
     }
 
@@ -57,7 +57,7 @@ public final class ExceptionUtil {
             return t;
         }
 
-        if (t instanceof ExecutionException) {
+        if (t instanceof ExecutionException || t instanceof InvocationTargetException) {
             final Throwable cause = t.getCause();
             if (cause != null) {
                 return peel(cause, allowedType);
@@ -112,7 +112,6 @@ public final class ExceptionUtil {
         }
     }
 
-
     public static RuntimeException rethrowAllowInterrupted(final Throwable t) throws InterruptedException {
         return rethrow(t, InterruptedException.class);
     }
@@ -134,7 +133,7 @@ public final class ExceptionUtil {
      * cause, this inner cause is unwrapped and the local stacktrace and exception message are added to the
      * that instead of the given asyncCause itself.
      *
-     * @param asyncCause         the async exception
+     * @param asyncCause          the async exception
      * @param localSideStackTrace the local stacktrace to add to the exception stacktrace
      */
     public static void fixAsyncStackTrace(Throwable asyncCause, StackTraceElement[] localSideStackTrace) {
@@ -158,13 +157,12 @@ public final class ExceptionUtil {
      * cause, this inner cause is unwrapped and the local stacktrace and exception message are added to the
      * that instead of the given remoteCause itself.
      *
-     * @param asyncCause           the async exception
+     * @param asyncCause            the async exception
      * @param localSideStackTrace   the local stacktrace to add to the exceptions stacktrace
      * @param localExceptionMessage a special exception message which is added to the stacktrace
      */
     public static void fixAsyncStackTrace(Throwable asyncCause, StackTraceElement[] localSideStackTrace,
                                           String localExceptionMessage) {
-
         Throwable throwable = asyncCause;
         if (asyncCause instanceof ExecutionException && throwable.getCause() != null) {
             throwable = throwable.getCause();
@@ -181,6 +179,4 @@ public final class ExceptionUtil {
         System.arraycopy(localSideStackTrace, 1, newStackTrace, remoteStackTrace.length + 2, localSideStackTrace.length - 1);
         throwable.setStackTrace(newStackTrace);
     }
-
-
 }

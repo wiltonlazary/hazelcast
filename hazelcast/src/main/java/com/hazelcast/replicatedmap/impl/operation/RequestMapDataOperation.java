@@ -17,7 +17,6 @@
 package com.hazelcast.replicatedmap.impl.operation;
 
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.logging.Logger;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -26,7 +25,6 @@ import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.replicatedmap.impl.record.RecordMigrationInfo;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecord;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecordStore;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.serialization.SerializationService;
 
@@ -42,9 +40,7 @@ import static com.hazelcast.replicatedmap.impl.ReplicatedMapService.SERVICE_NAME
  * Collects and sends the replicated map data from the executing node to the caller via
  * {@link SyncReplicatedMapDataOperation}.
  */
-public class RequestMapDataOperation extends AbstractOperation {
-
-    private static ILogger logger = Logger.getLogger(RequestMapDataOperation.class.getName());
+public class RequestMapDataOperation extends AbstractSerializableOperation {
 
     String name;
 
@@ -57,23 +53,33 @@ public class RequestMapDataOperation extends AbstractOperation {
 
     @Override
     public void run() throws Exception {
-        logger.finest("Caller { " + getCallerAddress() + " } requested copy of map -> " + name
-                + ", on partition -> " + getPartitionId());
+        ILogger logger = getLogger();
+        int partitionId = getPartitionId();
+        if (logger.isFineEnabled()) {
+            logger.fine("Caller { " + getCallerAddress() + " } requested copy of map: " + name
+                    + " partitionId=" + partitionId);
+        }
         ReplicatedMapService service = getService();
-        PartitionContainer container = service.getPartitionContainer(getPartitionId());
+        PartitionContainer container = service.getPartitionContainer(partitionId);
         ReplicatedRecordStore store = container.getRecordStore(name);
         if (store == null) {
-            logger.finest("No data is found on this store to respond data request");
+            if (logger.isFineEnabled()) {
+                logger.fine("No store is found for map: " + name + " to respond data request. partitionId=" + partitionId);
+            }
+
             return;
         }
         long version = store.getVersion();
         Set<RecordMigrationInfo> recordSet = getRecordSet(store);
         if (recordSet.isEmpty()) {
-            logger.finest("No data is found on this store to respond data request");
+            if (logger.isFineEnabled()) {
+                logger.fine("No data is found on this store for map: " + name +  " to respond data request. partitionId="
+                        + partitionId);
+            }
             return;
         }
         SyncReplicatedMapDataOperation op = new SyncReplicatedMapDataOperation(name, recordSet, version);
-        op.setPartitionId(getPartitionId());
+        op.setPartitionId(partitionId);
         op.setValidateTarget(false);
         OperationService operationService = getNodeEngine().getOperationService();
         operationService
@@ -104,5 +110,10 @@ public class RequestMapDataOperation extends AbstractOperation {
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         name = in.readUTF();
+    }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.REQUEST_MAP_DATA;
     }
 }

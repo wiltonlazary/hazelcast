@@ -20,10 +20,6 @@ import com.hazelcast.cache.impl.CacheEventData;
 import com.hazelcast.cache.impl.CacheEventListenerAdaptor;
 import com.hazelcast.cache.impl.CacheProxyUtil;
 import com.hazelcast.cache.impl.CacheSyncListenerCompleter;
-import com.hazelcast.cache.impl.nearcache.NearCache;
-import com.hazelcast.cache.impl.nearcache.NearCacheContext;
-import com.hazelcast.cache.impl.nearcache.NearCacheExecutor;
-import com.hazelcast.cache.impl.nearcache.NearCacheManager;
 import com.hazelcast.cache.impl.operation.MutableOperation;
 import com.hazelcast.client.impl.ClientMessageDecoder;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
@@ -40,7 +36,6 @@ import com.hazelcast.client.impl.protocol.codec.CacheRemoveAllKeysCodec;
 import com.hazelcast.client.impl.protocol.codec.CacheRemoveCodec;
 import com.hazelcast.client.impl.protocol.codec.CacheRemoveEntryListenerCodec;
 import com.hazelcast.client.impl.protocol.codec.CacheReplaceCodec;
-import com.hazelcast.client.spi.ClientExecutionService;
 import com.hazelcast.client.spi.ClientListenerService;
 import com.hazelcast.client.spi.EventHandler;
 import com.hazelcast.client.spi.impl.ClientInvocation;
@@ -49,11 +44,18 @@ import com.hazelcast.client.spi.impl.ListenerMessageCodec;
 import com.hazelcast.client.util.ClientDelegatingFuture;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.config.NearCacheConfig;
-import com.hazelcast.core.Client;
 import com.hazelcast.core.ExecutionCallback;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.ICompletableFuture;
+import com.hazelcast.internal.adapter.ICacheDataStructureAdapter;
+import com.hazelcast.internal.nearcache.NearCache;
+import com.hazelcast.internal.nearcache.NearCacheManager;
+import com.hazelcast.internal.nearcache.impl.invalidation.RepairingHandler;
+import com.hazelcast.internal.nearcache.impl.invalidation.RepairingTask;
+import com.hazelcast.map.impl.nearcache.InvalidationAwareWrapper;
+import com.hazelcast.map.impl.nearcache.KeyStateMarker;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.ExceptionUtil;
 import com.hazelcast.util.executor.CompletedFuture;
 
@@ -64,16 +66,19 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.cache.impl.CacheProxyUtil.validateNotNull;
+import static com.hazelcast.cache.impl.ICacheService.SERVICE_NAME;
 import static com.hazelcast.cache.impl.operation.MutableOperation.IGNORE_COMPLETION;
+import static com.hazelcast.map.impl.nearcache.InvalidationAwareWrapper.asInvalidationAware;
+import static com.hazelcast.map.impl.nearcache.KeyStateMarker.TRUE_MARKER;
 import static com.hazelcast.util.ExceptionUtil.rethrow;
 import static com.hazelcast.util.ExceptionUtil.rethrowAllowedTypeFirst;
 
@@ -81,20 +86,20 @@ import static com.hazelcast.util.ExceptionUtil.rethrowAllowedTypeFirst;
  * Abstract {@link com.hazelcast.cache.ICache} implementation which provides shared internal implementations
  * of cache operations like put, replace, remove and invoke. These internal implementations are delegated
  * by actual cache methods.
- * <p/>
- * <p>Note: this partial implementation is used by client.</p>
+ * <p>
+ * Note: this partial implementation is used by client.
  *
  * @param <K> the type of key
  * @param <V> the type of value
  */
 @SuppressWarnings({"checkstyle:methodcount", "checkstyle:classdataabstractioncoupling", "checkstyle:classfanoutcomplexity"})
-abstract class AbstractClientInternalCacheProxy<K, V>
-        extends AbstractClientCacheProxyBase<K, V>
+abstract class AbstractClientInternalCacheProxy<K, V> extends AbstractClientCacheProxyBase<K, V>
         implements CacheSyncListenerCompleter {
 
     private static final long MAX_COMPLETION_LATCH_WAIT_TIME = TimeUnit.MINUTES.toMillis(5);
     private static final long COMPLETION_LATCH_WAIT_TIME_STEP = TimeUnit.SECONDS.toMillis(1);
 
+    @SuppressWarnings("unchecked")
     private static final ClientMessageDecoder GET_AND_REMOVE_RESPONSE_DECODER = new ClientMessageDecoder() {
         @Override
         public <T> T decodeClientMessage(ClientMessage clientMessage) {
@@ -102,6 +107,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         }
     };
 
+    @SuppressWarnings("unchecked")
     private static final ClientMessageDecoder REMOVE_RESPONSE_DECODER = new ClientMessageDecoder() {
         @Override
         public <T> T decodeClientMessage(ClientMessage clientMessage) {
@@ -109,6 +115,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         }
     };
 
+    @SuppressWarnings("unchecked")
     private static final ClientMessageDecoder REPLACE_RESPONSE_DECODER = new ClientMessageDecoder() {
         @Override
         public <T> T decodeClientMessage(ClientMessage clientMessage) {
@@ -116,6 +123,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         }
     };
 
+    @SuppressWarnings("unchecked")
     private static final ClientMessageDecoder GET_AND_REPLACE_RESPONSE_DECODER = new ClientMessageDecoder() {
         @Override
         public <T> T decodeClientMessage(ClientMessage clientMessage) {
@@ -123,6 +131,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         }
     };
 
+    @SuppressWarnings("unchecked")
     private static final ClientMessageDecoder PUT_RESPONSE_DECODER = new ClientMessageDecoder() {
         @Override
         public <T> T decodeClientMessage(ClientMessage clientMessage) {
@@ -130,6 +139,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         }
     };
 
+    @SuppressWarnings("unchecked")
     private static final ClientMessageDecoder PUT_IF_ABSENT_RESPONSE_DECODER = new ClientMessageDecoder() {
         @Override
         public <T> T decodeClientMessage(ClientMessage clientMessage) {
@@ -138,20 +148,25 @@ abstract class AbstractClientInternalCacheProxy<K, V>
     };
 
     protected HazelcastClientCacheManager cacheManager;
+    protected RepairingHandler repairingHandler;
     protected NearCacheManager nearCacheManager;
     // Object => Data or <V>
-    protected NearCache<Data, Object> nearCache;
+    protected NearCache<Object, Object> nearCache;
+    /**
+     * used when this cache has no near cache configured
+     */
+    protected KeyStateMarker keyStateMarker = TRUE_MARKER;
+
     protected String nearCacheMembershipRegistrationId;
-
     protected ClientCacheStatisticsImpl statistics;
-    protected boolean statisticsEnabled;
 
+    protected boolean statisticsEnabled;
     protected boolean cacheOnUpdate;
     private final ConcurrentMap<CacheEntryListenerConfiguration, String> asyncListenerRegistrations;
     private final ConcurrentMap<CacheEntryListenerConfiguration, String> syncListenerRegistrations;
     private final ConcurrentMap<Integer, CountDownLatch> syncLocks;
 
-    protected AbstractClientInternalCacheProxy(CacheConfig cacheConfig) {
+    protected AbstractClientInternalCacheProxy(CacheConfig<K, V> cacheConfig) {
         super(cacheConfig);
         this.asyncListenerRegistrations = new ConcurrentHashMap<CacheEntryListenerConfiguration, String>();
         this.syncListenerRegistrations = new ConcurrentHashMap<CacheEntryListenerConfiguration, String>();
@@ -167,8 +182,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         initNearCache();
 
         if (nearCache != null) {
-            statistics = new ClientCacheStatisticsImpl(System.currentTimeMillis(),
-                                                       nearCache.getNearCacheStats());
+            statistics = new ClientCacheStatisticsImpl(System.currentTimeMillis(), nearCache.getNearCacheStats());
         } else {
             statistics = new ClientCacheStatisticsImpl(System.currentTimeMillis());
         }
@@ -190,33 +204,10 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         NearCacheConfig nearCacheConfig = clientContext.getClientConfig().getNearCacheConfig(name);
         if (nearCacheConfig != null) {
             cacheOnUpdate = nearCacheConfig.getLocalUpdatePolicy() == NearCacheConfig.LocalUpdatePolicy.CACHE;
-            NearCacheContext nearCacheContext =
-                    new NearCacheContext(
-                            nearCacheManager,
-                            clientContext.getSerializationService(),
-                            createNearCacheExecutor(clientContext.getExecutionService()),
-                            null);
-            nearCache = nearCacheManager.getOrCreateNearCache(nameWithPrefix, nearCacheConfig, nearCacheContext);
+            ICacheDataStructureAdapter<K, V> adapter = new ICacheDataStructureAdapter<K, V>(this);
+            nearCache = nearCacheManager.getOrCreateNearCache(nameWithPrefix, nearCacheConfig, adapter);
             registerInvalidationListener();
         }
-    }
-
-    private static final class ClientNearCacheExecutor implements NearCacheExecutor {
-
-        private ClientExecutionService clientExecutionService;
-
-        private ClientNearCacheExecutor(ClientExecutionService clientExecutionService) {
-            this.clientExecutionService = clientExecutionService;
-        }
-
-        @Override
-        public ScheduledFuture<?> scheduleWithRepetition(Runnable command, long initialDelay, long delay, TimeUnit unit) {
-            return clientExecutionService.scheduleWithRepetition(command, initialDelay, delay, unit);
-        }
-    }
-
-    private NearCacheExecutor createNearCacheExecutor(ClientExecutionService clientExecutionService) {
-        return new ClientNearCacheExecutor(clientExecutionService);
     }
 
     @Override
@@ -243,13 +234,13 @@ abstract class AbstractClientInternalCacheProxy<K, V>
     }
 
     protected ClientInvocationFuture invoke(ClientMessage req, int partitionId, int completionId) {
-        final boolean completionOperation = completionId != -1;
+        boolean completionOperation = completionId != -1;
         if (completionOperation) {
             registerCompletionLatch(completionId, 1);
         }
         try {
             HazelcastClientInstanceImpl client = (HazelcastClientInstanceImpl) clientContext.getHazelcastInstance();
-            final ClientInvocation clientInvocation = new ClientInvocation(client, req, partitionId);
+            ClientInvocation clientInvocation = new ClientInvocation(client, req, partitionId);
             ClientInvocationFuture f = clientInvocation.invoke();
             if (completionOperation) {
                 waitCompletionLatch(completionId, f);
@@ -322,9 +313,9 @@ abstract class AbstractClientInternalCacheProxy<K, V>
             validateNotNull(key);
             CacheProxyUtil.validateConfiguredTypes(cacheConfig, key);
         }
-        final Data keyData = toData(key);
-        final Data oldValueData = toData(oldValue);
-        final int completionId = withCompletionEvent ? nextCompletionId() : -1;
+        Data keyData = toData(key);
+        Data oldValueData = toData(oldValue);
+        int completionId = withCompletionEvent ? nextCompletionId() : -1;
         ClientMessage request = CacheRemoveCodec.encodeRequest(nameWithPrefix, keyData, oldValueData, completionId);
         ClientInvocationFuture future;
         try {
@@ -368,8 +359,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
     }
 
     protected <T> ICompletableFuture<T> replaceInternal(K key, V oldValue, V newValue, ExpiryPolicy expiryPolicy,
-                                                        boolean hasOldValue, boolean withCompletionEvent,
-                                                        boolean async) {
+                                                        boolean hasOldValue, boolean withCompletionEvent, boolean async) {
         final long start = System.nanoTime();
         ensureOpen();
         if (hasOldValue) {
@@ -380,11 +370,11 @@ abstract class AbstractClientInternalCacheProxy<K, V>
             CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, newValue);
         }
 
-        final Data keyData = toData(key);
-        final Data oldValueData = toData(oldValue);
-        final Data newValueData = toData(newValue);
-        final Data expiryPolicyData = toData(expiryPolicy);
-        final int completionId = withCompletionEvent ? nextCompletionId() : -1;
+        Data keyData = toData(key);
+        Data oldValueData = toData(oldValue);
+        Data newValueData = toData(newValue);
+        Data expiryPolicyData = toData(expiryPolicy);
+        int completionId = withCompletionEvent ? nextCompletionId() : -1;
         ClientMessage request = CacheReplaceCodec.encodeRequest(nameWithPrefix, keyData, oldValueData, newValueData,
                 expiryPolicyData, completionId);
         ClientInvocationFuture future;
@@ -424,10 +414,10 @@ abstract class AbstractClientInternalCacheProxy<K, V>
             CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, newValue);
         }
 
-        final Data keyData = toData(key);
-        final Data newValueData = toData(newValue);
-        final Data expiryPolicyData = toData(expiryPolicy);
-        final int completionId = withCompletionEvent ? nextCompletionId() : -1;
+        Data keyData = toData(key);
+        Data newValueData = toData(newValue);
+        Data expiryPolicyData = toData(expiryPolicy);
+        int completionId = withCompletionEvent ? nextCompletionId() : -1;
         ClientMessage request = CacheGetAndReplaceCodec.encodeRequest(nameWithPrefix, keyData, newValueData, expiryPolicyData,
                 completionId);
         ClientInvocationFuture future;
@@ -475,7 +465,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         }
     }
 
-    protected Object putInternal(K key, final V value, ExpiryPolicy expiryPolicy, boolean isGet, boolean withCompletionEvent,
+    protected Object putInternal(K key, V value, ExpiryPolicy expiryPolicy, boolean isGet, boolean withCompletionEvent,
                                  boolean async) {
         long start = System.nanoTime();
         ensureOpen();
@@ -485,6 +475,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         Data keyData = toData(key);
         Data valueData = toData(value);
         Data expiryPolicyData = toData(expiryPolicy);
+        boolean marked = !cacheOnUpdate || keyStateMarker.markIfUnmarked(keyData);
         int completionId = withCompletionEvent ? nextCompletionId() : -1;
         ClientMessage request = CachePutCodec.encodeRequest(nameWithPrefix, keyData, valueData, expiryPolicyData, isGet,
                 completionId);
@@ -492,25 +483,26 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         try {
             future = invoke(request, keyData, completionId);
         } catch (Exception e) {
+            resetToUnmarkedState(keyData);
             throw rethrow(e);
         }
 
         if (async) {
-            return putInternalAsync(value, isGet, start, keyData, valueData, future);
+            return putInternalAsync(value, isGet, start, keyData, valueData, future, marked);
         }
-        return putInternalSync(value, isGet, start, keyData, valueData, future);
+        return putInternalSync(value, isGet, start, keyData, valueData, future, marked);
     }
 
     private Object putInternalAsync(final V value, final boolean isGet, final long start, final Data keyData,
-                                    final Data valueData, ClientInvocationFuture future) {
-        OneShotExecutionCallback oneShotExecutionCallback = null;
+                                    final Data valueData, ClientInvocationFuture future, final boolean marked) {
+        OneShotExecutionCallback<V> oneShotExecutionCallback = null;
         if (nearCache != null || statisticsEnabled) {
-            oneShotExecutionCallback = new OneShotExecutionCallback() {
+            oneShotExecutionCallback = new OneShotExecutionCallback<V>() {
                 @Override
-                protected void onResponseInternal(Object responseData) {
+                protected void onResponseInternal(V responseData) {
                     if (nearCache != null) {
                         if (cacheOnUpdate) {
-                            storeInNearCache(keyData, valueData, value);
+                            storeInNearCache(keyData, valueData, value, marked);
                         } else {
                             invalidateNearCache(keyData);
                         }
@@ -522,41 +514,44 @@ abstract class AbstractClientInternalCacheProxy<K, V>
 
                 @Override
                 protected void onFailureInternal(Throwable t) {
+                    if (nearCache != null && cacheOnUpdate) {
+                        resetToUnmarkedState(keyData);
+                    }
                 }
             };
         }
-        ClientDelegatingFuture delegatingFuture;
-        if (oneShotExecutionCallback != null) {
-            delegatingFuture =
-                    new CallbackAwareClientDelegatingFuture(future, clientContext.getSerializationService(),
-                            PUT_RESPONSE_DECODER, oneShotExecutionCallback);
-            delegatingFuture.andThen(oneShotExecutionCallback);
-        } else {
-            delegatingFuture =
-                    new ClientDelegatingFuture(future, clientContext.getSerializationService(), PUT_RESPONSE_DECODER);
+
+        SerializationService serializationService = clientContext.getSerializationService();
+        if (oneShotExecutionCallback == null) {
+            return new ClientDelegatingFuture<V>(future, serializationService, PUT_RESPONSE_DECODER);
         }
+        ClientDelegatingFuture<V> delegatingFuture = new CallbackAwareClientDelegatingFuture<V>(future,
+                serializationService, PUT_RESPONSE_DECODER, oneShotExecutionCallback);
+        delegatingFuture.andThen(oneShotExecutionCallback);
         return delegatingFuture;
     }
 
     private Object putInternalSync(V value, boolean isGet, long start, Data keyData, Data valueData,
-                                   ClientInvocationFuture future) {
+                                   ClientInvocationFuture future, boolean marked) {
         try {
-            ClientDelegatingFuture delegatingFuture = new ClientDelegatingFuture(future, clientContext.getSerializationService(),
-                    PUT_RESPONSE_DECODER);
+            ClientDelegatingFuture delegatingFuture = new ClientDelegatingFuture(future,
+                    clientContext.getSerializationService(), PUT_RESPONSE_DECODER);
             Object response = delegatingFuture.get();
-            if (nearCache != null) {
-                if (cacheOnUpdate) {
-                    storeInNearCache(keyData, valueData, value);
-                } else {
-                    invalidateNearCache(keyData);
-                }
-            }
+
             if (statisticsEnabled) {
                 handleStatisticsOnPut(isGet, start, response);
             }
             return response;
         } catch (Throwable e) {
             throw rethrowAllowedTypeFirst(e, CacheException.class);
+        } finally {
+            if (nearCache != null) {
+                if (cacheOnUpdate) {
+                    storeInNearCache(keyData, valueData, value, marked);
+                } else {
+                    invalidateNearCache(keyData);
+                }
+            }
         }
     }
 
@@ -574,14 +569,15 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         }
     }
 
-    protected Object putIfAbsentInternal(K key, V value, ExpiryPolicy expiryPolicy, boolean withCompletionEvent, boolean async) {
+    protected Object putIfAbsentInternal(K key, V value, ExpiryPolicy expiryPolicy, boolean withCompletionEvent,
+                                         boolean async) {
         long start = System.nanoTime();
         ensureOpen();
         validateNotNull(key, value);
         CacheProxyUtil.validateConfiguredTypes(cacheConfig, key, value);
-
         Data keyData = toData(key);
         Data valueData = toData(value);
+        boolean marked = !cacheOnUpdate || keyStateMarker.markIfUnmarked(keyData);
         Data expiryPolicyData = toData(expiryPolicy);
         int completionId = withCompletionEvent ? nextCompletionId() : -1;
         ClientMessage request = CachePutIfAbsentCodec.encodeRequest(nameWithPrefix, keyData, valueData,
@@ -590,26 +586,27 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         try {
             future = invoke(request, keyData, completionId);
         } catch (Exception e) {
+            resetToUnmarkedState(keyData);
             throw rethrow(e);
         }
         ClientDelegatingFuture<Boolean> delegatingFuture = new ClientDelegatingFuture<Boolean>(future,
                 clientContext.getSerializationService(), PUT_IF_ABSENT_RESPONSE_DECODER);
 
         if (async) {
-            return putIfAbsentInternalAsync(value, start, keyData, valueData, delegatingFuture);
+            return putIfAbsentInternalAsync(value, start, keyData, valueData, delegatingFuture, marked);
         }
-        return putIfAbsentInternalSync(value, start, keyData, valueData, delegatingFuture);
+        return putIfAbsentInternalSync(value, start, keyData, valueData, delegatingFuture, marked);
     }
 
     private Object putIfAbsentInternalAsync(final V value, final long start, final Data keyData, final Data valueData,
-                                            ClientDelegatingFuture<Boolean> delegatingFuture) {
+                                            ClientDelegatingFuture<Boolean> delegatingFuture, final boolean marked) {
         if (nearCache != null || statisticsEnabled) {
             delegatingFuture.andThen(new ExecutionCallback<Boolean>() {
                 @Override
                 public void onResponse(Boolean responseData) {
                     if (nearCache != null) {
                         if (cacheOnUpdate) {
-                            storeInNearCache(keyData, valueData, value);
+                            storeInNearCache(keyData, valueData, value, marked);
                         } else {
                             invalidateNearCache(keyData);
                         }
@@ -622,6 +619,9 @@ abstract class AbstractClientInternalCacheProxy<K, V>
 
                 @Override
                 public void onFailure(Throwable t) {
+                    if (nearCache != null && cacheOnUpdate) {
+                        resetToUnmarkedState(keyData);
+                    }
                 }
             });
         }
@@ -629,22 +629,24 @@ abstract class AbstractClientInternalCacheProxy<K, V>
     }
 
     private Object putIfAbsentInternalSync(V value, long start, Data keyData, Data valueData,
-                                           ClientDelegatingFuture<Boolean> delegatingFuture) {
+                                           ClientDelegatingFuture<Boolean> delegatingFuture, boolean marked) {
         try {
             Object response = delegatingFuture.get();
-            if (nearCache != null) {
-                if (cacheOnUpdate) {
-                    storeInNearCache(keyData, valueData, value);
-                } else {
-                    invalidateNearCache(keyData);
-                }
-            }
+
             if (statisticsEnabled) {
                 handleStatisticsOnPutIfAbsent(start, (Boolean) response);
             }
             return response;
         } catch (Throwable e) {
             throw rethrowAllowedTypeFirst(e, CacheException.class);
+        } finally {
+            if (nearCache != null) {
+                if (cacheOnUpdate) {
+                    storeInNearCache(keyData, valueData, value, marked);
+                } else {
+                    invalidateNearCache(keyData);
+                }
+            }
         }
     }
 
@@ -656,14 +658,14 @@ abstract class AbstractClientInternalCacheProxy<K, V>
     }
 
     protected void removeAllKeysInternal(Set<? extends K> keys) {
-        final long start = System.nanoTime();
-        final Set<Data> keysData;
+        long start = System.nanoTime();
+        Set<Data> keysData;
         keysData = new HashSet<Data>();
         for (K key : keys) {
             keysData.add(toData(key));
         }
-        final int partitionCount = clientContext.getPartitionService().getPartitionCount();
-        final int completionId = nextCompletionId();
+        int partitionCount = clientContext.getPartitionService().getPartitionCount();
+        int completionId = nextCompletionId();
         registerCompletionLatch(completionId, partitionCount);
         ClientMessage request = CacheRemoveAllKeysCodec.encodeRequest(nameWithPrefix, keysData, completionId);
         try {
@@ -683,8 +685,8 @@ abstract class AbstractClientInternalCacheProxy<K, V>
     }
 
     protected void removeAllInternal() {
-        final int partitionCount = clientContext.getPartitionService().getPartitionCount();
-        final int completionId = nextCompletionId();
+        int partitionCount = clientContext.getPartitionService().getPartitionCount();
+        int completionId = nextCompletionId();
         registerCompletionLatch(completionId, partitionCount);
         ClientMessage request = CacheRemoveAllCodec.encodeRequest(nameWithPrefix, completionId);
         try {
@@ -713,11 +715,30 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         }
     }
 
-    protected void storeInNearCache(Data key, Data valueData, V value) {
-        if (nearCache != null && valueData != null) {
+    protected void storeInNearCache(Data key, Data valueData, V value, boolean marked) {
+        if (!marked) {
+            return;
+        }
+
+        try {
+            if (nearCache == null || valueData == null) {
+                return;
+            }
+
             Object valueToStore = nearCache.selectToSave(value, valueData);
             nearCache.put(key, valueToStore);
+        } finally {
+            resetToUnmarkedState(key);
         }
+    }
+
+    public void resetToUnmarkedState(Data key) {
+        if (keyStateMarker.unmarkIfMarked(key)) {
+            return;
+        }
+
+        invalidateNearCache(key);
+        keyStateMarker.unmarkForcibly(key);
     }
 
     protected void invalidateNearCache(Data key) {
@@ -735,7 +756,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
     }
 
     protected String removeListenerLocally(CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
-        final ConcurrentMap<CacheEntryListenerConfiguration, String> regs;
+        ConcurrentMap<CacheEntryListenerConfiguration, String> regs;
         if (cacheEntryListenerConfiguration.isSynchronous()) {
             regs = syncListenerRegistrations;
         } else {
@@ -745,7 +766,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
     }
 
     protected String getListenerIdLocal(CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
-        final ConcurrentMap<CacheEntryListenerConfiguration, String> regs;
+        ConcurrentMap<CacheEntryListenerConfiguration, String> regs;
         if (cacheEntryListenerConfiguration.isSynchronous()) {
             regs = syncListenerRegistrations;
         } else {
@@ -784,9 +805,10 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         }
     }
 
+    @Override
     public void countDownCompletionLatch(int countDownLatchId) {
         if (countDownLatchId != IGNORE_COMPLETION) {
-            final CountDownLatch countDownLatch = syncLocks.get(countDownLatchId);
+            CountDownLatch countDownLatch = syncLocks.get(countDownLatchId);
             if (countDownLatch == null) {
                 return;
             }
@@ -813,10 +835,9 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         }
     }
 
-    protected void waitCompletionLatch(Integer countDownLatchId, ICompletableFuture future)
-            throws ExecutionException {
+    protected void waitCompletionLatch(Integer countDownLatchId, ICompletableFuture future) throws ExecutionException {
         if (countDownLatchId != IGNORE_COMPLETION) {
-            final CountDownLatch countDownLatch = syncLocks.get(countDownLatchId);
+            CountDownLatch countDownLatch = syncLocks.get(countDownLatchId);
             if (countDownLatch != null) {
                 awaitLatch(countDownLatch, future);
             }
@@ -863,8 +884,7 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         return new CacheEventHandler(adaptor);
     }
 
-    private final class CacheEventHandler
-            extends CacheAddEntryListenerCodec.AbstractEventHandler
+    private final class CacheEventHandler extends CacheAddEntryListenerCodec.AbstractEventHandler
             implements EventHandler<ClientMessage> {
 
         private final CacheEventListenerAdaptor<K, V> adaptor;
@@ -892,45 +912,18 @@ abstract class AbstractClientInternalCacheProxy<K, V>
                 clientContext.getExecutionService().getAsyncExecutor());
     }
 
-    private final class NearCacheInvalidationHandler
-            extends CacheAddInvalidationListenerCodec.AbstractEventHandler
+    private final class NearCacheRepairingHandlerAdapter extends CacheAddInvalidationListenerCodec.AbstractEventHandler
             implements EventHandler<ClientMessage> {
 
-        private final Client client;
-
-        private NearCacheInvalidationHandler(Client client) {
-            this.client = client;
+        @Override
+        public void handle(String name, Data key, String sourceUuid, UUID partitionUuid, long sequence) {
+            repairingHandler.handle(key, sourceUuid, partitionUuid, sequence);
         }
 
         @Override
-        public void handle(String name, Data key, String sourceUuid) {
-            if (client.getUuid().equals(sourceUuid)) {
-                return;
-            }
-            if (key != null) {
-                nearCache.remove(key);
-            } else {
-                nearCache.clear();
-            }
-        }
-
-        @Override
-        public void handle(String name, Collection<Data> keys, Collection<String> sourceUuids) {
-            if (sourceUuids != null && !sourceUuids.isEmpty()) {
-                Iterator<Data> keysIt = keys.iterator();
-                Iterator<String> sourceUuidsIt = sourceUuids.iterator();
-                while (keysIt.hasNext() && sourceUuidsIt.hasNext()) {
-                    Data key = keysIt.next();
-                    String sourceUuid = sourceUuidsIt.next();
-                    if (!client.getUuid().equals(sourceUuid)) {
-                        nearCache.remove(key);
-                    }
-                }
-            } else {
-                for (Data key : keys) {
-                    nearCache.remove(key);
-                }
-            }
+        public void handle(String name, Collection<Data> keys, Collection<String> sourceUuids,
+                           Collection<UUID> partitionUuids, Collection<Long> sequences) {
+            repairingHandler.handle(keys, sourceUuids, partitionUuids, sequences);
         }
 
         @Override
@@ -941,15 +934,25 @@ abstract class AbstractClientInternalCacheProxy<K, V>
         public void onListenerRegister() {
             nearCache.clear();
         }
+
     }
 
     private void registerInvalidationListener() {
-        if (nearCache != null && nearCache.isInvalidateOnChange()) {
-            Client client = clientContext.getClusterService().getLocalClient();
-            EventHandler handler = new NearCacheInvalidationHandler(client);
-            ListenerMessageCodec listenerCodec = createInvalidationListenerCodec();
-            nearCacheMembershipRegistrationId = clientContext.getListenerService().registerListener(listenerCodec, handler);
+        if (nearCache == null || !nearCache.isInvalidatedOnChange()) {
+            return;
         }
+
+        int partitionCount = getContext().getPartitionService().getPartitionCount();
+        nearCache = asInvalidationAware(nearCache, partitionCount);
+        keyStateMarker = ((InvalidationAwareWrapper) nearCache).getKeyStateMarker();
+
+        RepairingTask repairingTask = clientContext.getRepairingTask(SERVICE_NAME);
+        repairingHandler = repairingTask.registerAndGetHandler(nameWithPrefix, nearCache);
+        EventHandler handler = new NearCacheRepairingHandlerAdapter();
+        ListenerMessageCodec listenerCodec = createInvalidationListenerCodec();
+        ClientListenerService listenerService = clientContext.getListenerService();
+
+        nearCacheMembershipRegistrationId = listenerService.registerListener(listenerCodec, handler);
     }
 
     private ListenerMessageCodec createInvalidationListenerCodec() {
@@ -977,12 +980,17 @@ abstract class AbstractClientInternalCacheProxy<K, V>
     }
 
     private void removeInvalidationListener() {
-        if (nearCache != null && nearCache.isInvalidateOnChange()) {
+        if (nearCache != null && nearCache.isInvalidatedOnChange()) {
             String registrationId = nearCacheMembershipRegistrationId;
             if (registrationId != null) {
+                clientContext.getRepairingTask(SERVICE_NAME).deregisterHandler(name);
                 clientContext.getListenerService().deregisterListener(registrationId);
             }
         }
     }
 
+    // public for testing.
+    public KeyStateMarker getKeyStateMarker() {
+        return keyStateMarker;
+    }
 }

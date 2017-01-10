@@ -29,10 +29,9 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-
-import static org.junit.Assert.assertEquals;
 
 public final class TestNodeRegistry {
 
@@ -44,12 +43,16 @@ public final class TestNodeRegistry {
     }
 
     public NodeContext createNodeContext(Address address) {
+        return createNodeContext(address, Collections.EMPTY_SET);
+    }
+
+    public NodeContext createNodeContext(Address address, Set<Address> initiallyBlockedAddresses) {
         Node node;
         if ((node = nodes.get(address)) != null) {
-            assertEquals("This address is already in registry! " + address, NodeState.SHUT_DOWN, node.getState());
+            verifyInvariant(NodeState.SHUT_DOWN == node.getState(), "This address is already in registry! " + address);
             nodes.remove(address, node);
         }
-        return new MockNodeContext(this, address);
+        return new MockNodeContext(this, address, initiallyBlockedAddresses);
     }
 
     public HazelcastInstance getInstance(Address address) {
@@ -110,11 +113,17 @@ public final class TestNodeRegistry {
         Address address = node.getThisAddress();
         Node currentNode = nodes.putIfAbsent(address, node);
         if (currentNode != null) {
-            assertEquals("This address is already in registry! " + address, currentNode, node);
+            verifyInvariant(currentNode.equals(node), "This address is already in registry! " + address);
         }
     }
 
     Collection<Address> getAddresses() {
         return Collections.unmodifiableCollection(nodes.keySet());
+    }
+
+    private static void verifyInvariant(boolean check, String msg) {
+        if (!check) {
+            throw new AssertionError(msg);
+        }
     }
 }

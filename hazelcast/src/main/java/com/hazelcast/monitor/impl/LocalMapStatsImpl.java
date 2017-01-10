@@ -83,7 +83,7 @@ public class LocalMapStatsImpl implements LocalMapStats {
     private volatile long ownedEntryMemoryCost;
     private volatile long backupEntryMemoryCost;
     /**
-     * Holds total heap cost of map & near-cache & backups.
+     * Holds total heap cost of map & Near Cache & backups.
      */
     private volatile long heapCost;
     private volatile long lockedEntryCount;
@@ -217,7 +217,11 @@ public class LocalMapStatsImpl implements LocalMapStats {
     }
 
     public void incrementGets(long latency) {
-        GET_COUNT.incrementAndGet(this);
+        incrementGets(1, latency);
+    }
+
+    public void incrementGets(long delta, long latency) {
+        GET_COUNT.addAndGet(this, delta);
         TOTAL_GET_LATENCIES.addAndGet(this, latency);
         setMax(this, MAX_GET_LATENCY, latency);
     }

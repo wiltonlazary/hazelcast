@@ -16,6 +16,7 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import com.hazelcast.nio.serialization.DataSerializable;
 
 import javax.cache.configuration.CacheEntryListenerConfiguration;
@@ -34,8 +35,8 @@ import static com.hazelcast.util.Preconditions.checkNotNull;
 /**
  * Base class for {@link CacheConfig}
  */
+@BinaryInterface
 abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, DataSerializable {
-
 
     /**
      * The {@link CacheEntryListenerConfiguration}s for the {@link javax.cache.configuration.Configuration}.
@@ -139,6 +140,7 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
      * @throws IllegalArgumentException if the same CacheEntryListenerConfiguration
      *                                  is used more than once
      */
+    @Override
     public CacheConfiguration<K, V> addCacheEntryListenerConfiguration(
             CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
 
@@ -156,6 +158,7 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
      * @param cacheEntryListenerConfiguration the {@link CacheEntryListenerConfiguration} to remove
      * @return the {@link CacheConfig}
      */
+    @Override
     public CacheConfiguration<K, V> removeCacheEntryListenerConfiguration(
             CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
         checkNotNull(cacheEntryListenerConfiguration, "CacheEntryListenerConfiguration can't be null");
@@ -204,6 +207,7 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
      * @param enabled true to enable statistics, false to disable.
      * @return the {@link CacheConfig}
      */
+    @Override
     public CacheConfiguration<K, V> setStatisticsEnabled(boolean enabled) {
         this.isStatisticsEnabled = enabled;
         return this;
@@ -223,6 +227,7 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
      * @param enabled true to enable statistics, false to disable.
      * @return the {@link CacheConfig}
      */
+    @Override
     public CacheConfiguration<K, V> setManagementEnabled(boolean enabled) {
         this.isManagementEnabled = enabled;
         return this;
@@ -308,6 +313,7 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
      * @throws NullPointerException should the key or value type be null
      * @see javax.cache.CacheManager#getCache(String, Class, Class)
      */
+    @Override
     public CacheConfiguration<K, V> setTypes(Class<K> keyType, Class<V> valueType) {
         if (keyType == null || valueType == null) {
             throw new NullPointerException("keyType and/or valueType can't be null");
@@ -322,7 +328,6 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
         return isStoreByValue;
     }
 
-
     /**
      * Set if a configured cache should use store-by-value or store-by-reference
      * semantics.
@@ -331,6 +336,7 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
      *                     <code>false</code> for store-by-reference
      * @return the {@link CacheConfig}
      */
+    @Override
     public CacheConfiguration<K, V> setStoreByValue(boolean storeByValue) {
         this.isStoreByValue = storeByValue;
         return this;
@@ -338,6 +344,21 @@ abstract class AbstractCacheConfig<K, V> implements CacheConfiguration<K, V>, Da
 
     protected Set<CacheEntryListenerConfiguration<K, V>> createConcurrentSet() {
         return Collections.newSetFromMap(new ConcurrentHashMap<CacheEntryListenerConfiguration<K, V>, Boolean>());
+    }
+
+    public CacheConfiguration<K, V> setKeyType(Class<K> keyType) {
+        this.keyType = keyType;
+        return this;
+    }
+
+    public CacheConfiguration<K, V> setValueType(Class<V> valueType) {
+        this.valueType = valueType;
+        return this;
+    }
+
+    public CacheConfiguration<K, V> setListenerConfigurations() {
+        this.listenerConfigurations = createConcurrentSet();
+        return this;
     }
 
     @Override

@@ -16,39 +16,43 @@
 
 package com.hazelcast.replicatedmap.impl.operation;
 
-import com.hazelcast.cluster.memberselector.MemberSelectors;
 import com.hazelcast.core.Member;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecordStore;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.OperationService;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 
+import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_SELECTOR;
 import static com.hazelcast.replicatedmap.impl.ReplicatedMapService.INVOCATION_TRY_COUNT;
 
 /**
  * This operation will execute the remote clear on replicated map if
  * {@link com.hazelcast.core.ReplicatedMap#clear()} is called.
  */
-public class ClearOperation extends AbstractOperation implements IdentifiedDataSerializable {
+public class ClearOperation extends AbstractSerializableOperation {
 
     private String mapName;
     private boolean replicateClear;
+    private long version;
     private transient int response;
 
     public ClearOperation() {
     }
 
     public ClearOperation(String mapName, boolean replicateClear) {
+        this(mapName, replicateClear, 0);
+    }
+
+    public ClearOperation(String mapName, boolean replicateClear, long version) {
         this.mapName = mapName;
         this.replicateClear = replicateClear;
+        this.version = version;
     }
 
     @Override
@@ -62,17 +66,20 @@ public class ClearOperation extends AbstractOperation implements IdentifiedDataS
             return;
         }
         response = store.size();
-        store.clear();
+
         if (replicateClear) {
-            replicateClearOperation();
+            store.clear();
+            replicateClearOperation(version);
+        } else {
+            store.clearWithVersion(version);
         }
     }
 
-    protected void replicateClearOperation() {
+    private void replicateClearOperation(long version) {
         final OperationService operationService = getNodeEngine().getOperationService();
         Collection<Address> members = getMemberAddresses();
         for (Address address : members) {
-            ClearOperation clearOperation = new ClearOperation(mapName, false);
+            ClearOperation clearOperation = new ClearOperation(mapName, false, version);
             clearOperation.setPartitionId(getPartitionId());
             clearOperation.setValidateTarget(false);
             operationService
@@ -84,7 +91,7 @@ public class ClearOperation extends AbstractOperation implements IdentifiedDataS
 
     protected Collection<Address> getMemberAddresses() {
         Address thisAddress = getNodeEngine().getThisAddress();
-        Collection<Member> members = getNodeEngine().getClusterService().getMembers(MemberSelectors.DATA_MEMBER_SELECTOR);
+        Collection<Member> members = getNodeEngine().getClusterService().getMembers(DATA_MEMBER_SELECTOR);
         Collection<Address> addresses = new ArrayList<Address>();
         for (Member member : members) {
             Address address = member.getAddress();
@@ -94,12 +101,6 @@ public class ClearOperation extends AbstractOperation implements IdentifiedDataS
             addresses.add(address);
         }
         return addresses;
-    }
-
-
-    @Override
-    public boolean returnsResponse() {
-        return true;
     }
 
     @Override
@@ -119,7 +120,7 @@ public class ClearOperation extends AbstractOperation implements IdentifiedDataS
 
     @Override
     public int getId() {
-        return ReplicatedMapDataSerializerHook.OP_CLEAR;
+        return ReplicatedMapDataSerializerHook.CLEAR;
     }
 
     @Override
@@ -127,6 +128,7 @@ public class ClearOperation extends AbstractOperation implements IdentifiedDataS
         super.writeInternal(out);
         out.writeUTF(mapName);
         out.writeBoolean(replicateClear);
+        out.writeLong(version);
     }
 
     @Override
@@ -134,5 +136,6 @@ public class ClearOperation extends AbstractOperation implements IdentifiedDataS
         super.readInternal(in);
         mapName = in.readUTF();
         replicateClear = in.readBoolean();
+        version = in.readLong();
     }
 }

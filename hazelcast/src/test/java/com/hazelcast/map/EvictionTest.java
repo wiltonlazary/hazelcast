@@ -27,6 +27,7 @@ import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.EntryView;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.map.listener.EntryEvictedListener;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
@@ -48,9 +49,14 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static com.hazelcast.config.EvictionPolicy.LFU;
+import static com.hazelcast.config.EvictionPolicy.RANDOM;
+import static com.hazelcast.config.MaxSizeConfig.MaxSizePolicy.FREE_HEAP_PERCENTAGE;
 import static com.hazelcast.config.MaxSizeConfig.MaxSizePolicy.PER_NODE;
+import static com.hazelcast.config.MaxSizeConfig.MaxSizePolicy.PER_PARTITION;
+import static com.hazelcast.map.EvictionMaxSizePolicyTest.setMockRuntimeMemoryInfoAccessor;
 import static java.lang.String.format;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -58,6 +64,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+@SuppressWarnings("deprecation")
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class EvictionTest extends HazelcastTestSupport {
@@ -130,9 +137,6 @@ public class EvictionTest extends HazelcastTestSupport {
         assertNull(entryView);
     }
 
-    /*
-       github issue 455
-    */
     @Test
     public void testIssue455ZeroTTLShouldPreventEviction() throws InterruptedException {
         Config config = getConfig();
@@ -149,9 +153,6 @@ public class EvictionTest extends HazelcastTestSupport {
         assertEquals("value2", map.get("key"));
     }
 
-    /*
-       github issue 585
-    */
     @Test
     public void testIssue585ZeroTTLShouldPreventEvictionWithSet() throws InterruptedException {
         Config config = getConfig();
@@ -168,26 +169,25 @@ public class EvictionTest extends HazelcastTestSupport {
         assertEquals("value2", map.get("key"));
     }
 
-    /*
-       github issue 585
-    */
     @Test
     public void testIssue585SetWithoutTTL() throws InterruptedException {
-        IMap<String, String> map = createSimpleMap();
+        final IMap<String, String> map = createSimpleMap();
 
-        String key = "key";
+        final String key = "key";
 
-        map.set(key, "value", 1, TimeUnit.SECONDS);
+        map.set(key, "value", 5, TimeUnit.SECONDS);
         // this `set` operation should not affect existing ttl.
         // so "key" should be expired after 1 seconds.
         map.set(key, "value2");
 
-        assertSizeEventually(0, map, 300);
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertNull("Key should be expired after 1 seconds", map.get(key));
+            }
+        });
     }
 
-    /*
-       github issue 304
-    */
     @Test
     public void testIssue304EvictionDespitePut() throws InterruptedException {
         Config config = getConfig();
@@ -204,7 +204,6 @@ public class EvictionTest extends HazelcastTestSupport {
             }
         }, true);
 
-
         String key = "key";
         for (int i = 0; i < 5; i++) {
             map.put(key, System.currentTimeMillis());
@@ -215,8 +214,7 @@ public class EvictionTest extends HazelcastTestSupport {
     }
 
     // current eviction check period is 1 second.
-    // about 30.000 records can be put in one second
-    // so the size should be adapted
+    // about 30000 records can be put in one second, so the size should be adapted
     @Test
     public void testEvictionSpeedTest() throws InterruptedException {
         final int k = 3;
@@ -244,8 +242,8 @@ public class EvictionTest extends HazelcastTestSupport {
                     Thread.sleep(1000);
                     while (latch.getCount() != 0) {
                         try {
-                            int msize = map.size();
-                            if (msize > (size * k + size * k * 10 / 100)) {
+                            int mapSize = map.size();
+                            if (mapSize > (size * k + size * k * 10 / 100)) {
                                 success.set(false);
                                 break;
                             }
@@ -261,7 +259,7 @@ public class EvictionTest extends HazelcastTestSupport {
         }.start();
 
         for (int i = 0; i < k; i++) {
-            final IMap map = instances[i].getMap(mapName);
+            final IMap<String, Integer> map = instances[i].getMap(mapName);
             new Thread() {
                 public void run() {
                     for (int j = 0; j < size; j++) {
@@ -287,13 +285,13 @@ public class EvictionTest extends HazelcastTestSupport {
         mapConfig.setEvictionPolicy(EvictionPolicy.LRU);
         mapConfig.setEvictionPercentage(25);
         MaxSizeConfig maxSizeConfig = new MaxSizeConfig();
-        maxSizeConfig.setMaxSizePolicy(MaxSizeConfig.MaxSizePolicy.PER_PARTITION);
+        maxSizeConfig.setMaxSizePolicy(PER_PARTITION);
         maxSizeConfig.setSize(size);
         mapConfig.setMaxSizeConfig(maxSizeConfig);
 
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(k);
         final HazelcastInstance[] instances = factory.newInstances(config);
-        final int pnum = instances[0].getPartitionService().getPartitions().size();
+        final int pNum = instances[0].getPartitionService().getPartitions().size();
         final AtomicBoolean error = new AtomicBoolean(false);
 
         new Thread() {
@@ -305,7 +303,7 @@ public class EvictionTest extends HazelcastTestSupport {
                     while (latch.getCount() != 0) {
                         try {
                             int msize = map.size();
-                            if (msize > (size * pnum * 1.2)) {
+                            if (msize > (size * pNum * 1.2)) {
                                 error.set(true);
                             }
                             Thread.sleep(1000);
@@ -320,7 +318,7 @@ public class EvictionTest extends HazelcastTestSupport {
         }.start();
 
         for (int i = 0; i < k; i++) {
-            final IMap map = instances[i].getMap(mapName);
+            final IMap<String, Integer> map = instances[i].getMap(mapName);
             new Thread() {
                 public void run() {
                     for (int j = 0; j < 10000; j++) {
@@ -347,15 +345,15 @@ public class EvictionTest extends HazelcastTestSupport {
         mc.setEvictionPercentage(50);
         mc.setMinEvictionCheckMillis(0);
         final MaxSizeConfig msc = new MaxSizeConfig();
-        msc.setMaxSizePolicy(MaxSizeConfig.MaxSizePolicy.PER_PARTITION);
+        msc.setMaxSizePolicy(PER_PARTITION);
         msc.setSize(size);
         mc.setMaxSizeConfig(msc);
 
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(k);
         final HazelcastInstance[] instances = factory.newInstances(cfg);
-        final int pnum = instances[0].getPartitionService().getPartitions().size();
-        int insertCount = size * pnum * 2;
-        final Map map = instances[0].getMap(mapName);
+        final int pNum = instances[0].getPartitionService().getPartitions().size();
+        int insertCount = size * pNum * 2;
+        final Map<Integer, Integer> map = instances[0].getMap(mapName);
         for (int i = 0; i < insertCount; i++) {
             map.put(i, i);
         }
@@ -442,7 +440,6 @@ public class EvictionTest extends HazelcastTestSupport {
                 mapSize < mapMaxSize);
     }
 
-
     @Test
     public void testEvictionLFU2() {
         final int size = 10000;
@@ -492,7 +489,7 @@ public class EvictionTest extends HazelcastTestSupport {
 
         HazelcastInstance instance = createHazelcastInstance(config);
 
-        final IMap map = instance.getMap(mapName);
+        final IMap<Integer, Integer> map = instance.getMap(mapName);
         for (int i = 0; i < size; i++) {
             map.put(i, i);
         }
@@ -515,9 +512,8 @@ public class EvictionTest extends HazelcastTestSupport {
         MapConfig mapConfig = config.getMapConfig(mapName);
         mapConfig.setMaxIdleSeconds(maxIdleSeconds);
         HazelcastInstance instance = createHazelcastInstance(config);
-        IMap map = instance.getMap(mapName);
+        IMap<Integer, Integer> map = instance.getMap(mapName);
 
-        //populate map.
         for (int i = 0; i < size; i++) {
             map.put(i, i);
         }
@@ -567,7 +563,7 @@ public class EvictionTest extends HazelcastTestSupport {
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(3);
 
         HazelcastInstance instance1 = factory.newHazelcastInstance(cfg);
-        final IMap map = instance1.getMap(name);
+        final IMap<Integer, Integer> map = instance1.getMap(name);
         final CountDownLatch latch = new CountDownLatch(size - nsize);
         map.addEntryListener(new EntryAdapter() {
             public void entryEvicted(EntryEvent event) {
@@ -606,7 +602,7 @@ public class EvictionTest extends HazelcastTestSupport {
     public void testMapPutTTLWithListener() throws InterruptedException {
         final int putCount = 100;
         final CountDownLatch latch = new CountDownLatch(putCount);
-        IMap map = createSimpleMap();
+        IMap<Integer, Integer> map = createSimpleMap();
 
         map.addEntryListener(new EntryAdapter() {
             public void entryEvicted(final EntryEvent event) {
@@ -626,8 +622,6 @@ public class EvictionTest extends HazelcastTestSupport {
 
     /**
      * Test for issue 614
-     *
-     * @throws InterruptedException
      */
     @Test
     public void testContainsKeyShouldDelayEviction() throws InterruptedException {
@@ -659,7 +653,6 @@ public class EvictionTest extends HazelcastTestSupport {
         //3. So there should be a diff at least waitSeconds.
         final String failureMessage = format("Diff seconds %d, wait seconds %d", diffSecs, waitSeconds);
         assertTrue(failureMessage, diffSecs >= waitSeconds);
-
     }
 
     @Test
@@ -672,10 +665,10 @@ public class EvictionTest extends HazelcastTestSupport {
 
         final CountDownLatch latch = new CountDownLatch(entryCount);
 
-        final IMap map = instances[0].getMap(mapName);
-        map.addEntryListener(new EntryAdapter() {
+        final IMap<Integer, Integer> map = instances[0].getMap(mapName);
+        map.addEntryListener(new EntryAdapter<Integer, Integer>() {
             @Override
-            public void entryEvicted(EntryEvent event) {
+            public void entryEvicted(EntryEvent<Integer, Integer> event) {
                 super.entryEvicted(event);
                 latch.countDown();
             }
@@ -705,8 +698,6 @@ public class EvictionTest extends HazelcastTestSupport {
     /**
      * Test for the issue 537.
      * Eviction event is fired for an object already removed
-     *
-     * @throws Exception
      */
     @Test
     public void testEvictionAfterRemove() throws InterruptedException {
@@ -766,8 +757,6 @@ public class EvictionTest extends HazelcastTestSupport {
     /**
      * Test for the issue 2659.
      * Eviction event is fired for an object already removed
-     *
-     * @throws Exception
      */
     @Test
     public void testEvictionForNanosTTL() throws InterruptedException {
@@ -942,13 +931,13 @@ public class EvictionTest extends HazelcastTestSupport {
 
         final String key = getClass().getCanonicalName();
 
-        //1. put a key to expire.
+        // 1. put a key to expire.
         map.put(key, 1, 3, TimeUnit.SECONDS);
 
         final HazelcastInstance joinerNode = factory.newHazelcastInstance(config);
 
         // 2. Wait for expiration on owner node.
-        assertOpenEventually(evictedEntryCounterLatch);
+        assertOpenEventually(evictedEntryCounterLatch, 240);
 
         // 3. Shutdown owner.
         initialNode.shutdown();
@@ -956,7 +945,6 @@ public class EvictionTest extends HazelcastTestSupport {
         // 4. Key should be expired on new owner.
         assertExpirationOccuredOnJoinerNode(mapName, key, joinerNode);
     }
-
 
     @Test
     @Category(NightlyTest.class)
@@ -966,7 +954,7 @@ public class EvictionTest extends HazelcastTestSupport {
         HazelcastInstance[] nodes = factory.newInstances(getConfig());
         IMap<Integer, Integer> map = nodes[0].getMap(mapName);
 
-        //1. put keys with TTL.
+        // 1. put keys with TTL.
         for (int i = 0; i < 60; i++) {
             map.put(i, i, 5, TimeUnit.SECONDS);
         }
@@ -976,7 +964,7 @@ public class EvictionTest extends HazelcastTestSupport {
         nodes[1].shutdown();
 
         // 3. Background task should sweep all keys.
-        assertSizeEventually(0, map);
+        assertSizeEventually(0, map, 240);
     }
 
     private void assertExpirationOccuredOnJoinerNode(String mapName, String key, HazelcastInstance joinerNode) {
@@ -985,7 +973,6 @@ public class EvictionTest extends HazelcastTestSupport {
 
         assertNull("value of expired key should be null on a replicated partition", value);
     }
-
 
     @Test
     public void testGetAll_doesNotShiftLastUpdateTimeOfEntry() throws Exception {
@@ -1005,7 +992,98 @@ public class EvictionTest extends HazelcastTestSupport {
 
         assertEquals("getAll should not shift lastUpdateTime of the entry",
                 lastUpdateTimeBeforeGetAll, lastUpdateTimeAfterGetAll);
+    }
 
+    @Test
+    public void testRandomEvictionPolicyWorks() throws Exception {
+        Config config = getConfig();
+        int maxSize = 300;
+        config.getMapConfig("test").setEvictionPolicy(RANDOM).getMaxSizeConfig().setSize(maxSize).setMaxSizePolicy(PER_NODE);
+
+        HazelcastInstance node = createHazelcastInstance(config);
+        IMap<Integer, Integer> map = node.getMap("test");
+
+        for (int i = 0; i < 500; i++) {
+            map.put(i, i);
+        }
+
+        int size = map.size();
+        String message = "map-size should be smaller than max-size but found [map-size = %d and max-size = %d]";
+        assertTrue(format(message, size, maxSize), size <= maxSize);
+    }
+
+    @Test
+    public void testLastAddedKey_notEvicted() throws Exception {
+        Config config = getConfig();
+        config.setProperty(GroupProperty.PARTITION_COUNT.getName(), "1");
+        config.getMapConfig("test").setEvictionPolicy(LFU).getMaxSizeConfig().setSize(1).setMaxSizePolicy(PER_PARTITION);
+
+        HazelcastInstance node = createHazelcastInstance(config);
+        IMap<Integer, Integer> map = node.getMap("test");
+
+        final AtomicReference<Integer> evictedKey = new AtomicReference<Integer>(null);
+        map.addEntryListener(new EntryEvictedListener<Integer, Integer>() {
+            @Override
+            public void entryEvicted(EntryEvent<Integer, Integer> event) {
+                evictedKey.set(event.getKey());
+            }
+        }, false);
+
+        map.put(1, 1);
+        map.put(2, 1);
+
+        final Integer expected = 1;
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals("Eviction impl. cannot evict latest added key 2", expected, evictedKey.get());
+            }
+        });
+    }
+
+    /**
+     * Eviction of last added key can only be triggered with one of heap based max-size-policies.
+     */
+    @Test
+    public void testLastAddedKey_canBeEvicted_whenFreeHeapNeeded() {
+        // don't use getConfig(), this test is OSS specific
+        Config config = new Config();
+        config.setProperty(GroupProperty.PARTITION_COUNT.getName(), "1");
+        config.getMapConfig("test")
+                .setEvictionPolicy(LFU)
+                .getMaxSizeConfig()
+                .setSize(90)
+                .setMaxSizePolicy(FREE_HEAP_PERCENTAGE);
+
+        HazelcastInstance node = createHazelcastInstance(config);
+        IMap<Integer, Integer> map = node.getMap("test");
+
+        final AtomicReference<Integer> evictedKey = new AtomicReference<Integer>(null);
+        map.addEntryListener(new EntryEvictedListener<Integer, Integer>() {
+            @Override
+            public void entryEvicted(EntryEvent<Integer, Integer> event) {
+                evictedKey.set(event.getKey());
+            }
+        }, false);
+
+        // 1. Make available free-heap-percentage 10. availableFree = maxMemoryMB - (totalMemoryMB - freeMemoryMB)
+        // free-heap-percentage = availableFree/maxMemoryMB;
+        int totalMemoryMB = 90;
+        int freeMemoryMB = 0;
+        int maxMemoryMB = 100;
+        setMockRuntimeMemoryInfoAccessor(map, totalMemoryMB, freeMemoryMB, maxMemoryMB);
+
+        // 2. This `put` should trigger eviction because we used 90% heap already.
+        // And max used-heap-percentage was set 10% in map-config.
+        map.put(1, 1);
+
+        final Integer expected = 1;
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals("Eviction impl. should evict latest added key when heap based max-size-policy is used",
+                        expected, evictedKey.get());
+            }
+        });
     }
 }
-

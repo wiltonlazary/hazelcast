@@ -23,7 +23,6 @@ import com.hazelcast.instance.Node;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.BackupOperation;
 import com.hazelcast.spi.InternalCompletableFuture;
@@ -66,7 +65,7 @@ public class OperationOutOfOrderBackupTest extends HazelcastTestSupport {
     public void setup() {
         Config config = new Config();
         config.getServicesConfig().addServiceConfig(new ServiceConfig()
-            .setImplementation(service).setName(ValueHolderService.NAME).setEnabled(true));
+                .setImplementation(service).setName(ValueHolderService.NAME).setEnabled(true));
 
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
         HazelcastInstance hz1 = factory.newHazelcastInstance(config);
@@ -104,18 +103,19 @@ public class OperationOutOfOrderBackupTest extends HazelcastTestSupport {
     }
 
     private void runBackup(NodeEngine nodeEngine, int value, long[] replicaVersions, Address sender)
-            throws InterruptedException {Backup
-            backup = new Backup(new SampleBackupOperation(value), sender, replicaVersions, false);
+            throws InterruptedException {
+        Backup
+                backup = new Backup(new SampleBackupOperation(value), sender, replicaVersions, false);
         backup.setPartitionId(partitionId).setReplicaIndex(1).setNodeEngine(nodeEngine);
-        nodeEngine.getOperationService().executeOperation(backup);
+        nodeEngine.getOperationService().execute(backup);
 
         LatchOperation latchOp = new LatchOperation(1);
-        nodeEngine.getOperationService().executeOperation(latchOp.setPartitionId(partitionId));
+        nodeEngine.getOperationService().execute(latchOp.setPartitionId(partitionId));
         assertTrue(latchOp.latch.await(1, TimeUnit.MINUTES));
     }
 
     private void assertBackupReplicaVersions(final Node node, final int partitionId,
-            final long[] expectedReplicaVersions) {
+                                             final long[] expectedReplicaVersions) {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
@@ -127,7 +127,7 @@ public class OperationOutOfOrderBackupTest extends HazelcastTestSupport {
 
     private void setValue(NodeEngine nodeEngine, int partitionId, int value) {
         InternalCompletableFuture<Object> future = nodeEngine.getOperationService()
-            .invokeOnPartition(new SampleBackupAwareOperation(value).setPartitionId(partitionId));
+                .invokeOnPartition(new SampleBackupAwareOperation(value).setPartitionId(partitionId));
         future.join();
     }
 
@@ -137,7 +137,7 @@ public class OperationOutOfOrderBackupTest extends HazelcastTestSupport {
         final AtomicLong value = new AtomicLong();
     }
 
-    private static class SampleBackupAwareOperation extends AbstractOperation implements BackupAwareOperation {
+    private static class SampleBackupAwareOperation extends Operation implements BackupAwareOperation {
 
         long value;
 
@@ -188,7 +188,7 @@ public class OperationOutOfOrderBackupTest extends HazelcastTestSupport {
         }
     }
 
-    private static class SampleBackupOperation extends AbstractOperation implements BackupOperation {
+    private static class SampleBackupOperation extends Operation implements BackupOperation {
 
         final CountDownLatch latch = new CountDownLatch(1);
 
@@ -225,11 +225,13 @@ public class OperationOutOfOrderBackupTest extends HazelcastTestSupport {
         }
     }
 
-    private static class LatchOperation extends AbstractOperation {
+    private static class LatchOperation extends Operation {
 
         final CountDownLatch latch;
 
-        private LatchOperation(int count) {latch = new CountDownLatch(count);}
+        private LatchOperation(int count) {
+            latch = new CountDownLatch(count);
+        }
 
         @Override
         public void run() throws Exception {

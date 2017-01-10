@@ -20,10 +20,10 @@ import com.hazelcast.internal.partition.MigrationCycleOperation;
 import com.hazelcast.internal.partition.MigrationInfo;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.internal.partition.impl.PartitionReplicaManager;
+import com.hazelcast.internal.partition.impl.PartitionStateManager;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.MigrationAwareService;
 import com.hazelcast.spi.PartitionAwareOperation;
 import com.hazelcast.spi.PartitionMigrationEvent;
@@ -35,12 +35,22 @@ import java.util.Arrays;
 import java.util.Collection;
 
 // runs locally...
-public final class FinalizeMigrationOperation extends AbstractOperation
+public final class FinalizeMigrationOperation extends AbstractPartitionOperation
         implements PartitionAwareOperation, MigrationCycleOperation {
 
     private final MigrationInfo migrationInfo;
     private final MigrationEndpoint endpoint;
     private final boolean success;
+
+    /**
+     * This constructor should not be used to obtain an instance of this class; it exists to fulfill IdentifiedDataSerializable
+     * coding conventions.
+     */
+    public FinalizeMigrationOperation() {
+        migrationInfo = null;
+        endpoint = null;
+        success = false;
+    }
 
     public FinalizeMigrationOperation(MigrationInfo migrationInfo, MigrationEndpoint endpoint, boolean success) {
         this.migrationInfo = migrationInfo;
@@ -59,6 +69,10 @@ public final class FinalizeMigrationOperation extends AbstractOperation
         } else if (endpoint == MigrationEndpoint.DESTINATION && !success) {
             rollbackDestination();
         }
+
+        InternalPartitionServiceImpl partitionService = getService();
+        PartitionStateManager partitionStateManager = partitionService.getPartitionStateManager();
+        partitionStateManager.clearMigratingFlag(migrationInfo.getPartitionId());
 
         if (success) {
             nodeEngine.onPartitionMigrate(migrationInfo);
@@ -89,10 +103,10 @@ public final class FinalizeMigrationOperation extends AbstractOperation
     private PartitionMigrationEvent getPartitionMigrationEvent() {
         int partitionId = getPartitionId();
         return new PartitionMigrationEvent(endpoint, partitionId,
-                    endpoint == MigrationEndpoint.SOURCE
-                            ? migrationInfo.getSourceCurrentReplicaIndex() : migrationInfo.getDestinationCurrentReplicaIndex(),
-                    endpoint == MigrationEndpoint.SOURCE
-                            ? migrationInfo.getSourceNewReplicaIndex() : migrationInfo.getDestinationNewReplicaIndex());
+                endpoint == MigrationEndpoint.SOURCE
+                        ? migrationInfo.getSourceCurrentReplicaIndex() : migrationInfo.getDestinationCurrentReplicaIndex(),
+                endpoint == MigrationEndpoint.SOURCE
+                        ? migrationInfo.getSourceNewReplicaIndex() : migrationInfo.getDestinationNewReplicaIndex());
     }
 
     private void commitSource() {
@@ -188,6 +202,11 @@ public final class FinalizeMigrationOperation extends AbstractOperation
 
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public int getId() {
         throw new UnsupportedOperationException();
     }
 }

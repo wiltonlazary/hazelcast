@@ -79,7 +79,7 @@ public final class LockEvictionProcessor implements ScheduledEntryProcessor<Data
         operation.setValidateTarget(false);
         operation.setAsyncBackup(true);
 
-        operationService.executeOperation(operation);
+        operationService.execute(operation);
     }
 
     private class UnlockResponseHandler implements OperationResponseHandler {
@@ -93,11 +93,6 @@ public final class LockEvictionProcessor implements ScheduledEntryProcessor<Data
                     logger.warning(t);
                 }
             }
-        }
-
-        @Override
-        public boolean isLocal() {
-            return true;
         }
     }
 }

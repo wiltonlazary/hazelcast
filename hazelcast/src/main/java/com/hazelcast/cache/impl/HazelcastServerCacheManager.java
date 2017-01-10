@@ -21,7 +21,6 @@ import com.hazelcast.cache.impl.operation.CacheCreateConfigOperation;
 import com.hazelcast.cache.impl.operation.CacheGetConfigOperation;
 import com.hazelcast.cache.impl.operation.CacheManagementConfigOperation;
 import com.hazelcast.config.CacheConfig;
-import com.hazelcast.config.CacheSimpleConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.Member;
 import com.hazelcast.instance.HazelcastInstanceImpl;
@@ -30,7 +29,6 @@ import com.hazelcast.spi.InternalCompletableFuture;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.OperationService;
 
-import javax.cache.CacheException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -130,18 +128,10 @@ public class HazelcastServerCacheManager
                                                        boolean syncCreate) {
         CacheConfig<K, V> config = cacheService.getCacheConfig(cacheName);
         if (config == null) {
-            CacheSimpleConfig simpleConfig = cacheService.findCacheConfig(simpleCacheName);
-            if (simpleConfig != null) {
-                try {
-                    config = new CacheConfig(simpleConfig);
-                    config.setName(simpleCacheName);
-                    config.setManagerPrefix(cacheName.substring(0, cacheName.lastIndexOf(simpleCacheName)));
-                } catch (Exception e) {
-                    // Cannot create the actual config from the declarative one
-                    throw new CacheException(e);
-                }
-            }
-            if (config == null) {
+            config = cacheService.findCacheConfig(simpleCacheName);
+            if (config != null) {
+                config.setManagerPrefix(cacheName.substring(0, cacheName.lastIndexOf(simpleCacheName)));
+            } else {
                 // If still cache config not found, try to find it from partition
                 config = getCacheConfig(cacheName, simpleCacheName);
             }
@@ -180,7 +170,8 @@ public class HazelcastServerCacheManager
 
     @Override
     protected <K, V> ICacheInternal<K, V> createCacheProxy(CacheConfig<K, V> cacheConfig) {
-        CacheProxy<K, V> cacheProxy = (CacheProxy<K, V>) instance.getCacheByFullName(cacheConfig.getNameWithPrefix());
+        CacheProxy<K, V> cacheProxy = (CacheProxy<K, V>) instance.getCacheManager()
+                                                                 .getCacheByFullName(cacheConfig.getNameWithPrefix());
         cacheProxy.setCacheManager(this);
         return cacheProxy;
     }
@@ -213,6 +204,11 @@ public class HazelcastServerCacheManager
         if (properties.getProperty(HazelcastCachingProvider.HAZELCAST_CONFIG_LOCATION) != null) {
             hazelcastInstance.shutdown();
         }
+    }
+
+    @Override
+    protected void onShuttingDown() {
+        close();
     }
 
     public ICacheService getCacheService() {

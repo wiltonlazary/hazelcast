@@ -1,5 +1,3 @@
-package com.hazelcast.security.permission;
-
 /*
  * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
  *
@@ -16,111 +14,42 @@ package com.hazelcast.security.permission;
  * limitations under the License.
  */
 
+package com.hazelcast.security.permission;
+
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import java.security.Permission;
 
-/**
- * Map Permission Tests. A small selection of combinations are used here, use an array permutation algorithm.
- * <p/>
- * Could use <a href="http://docs.guava-libraries.googlecode.com/git/javadoc/com/google/common/collect/Collections2.html#permutations(java.util.Collection)">Google Guava Permutations</a>
- */
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
-public class MapPermissionTest {
+public class MapPermissionTest extends AbstractPermissionTest {
 
-    @Test
-    public void willReturnFalseForNoPermOnPut() {
-        new CheckPermission().of("put").against("read", "create").expect(false).run();
+    @Override
+    protected String[] getActions() {
+        return new String[]{
+                "put",
+                "read",
+                "remove",
+                "listen",
+                "lock",
+                "index",
+                "intercept",
+                "create",
+                "destroy"
+        };
     }
 
-    @Test
-    public void willReturnFalseForNoPermOnListen() {
-        new CheckPermission().of("listen").against("read", "create", "put").expect(false).run();
+    @Override
+    protected Permission createPermission(String name, String... actions) {
+        return new MapPermission(name, actions);
     }
 
     @Test
     public void willReturnFalseForNoPermOnIndex() {
         new CheckPermission().of("index").against("read", "create", "put", "intercept").expect(false).run();
-    }
-
-    @Test
-    public void willReturnTrueForPermOnPutOn() {
-        new CheckPermission().of("put").against("put", "read", "create", "put", "intercept").expect(true).run();
-    }
-
-    @Test
-    public void willReturnTrueWhenNameUseMatchingWildcard() {
-        new CheckPermission()
-                .withAllowedName("map.*")
-                .withRequestedName("map.foo")
-                .of("put")
-                .against("put", "read", "create", "put", "intercept")
-                .expect(true).run();
-    }
-
-    @Test
-    public void willReturnFalseWhenNameUseNonNames() {
-        new CheckPermission()
-                .withAllowedName("map")
-                .withRequestedName("queue")
-                .of("put")
-                .against("put", "read", "create", "put", "intercept")
-                .expect(false).run();
-    }
-
-    private static class CheckPermission {
-
-        private static final String DEFAULT_ALLOWED_NAME = "someMapsPermission";
-        private static final String DEFAULT_REQUESTED_NAME = "someMapsPermission";
-
-        private String requested = null;
-        private String[] allowed = null;
-        private Boolean expectedResult = null;
-        private String allowedName = DEFAULT_ALLOWED_NAME;
-        private String requestedName = DEFAULT_REQUESTED_NAME;
-
-        CheckPermission withRequestedName(String requestedName) {
-            this.requestedName = requestedName;
-            return this;
-        }
-
-        CheckPermission withAllowedName(String allowedName) {
-            this.allowedName = allowedName;
-            return this;
-        }
-
-        CheckPermission of(String requested) {
-            this.requested = requested;
-            return this;
-        }
-
-        CheckPermission against(String... allowed) {
-            this.allowed = allowed;
-            return this;
-        }
-
-        CheckPermission expect(boolean expectedResult) {
-            this.expectedResult = expectedResult;
-            return this;
-        }
-
-        void run() {
-            if (requested != null && allowed != null && expectedResult != null) {
-                MapPermission allowedMapPermissions = new MapPermission(allowedName, allowed);
-                MapPermission requestedMapPermission = new MapPermission(requestedName, requested);
-
-                boolean actualResult = allowedMapPermissions.implies(requestedMapPermission);
-
-                assertEquals("Access applied incorrectly for requested action of " + requestedMapPermission + " on permitted permissions of " + allowedMapPermissions, expectedResult.booleanValue(), actualResult);
-            } else {
-                fail("requested and/or allowed and/or expect not set");
-            }
-        }
     }
 }

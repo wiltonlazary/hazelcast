@@ -16,15 +16,15 @@
 
 package com.hazelcast.client.impl.protocol.task;
 
-import com.hazelcast.client.ClientEndpoint;
 import com.hazelcast.client.ClientTypes;
 import com.hazelcast.client.impl.ClientEndpointImpl;
+import com.hazelcast.client.impl.ReAuthenticationOperationSupplier;
 import com.hazelcast.client.impl.client.ClientPrincipal;
-import com.hazelcast.client.impl.operations.ClientReAuthOperation;
 import com.hazelcast.client.impl.protocol.AuthenticationStatus;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.config.GroupConfig;
 import com.hazelcast.core.Member;
+import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.instance.Node;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
@@ -33,26 +33,65 @@ import com.hazelcast.nio.ConnectionType;
 import com.hazelcast.security.Credentials;
 import com.hazelcast.security.SecurityContext;
 import com.hazelcast.security.UsernamePasswordCredentials;
+import com.hazelcast.spi.Operation;
 import com.hazelcast.util.UuidUtil;
+import com.hazelcast.util.function.Supplier;
 
 import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
 import java.security.Permission;
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Set;
+import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
+
+import static java.util.Collections.synchronizedList;
 
 /**
  * Base authentication task
  */
-public abstract class AuthenticationBaseMessageTask<P> extends AbstractCallableMessageTask<P> {
+public abstract class AuthenticationBaseMessageTask<P> extends AbstractMultiTargetMessageTask<P> {
+
 
     protected transient ClientPrincipal principal;
     protected transient Credentials credentials;
     protected transient byte clientSerializationVersion;
+    protected transient String clientVersion;
+    private final List<Member> cleanedUpMembers = synchronizedList(new ArrayList<Member>());
 
     public AuthenticationBaseMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
+    }
+
+    @Override
+    protected Supplier<Operation> createOperationSupplier() {
+        return new ReAuthenticationOperationSupplier(getUuid(), clientMessage.getCorrelationId());
+    }
+
+    @Override
+    protected Object reduce(Map<Member, Object> map) throws Throwable {
+        for (Map.Entry<Member, Object> entry : map.entrySet()) {
+            Member member = entry.getKey();
+            Object response = entry.getValue();
+            if (response instanceof Throwable) {
+                if (response instanceof MemberLeftException) {
+                    cleanedUpMembers.add(member);
+                    continue;
+                }
+                throw (Throwable) response;
+            }
+            boolean isClientDisconnectOperationRun = (Boolean) response;
+            if (isClientDisconnectOperationRun) {
+                cleanedUpMembers.add(member);
+            }
+        }
+        return prepareAuthenticatedClientMessage();
+    }
+
+    @Override
+    public Collection<Member> getTargets() {
+        return clientEngine.getClusterService().getMembers();
     }
 
     @Override
@@ -75,23 +114,50 @@ public abstract class AuthenticationBaseMessageTask<P> extends AbstractCallableM
     }
 
     @Override
-    public Object call() {
+    public void processMessage() throws Throwable {
         byte serializationServiceVersion = serializationService.getVersion();
         AuthenticationStatus authenticationStatus;
         if (clientSerializationVersion != serializationServiceVersion) {
-            authenticationStatus = AuthenticationStatus.SERIALIZATION_VERSION_MISMATCH;
-        } else {
-            authenticationStatus = authenticate();
+            sendClientMessage(prepareSerializationVersionMismatchClientMessage());
+            return;
         }
+
+        authenticationStatus = authenticate();
+        if (authenticationStatus == AuthenticationStatus.CREDENTIALS_FAILED) {
+            sendClientMessage(prepareUnauthenticatedClientMessage());
+            return;
+        }
+
+        if (!isOwnerConnection()) {
+            prepareAndSendResponse(authenticationStatus);
+            return;
+        }
+        String uuid = getUuid();
+        String localMemberUUID = clientEngine.getThisUuid();
+        principal = new ClientPrincipal(uuid, localMemberUUID);
+        super.processMessage();
+    }
+
+    private void prepareAndSendResponse(AuthenticationStatus authenticationStatus) {
+        boolean isNotMember = clientEngine.getClusterService().getMember(principal.getOwnerUuid()) == null;
+        if (isNotMember) {
+            logger.warning("Member having uuid " + principal.getOwnerUuid()
+                    + " is not part of the cluster. Client Authentication rejected.");
+            authenticationStatus = AuthenticationStatus.CREDENTIALS_FAILED;
+        }
+
         switch (authenticationStatus) {
             case AUTHENTICATED:
-                return handleAuthenticated();
+                sendClientMessage(prepareAuthenticatedClientMessage());
+                break;
             case CREDENTIALS_FAILED:
-                return handleUnauthenticated();
+                sendClientMessage(prepareUnauthenticatedClientMessage());
+                break;
             case SERIALIZATION_VERSION_MISMATCH:
-                return handleSerializationVersionMismatch();
+                sendClientMessage(prepareSerializationVersionMismatchClientMessage());
+                break;
             default:
-                throw new IllegalStateException("Unsupported authentication status :" + authenticationStatus);
+                sendClientMessage(new IllegalStateException("Unsupported authentication status :" + authenticationStatus));
         }
     }
 
@@ -138,56 +204,35 @@ public abstract class AuthenticationBaseMessageTask<P> extends AbstractCallableM
         return usernameMatch && passwordMatch ? AuthenticationStatus.AUTHENTICATED : AuthenticationStatus.CREDENTIALS_FAILED;
     }
 
-    private Object handleUnauthenticated() {
+    private ClientMessage prepareUnauthenticatedClientMessage() {
         Connection connection = endpoint.getConnection();
         ILogger logger = clientEngine.getLogger(getClass());
         logger.log(Level.WARNING,
                 "Received auth from " + connection + " with principal " + principal + " , authentication failed");
         byte status = AuthenticationStatus.CREDENTIALS_FAILED.getId();
-        return encodeAuth(status, null, null, null, serializationService.getVersion());
+        return encodeAuth(status, null, null, null, serializationService.getVersion(), null);
     }
 
-    private Object handleSerializationVersionMismatch() {
+    private ClientMessage prepareSerializationVersionMismatchClientMessage() {
         return encodeAuth(AuthenticationStatus.SERIALIZATION_VERSION_MISMATCH.getId(), null, null, null,
-                serializationService.getVersion());
+                serializationService.getVersion(), null);
     }
 
-    private ClientMessage handleAuthenticated() {
-        if (isOwnerConnection()) {
-            final String uuid = getUuid();
-            final String localMemberUUID = clientEngine.getLocalMember().getUuid();
-
-            principal = new ClientPrincipal(uuid, localMemberUUID);
-            reAuthLocal();
-            Collection<Member> members = nodeEngine.getClusterService().getMembers();
-            for (Member member : members) {
-                if (!member.localMember()) {
-                    ClientReAuthOperation op = new ClientReAuthOperation(uuid);
-                    op.setCallerUuid(localMemberUUID);
-                    nodeEngine.getOperationService().send(op, member.getAddress());
-                }
-            }
-        }
-
-        boolean isNotMember = clientEngine.getClusterService().getMember(principal.getOwnerUuid()) == null;
-        if (isNotMember) {
-            byte status = AuthenticationStatus.CREDENTIALS_FAILED.getId();
-            return encodeAuth(status, null, null, null, serializationService.getVersion());
-        }
-
+    private ClientMessage prepareAuthenticatedClientMessage() {
         Connection connection = endpoint.getConnection();
         ILogger logger = clientEngine.getLogger(getClass());
 
-        endpoint.authenticated(principal, credentials, isOwnerConnection());
+        endpoint.authenticated(principal, credentials, isOwnerConnection(), clientVersion);
         setConnectionType();
-        logger.log(Level.INFO, "Received auth from " + connection + ", successfully authenticated" + ", principal : " + principal
-                + ", owner connection : " + isOwnerConnection());
+        logger.info("Received auth from " + connection + ", successfully authenticated" + ", principal : " + principal
+                + ", owner connection : " + isOwnerConnection() + ", client version : " + clientVersion);
         endpointManager.registerEndpoint(endpoint);
         clientEngine.bind(endpoint);
 
         final Address thisAddress = clientEngine.getThisAddress();
         byte status = AuthenticationStatus.AUTHENTICATED.getId();
-        return encodeAuth(status, thisAddress, principal.getUuid(), principal.getOwnerUuid(), serializationService.getVersion());
+        return encodeAuth(status, thisAddress, principal.getUuid(), principal.getOwnerUuid(),
+                serializationService.getVersion(), cleanedUpMembers);
     }
 
     private void setConnectionType() {
@@ -202,6 +247,8 @@ public abstract class AuthenticationBaseMessageTask<P> extends AbstractCallableM
             connection.setType(ConnectionType.PYTHON_CLIENT);
         } else if (ClientTypes.RUBY.equals(type)) {
             connection.setType(ConnectionType.RUBY_CLIENT);
+        } else if (ClientTypes.NODEJS.equals(type)) {
+            connection.setType(ConnectionType.NODEJS_CLIENT);
         } else {
             clientEngine.getLogger(getClass()).info("Unknown client type: " + type);
             connection.setType(ConnectionType.BINARY_CLIENT);
@@ -209,7 +256,7 @@ public abstract class AuthenticationBaseMessageTask<P> extends AbstractCallableM
     }
 
     protected abstract ClientMessage encodeAuth(byte status, Address thisAddress, String uuid, String ownerUuid,
-                                                byte serializationVersion);
+                                                byte serializationVersion, List<Member> cleanedUpMembers);
 
     protected abstract boolean isOwnerConnection();
 
@@ -222,13 +269,6 @@ public abstract class AuthenticationBaseMessageTask<P> extends AbstractCallableM
         return UuidUtil.createClientUuid(endpoint.getConnection().getEndPoint());
     }
 
-    private void reAuthLocal() {
-        final Set<ClientEndpoint> endpoints = endpointManager.getEndpoints(principal.getUuid());
-        for (ClientEndpoint endpoint : endpoints) {
-            endpoint.authenticated(principal);
-        }
-        clientEngine.addOwnershipMapping(principal.getUuid(), principal.getOwnerUuid());
-    }
 
     @Override
     public Permission getRequiredPermission() {

@@ -20,11 +20,13 @@ import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.DurationConfig;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.TimedExpiryPolicyFactoryConfig;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.TimedExpiryPolicyFactoryConfig.ExpiryPolicyType;
+import com.hazelcast.config.DistributedClassloadingConfig.ClassCacheMode;
+import com.hazelcast.config.DistributedClassloadingConfig.ProviderMode;
+import com.hazelcast.config.EvictionConfig.MaxSizePolicy;
 import com.hazelcast.config.LoginModuleConfig.LoginModuleUsage;
 import com.hazelcast.config.PartitionGroupConfig.MemberGroupType;
 import com.hazelcast.config.PermissionConfig.PermissionType;
 import com.hazelcast.core.HazelcastException;
-import com.hazelcast.internal.eviction.impl.EvictionConfigHelper;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.map.eviction.MapEvictionPolicy;
@@ -59,6 +61,8 @@ import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.config.MapStoreConfig.InitialLoadMode;
 import static com.hazelcast.config.XmlElements.CACHE;
+import static com.hazelcast.config.XmlElements.DISTRIBUTED_CLASSLOADING;
+import static com.hazelcast.config.XmlElements.DURABLE_EXECUTOR_SERVICE;
 import static com.hazelcast.config.XmlElements.EXECUTOR_SERVICE;
 import static com.hazelcast.config.XmlElements.GROUP;
 import static com.hazelcast.config.XmlElements.HOT_RESTART_PERSISTENCE;
@@ -69,6 +73,7 @@ import static com.hazelcast.config.XmlElements.LICENSE_KEY;
 import static com.hazelcast.config.XmlElements.LIST;
 import static com.hazelcast.config.XmlElements.LISTENERS;
 import static com.hazelcast.config.XmlElements.LITE_MEMBER;
+import static com.hazelcast.config.XmlElements.LOCK;
 import static com.hazelcast.config.XmlElements.MANAGEMENT_CENTER;
 import static com.hazelcast.config.XmlElements.MAP;
 import static com.hazelcast.config.XmlElements.MEMBER_ATTRIBUTES;
@@ -82,6 +87,7 @@ import static com.hazelcast.config.XmlElements.QUORUM;
 import static com.hazelcast.config.XmlElements.RELIABLE_TOPIC;
 import static com.hazelcast.config.XmlElements.REPLICATED_MAP;
 import static com.hazelcast.config.XmlElements.RINGBUFFER;
+import static com.hazelcast.config.XmlElements.SCHEDULED_EXECUTOR_SERVICE;
 import static com.hazelcast.config.XmlElements.SECURITY;
 import static com.hazelcast.config.XmlElements.SEMAPHORE;
 import static com.hazelcast.config.XmlElements.SERIALIZATION;
@@ -90,6 +96,8 @@ import static com.hazelcast.config.XmlElements.SET;
 import static com.hazelcast.config.XmlElements.TOPIC;
 import static com.hazelcast.config.XmlElements.WAN_REPLICATION;
 import static com.hazelcast.config.XmlElements.canOccurMultipleTimes;
+import static com.hazelcast.instance.BuildInfoProvider.HAZELCAST_INTERNAL_OVERRIDE_VERSION;
+import static com.hazelcast.internal.config.ConfigValidator.checkEvictionConfig;
 import static com.hazelcast.util.Preconditions.checkHasText;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 import static com.hazelcast.util.StringUtil.LINE_SEPARATOR;
@@ -145,7 +153,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
      * Constructs a XMLConfigBuilder that reads from the given URL.
      *
      * @param url the given url that the XMLConfigBuilder reads from
-     * @throws IOException
+     * @throws IOException if URL is invalid
      */
     public XmlConfigBuilder(URL url) throws IOException {
         checkNotNull(url, "URL is null!");
@@ -169,6 +177,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
      * @return the current used properties.
      * @see #setProperties(java.util.Properties)
      */
+    @Override
     public Properties getProperties() {
         return properties;
     }
@@ -217,8 +226,16 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             domLevel3 = false;
         }
         process(root);
-        schemaValidation(root.getOwnerDocument());
+        if (shouldValidateTheSchema()) {
+            schemaValidation(root.getOwnerDocument());
+        }
         handleConfig(root);
+    }
+
+    private boolean shouldValidateTheSchema() {
+        // in case of overridden hazelcast version there may be no schema with that version
+        // this feature is used only in simulator testing.
+        return System.getProperty(HAZELCAST_INTERNAL_OVERRIDE_VERSION) == null;
     }
 
     @Override
@@ -286,6 +303,10 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             handleWanReplication(node);
         } else if (EXECUTOR_SERVICE.isEqual(nodeName)) {
             handleExecutor(node);
+        } else if (DURABLE_EXECUTOR_SERVICE.isEqual(nodeName)) {
+            handleDurableExecutor(node);
+        } else if (SCHEDULED_EXECUTOR_SERVICE.isEqual(nodeName)) {
+            handleScheduledExecutor(node);
         } else if (SERVICES.isEqual(nodeName)) {
             handleServices(node);
         } else if (QUEUE.isEqual(nodeName)) {
@@ -312,6 +333,8 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             handleJobTracker(node);
         } else if (SEMAPHORE.isEqual(nodeName)) {
             handleSemaphore(node);
+        } else if (LOCK.isEqual(nodeName)) {
+            handleLock(node);
         } else if (RINGBUFFER.isEqual(nodeName)) {
             handleRingbuffer(node);
         } else if (LISTENERS.isEqual(nodeName)) {
@@ -334,6 +357,8 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             handleLiteMember(node);
         } else if (HOT_RESTART_PERSISTENCE.isEqual(nodeName)) {
             handleHotRestartPersistence(node);
+        } else if (DISTRIBUTED_CLASSLOADING.isEqual(nodeName)) {
+            handleDistributedClassLoading(node);
         } else {
             return true;
         }
@@ -348,26 +373,66 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
         config.setInstanceName(instanceName);
     }
 
-    private void handleHotRestartPersistence(Node hrRoot) {
-        HotRestartPersistenceConfig hrConfig = new HotRestartPersistenceConfig();
-        Node attrEnabled = hrRoot.getAttributes().getNamedItem("enabled");
+    private void handleDistributedClassLoading(Node dcRoot) {
+        DistributedClassloadingConfig dcConfig = new DistributedClassloadingConfig();
+        Node attrEnabled = dcRoot.getAttributes().getNamedItem("enabled");
         boolean enabled = getBooleanValue(getTextContent(attrEnabled));
-        hrConfig.setEnabled(enabled);
+        dcConfig.setEnabled(enabled);
+
+        String classCacheModeName = "class-cache-mode";
+        String providerModeName = "provider-mode";
+        String blacklistPrefixesName = "blacklist-prefixes";
+        String whitelistPrefixesName = "whitelist-prefixes";
+        String providerFilterName = "provider-filter";
+
+        for (Node n : childElements(dcRoot)) {
+            String name = cleanNodeName(n);
+            if (classCacheModeName.equals(name)) {
+                String value = getTextContent(n);
+                ClassCacheMode classCacheMode = ClassCacheMode.valueOf(value);
+                dcConfig.setClassCacheMode(classCacheMode);
+            } else if (providerModeName.equals(name)) {
+                String value = getTextContent(n);
+                ProviderMode providerMode = ProviderMode.valueOf(value);
+                dcConfig.setProviderMode(providerMode);
+            } else if (blacklistPrefixesName.equals(name)) {
+                String value = getTextContent(n);
+                dcConfig.setBlacklistedPrefixes(value);
+            } else if (whitelistPrefixesName.equals(name)) {
+                String value = getTextContent(n);
+                dcConfig.setWhitelistedPrefixes(value);
+            } else if (providerFilterName.equals(name)) {
+                String value = getTextContent(n);
+                dcConfig.setProviderFilter(value);
+            }
+        }
+        config.setDistributedClassloadingConfig(dcConfig);
+    }
+
+    private void handleHotRestartPersistence(Node hrRoot) {
+        final HotRestartPersistenceConfig hrConfig = new HotRestartPersistenceConfig()
+                .setEnabled(getBooleanValue(getAttribute(hrRoot, "enabled")));
 
         final String parallelismName = "parallelism";
         final String validationTimeoutName = "validation-timeout-seconds";
         final String dataLoadTimeoutName = "data-load-timeout-seconds";
+        final String clusterDataRecoveryPolicyName = "cluster-data-recovery-policy";
 
         for (Node n : childElements(hrRoot)) {
-            String name = cleanNodeName(n);
+            final String name = cleanNodeName(n);
             if ("base-dir".equals(name)) {
                 hrConfig.setBaseDir(new File(getTextContent(n)).getAbsoluteFile());
+            } else if ("backup-dir".equals(name)) {
+                hrConfig.setBackupDir(new File(getTextContent(n)).getAbsoluteFile());
             } else if (parallelismName.equals(name)) {
                 hrConfig.setParallelism(getIntegerValue(parallelismName, getTextContent(n)));
             } else if (validationTimeoutName.equals(name)) {
                 hrConfig.setValidationTimeoutSeconds(getIntegerValue(validationTimeoutName, getTextContent(n)));
             } else if (dataLoadTimeoutName.equals(name)) {
                 hrConfig.setDataLoadTimeoutSeconds(getIntegerValue(dataLoadTimeoutName, getTextContent(n)));
+            } else if (clusterDataRecoveryPolicyName.equals(name)) {
+                hrConfig.setClusterDataRecoveryPolicy(HotRestartClusterDataRecoveryPolicy
+                        .valueOf(upperCaseInternal(getTextContent(n))));
             }
         }
         config.setHotRestartPersistenceConfig(hrConfig);
@@ -534,6 +599,16 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
     private void handleExecutor(Node node) throws Exception {
         ExecutorConfig executorConfig = new ExecutorConfig();
         handleViaReflection(node, config, executorConfig);
+    }
+
+    private void handleDurableExecutor(Node node) throws Exception {
+        final DurableExecutorConfig durableExecutorConfig = new DurableExecutorConfig();
+        handleViaReflection(node, config, durableExecutorConfig);
+    }
+
+    private void handleScheduledExecutor(Node node) throws Exception {
+        ScheduledExecutorConfig scheduledExecutorConfig = new ScheduledExecutorConfig();
+        handleViaReflection(node, config, scheduledExecutorConfig);
     }
 
     private void handleGroup(Node node) {
@@ -871,6 +946,20 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
         }
     }
 
+    private void handleLock(Node node) {
+        final String name = getAttribute(node, "name");
+        final LockConfig lockConfig = new LockConfig();
+        lockConfig.setName(name);
+        for (Node n : childElements(node)) {
+            final String nodeName = cleanNodeName(n);
+            final String value = getTextContent(n).trim();
+            if ("quorum-ref".equals(nodeName)) {
+                lockConfig.setQuorumName(value);
+            }
+        }
+        this.config.addLockConfig(lockConfig);
+    }
+
     private void handleQueue(Node node) {
         Node attName = node.getAttributes().getNamedItem("name");
         String name = getTextContent(attName);
@@ -899,6 +988,8 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             } else if ("queue-store".equals(nodeName)) {
                 QueueStoreConfig queueStoreConfig = createQueueStoreConfig(n);
                 qConfig.setQueueStoreConfig(queueStoreConfig);
+            } else if ("quorum-ref".equals(nodeName)) {
+                qConfig.setQuorumName(value);
             } else if ("empty-queue-ttl".equals(nodeName)) {
                 qConfig.setEmptyQueueTtl(getIntegerValue("empty-queue-ttl", value));
             }
@@ -994,7 +1085,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
                 }
             } else if ("statistics-enabled".equals(nodeName)) {
                 multiMapConfig.setStatisticsEnabled(getBooleanValue(value));
-            }  else if ("binary".equals(nodeName)) {
+            } else if ("binary".equals(nodeName)) {
                 multiMapConfig.setBinary(getBooleanValue(value));
             }
         }
@@ -1053,7 +1144,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             } else if ("async-backup-count".equals(nodeName)) {
                 mapConfig.setAsyncBackupCount(getIntegerValue("async-backup-count", value));
             } else if ("eviction-policy".equals(nodeName)) {
-                if(mapConfig.getMapEvictionPolicy() == null) {
+                if (mapConfig.getMapEvictionPolicy() == null) {
                     mapConfig.setEvictionPolicy(EvictionPolicy.valueOf(upperCaseInternal(value)));
                 }
             } else if ("max-size".equals(nodeName)) {
@@ -1134,12 +1225,14 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             String value = getTextContent(child).trim();
             if ("max-size".equals(nodeName)) {
                 nearCacheConfig.setMaxSize(Integer.parseInt(value));
+                LOGGER.warning("The element <max-size/> for <near-cache/> is deprecated, please use <eviction/> instead!");
             } else if ("time-to-live-seconds".equals(nodeName)) {
                 nearCacheConfig.setTimeToLiveSeconds(Integer.parseInt(value));
             } else if ("max-idle-seconds".equals(nodeName)) {
                 nearCacheConfig.setMaxIdleSeconds(Integer.parseInt(value));
             } else if ("eviction-policy".equals(nodeName)) {
                 nearCacheConfig.setEvictionPolicy(value);
+                LOGGER.warning("The element <eviction-policy/> for <near-cache/> is deprecated, please use <eviction/> instead!");
             } else if ("in-memory-format".equals(nodeName)) {
                 nearCacheConfig.setInMemoryFormat(InMemoryFormat.valueOf(upperCaseInternal(value)));
             } else if ("invalidate-on-change".equals(nodeName)) {
@@ -1150,7 +1243,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
                 NearCacheConfig.LocalUpdatePolicy policy = NearCacheConfig.LocalUpdatePolicy.valueOf(value);
                 nearCacheConfig.setLocalUpdatePolicy(policy);
             } else if ("eviction".equals(nodeName)) {
-                nearCacheConfig.setEvictionConfig(getEvictionConfig(child));
+                nearCacheConfig.setEvictionConfig(getEvictionConfig(child, true));
             }
         }
         return nearCacheConfig;
@@ -1194,8 +1287,12 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
                 cacheConfig.setWriteThrough(getBooleanValue(value));
             } else if ("cache-loader-factory".equals(nodeName)) {
                 cacheConfig.setCacheLoaderFactory(getAttribute(n, "class-name"));
+            } else if ("cache-loader".equals(nodeName)) {
+                cacheConfig.setCacheLoader(getAttribute(n, "class-name"));
             } else if ("cache-writer-factory".equals(nodeName)) {
                 cacheConfig.setCacheWriterFactory(getAttribute(n, "class-name"));
+            } else if ("cache-writer".equals(nodeName)) {
+                cacheConfig.setCacheWriter(getAttribute(n, "class-name"));
             } else if ("expiry-policy-factory".equals(nodeName)) {
                 cacheConfig.setExpiryPolicyFactoryConfig(getExpiryPolicyFactoryConfig(n));
             } else if ("cache-entry-listeners".equals(nodeName)) {
@@ -1209,13 +1306,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             } else if ("wan-replication-ref".equals(nodeName)) {
                 cacheWanReplicationRefHandle(n, cacheConfig);
             } else if ("eviction".equals(nodeName)) {
-                EvictionConfig evictionConfig = getEvictionConfig(n);
-                try {
-                    EvictionConfigHelper.checkEvictionConfig(evictionConfig);
-                } catch (IllegalArgumentException e) {
-                    throw new InvalidConfigurationException(e.getMessage());
-                }
-                cacheConfig.setEvictionConfig(evictionConfig);
+                cacheConfig.setEvictionConfig(getEvictionConfig(n, false));
             } else if ("quorum-ref".equals(nodeName)) {
                 cacheConfig.setQuorumName(value);
             } else if ("partition-lost-listeners".equals(nodeName)) {
@@ -1289,7 +1380,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
         return new TimedExpiryPolicyFactoryConfig(expiryPolicyType, durationConfig);
     }
 
-    private EvictionConfig getEvictionConfig(Node node) {
+    private EvictionConfig getEvictionConfig(Node node, boolean isNearCache) {
         EvictionConfig evictionConfig = new EvictionConfig();
         Node size = node.getAttributes().getNamedItem("size");
         Node maxSizePolicy = node.getAttributes().getNamedItem("max-size-policy");
@@ -1299,19 +1390,21 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             evictionConfig.setSize(parseInt(getTextContent(size)));
         }
         if (maxSizePolicy != null) {
-            evictionConfig.setMaximumSizePolicy(
-                    EvictionConfig.MaxSizePolicy.valueOf(
-                            upperCaseInternal(getTextContent(maxSizePolicy)))
+            evictionConfig.setMaximumSizePolicy(MaxSizePolicy.valueOf(upperCaseInternal(getTextContent(maxSizePolicy)))
             );
         }
         if (evictionPolicy != null) {
-            evictionConfig.setEvictionPolicy(
-                    EvictionPolicy.valueOf(
-                            upperCaseInternal(getTextContent(evictionPolicy)))
+            evictionConfig.setEvictionPolicy(EvictionPolicy.valueOf(upperCaseInternal(getTextContent(evictionPolicy)))
             );
         }
         if (comparatorClassName != null) {
             evictionConfig.setComparatorClassName(getTextContent(comparatorClassName));
+        }
+
+        try {
+            checkEvictionConfig(evictionConfig, isNearCache);
+        } catch (IllegalArgumentException e) {
+            throw new InvalidConfigurationException(e.getMessage());
         }
         return evictionConfig;
     }
@@ -1460,8 +1553,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
                                         getTextContent(listenerNodeAttributes.getNamedItem("include-value")));
                                 boolean local = getBooleanValue(getTextContent(listenerNodeAttributes.getNamedItem("local")));
                                 String listenerClass = getTextContent(listenerNode);
-                                queryCacheConfig.addEntryListenerConfig(
-                                        new EntryListenerConfig(listenerClass, local, incValue));
+                                queryCacheConfig.addEntryListenerConfig(new EntryListenerConfig(listenerClass, local, incValue));
                             }
                         }
                     } else {
@@ -1470,16 +1562,13 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
                             boolean includeValue = getBooleanValue(textContent);
                             queryCacheConfig.setIncludeValue(includeValue);
                         } else if ("batch-size".equals(nodeName)) {
-                            int batchSize = getIntegerValue("batch-size", textContent.trim()
-                            );
+                            int batchSize = getIntegerValue("batch-size", textContent.trim());
                             queryCacheConfig.setBatchSize(batchSize);
                         } else if ("buffer-size".equals(nodeName)) {
-                            int bufferSize = getIntegerValue("buffer-size", textContent.trim()
-                            );
+                            int bufferSize = getIntegerValue("buffer-size", textContent.trim());
                             queryCacheConfig.setBufferSize(bufferSize);
                         } else if ("delay-seconds".equals(nodeName)) {
-                            int delaySeconds = getIntegerValue("delay-seconds", textContent.trim()
-                            );
+                            int delaySeconds = getIntegerValue("delay-seconds", textContent.trim());
                             queryCacheConfig.setDelaySeconds(delaySeconds);
                         } else if ("in-memory-format".equals(nodeName)) {
                             String value = textContent.trim();
@@ -1495,7 +1584,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
                         } else if ("predicate".equals(nodeName)) {
                             queryCachePredicateHandler(childNode, queryCacheConfig);
                         } else if ("eviction".equals(nodeName)) {
-                            queryCacheConfig.setEvictionConfig(getEvictionConfig(childNode));
+                            queryCacheConfig.setEvictionConfig(getEvictionConfig(childNode, false));
                         }
                     }
                 }
@@ -1516,7 +1605,6 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
         }
         queryCacheConfig.setPredicateConfig(predicateConfig);
     }
-
 
     private int sizeParser(String value) {
         int size;
@@ -1573,12 +1661,32 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
                 } else {
                     mapStoreConfig.setWriteCoalescing(getBooleanValue(writeCoalescing));
                 }
-
             } else if ("properties".equals(nodeName)) {
                 fillProperties(n, mapStoreConfig.getProperties());
             }
         }
         return mapStoreConfig;
+    }
+
+    private RingbufferStoreConfig createRingbufferStoreConfig(Node node) {
+        final RingbufferStoreConfig config = new RingbufferStoreConfig();
+        final NamedNodeMap atts = node.getAttributes();
+        for (int a = 0; a < atts.getLength(); a++) {
+            Node att = atts.item(a);
+            String value = getTextContent(att).trim();
+            if (att.getNodeName().equals("enabled")) {
+                config.setEnabled(getBooleanValue(value));
+            }
+        }
+        for (Node n : childElements(node)) {
+            final String nodeName = cleanNodeName(n);
+            if ("class-name".equals(nodeName)) {
+                config.setClassName(getTextContent(n).trim());
+            } else if ("factory-class-name".equals(nodeName)) {
+                config.setFactoryClassName(getTextContent(n).trim());
+            }
+        }
+        return config;
     }
 
     private QueueStoreConfig createQueueStoreConfig(Node node) {
@@ -1659,8 +1767,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             String nodeName = cleanNodeName(n);
             if ("read-batch-size".equals(nodeName)) {
                 String batchSize = getTextContent(n);
-                topicConfig.setReadBatchSize(
-                        getIntegerValue("read-batch-size", batchSize));
+                topicConfig.setReadBatchSize(getIntegerValue("read-batch-size", batchSize));
             } else if ("statistics-enabled".equals(nodeName)) {
                 topicConfig.setStatisticsEnabled(getBooleanValue(getTextContent(n)));
             } else if ("topic-overload-policy".equals(nodeName)) {
@@ -1752,6 +1859,9 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             } else if ("in-memory-format".equals(nodeName)) {
                 InMemoryFormat inMemoryFormat = InMemoryFormat.valueOf(upperCaseInternal(value));
                 rbConfig.setInMemoryFormat(inMemoryFormat);
+            } else if ("ringbuffer-store".equals(nodeName)) {
+                final RingbufferStoreConfig ringbufferStoreConfig = createRingbufferStoreConfig(n);
+                rbConfig.setRingbufferStoreConfig(ringbufferStoreConfig);
             }
         }
         config.addRingBufferConfig(rbConfig);

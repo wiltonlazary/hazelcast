@@ -27,18 +27,17 @@ import com.hazelcast.instance.NodeState;
 import com.hazelcast.instance.OutOfMemoryErrorDispatcher;
 import com.hazelcast.internal.ascii.TextCommandService;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
+import com.hazelcast.internal.networking.IOOutOfMemoryHandler;
+import com.hazelcast.internal.networking.ReadHandler;
+import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
+import com.hazelcast.internal.networking.WriteHandler;
 import com.hazelcast.internal.serialization.InternalSerializationService;
-import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.nio.tcp.ReadHandler;
-import com.hazelcast.nio.tcp.SocketChannelWrapperFactory;
+import com.hazelcast.logging.LoggingService;
 import com.hazelcast.nio.tcp.TcpIpConnection;
-import com.hazelcast.nio.tcp.WriteHandler;
 import com.hazelcast.spi.EventService;
 import com.hazelcast.spi.ExecutionService;
 import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.spi.impl.NodeEngineImpl;
-import com.hazelcast.spi.impl.packetdispatcher.PacketDispatcher;
 import com.hazelcast.spi.properties.GroupProperty;
 
 import java.util.Collection;
@@ -52,12 +51,20 @@ public class NodeIOService implements IOService {
 
     private final Node node;
     private final NodeEngineImpl nodeEngine;
-    private final PacketDispatcher packetDispatcher;
 
     public NodeIOService(Node node, NodeEngineImpl nodeEngine) {
         this.node = node;
         this.nodeEngine = nodeEngine;
-        this.packetDispatcher = nodeEngine.getPacketDispatcher();
+    }
+
+    @Override
+    public HazelcastThreadGroup getHazelcastThreadGroup() {
+        return nodeEngine.getHazelcastThreadGroup();
+    }
+
+    @Override
+    public LoggingService getLoggingService() {
+        return nodeEngine.getLoggingService();
     }
 
     @Override
@@ -66,13 +73,13 @@ public class NodeIOService implements IOService {
     }
 
     @Override
-    public ILogger getLogger(String name) {
-        return node.getLogger(name);
-    }
-
-    @Override
-    public void onOutOfMemory(OutOfMemoryError oom) {
-        OutOfMemoryErrorDispatcher.onOutOfMemory(oom);
+    public IOOutOfMemoryHandler getIoOutOfMemoryHandler() {
+        return new IOOutOfMemoryHandler() {
+            @Override
+            public void handle(OutOfMemoryError error) {
+                OutOfMemoryErrorDispatcher.onOutOfMemory(error);
+            }
+        };
     }
 
     @Override
@@ -127,15 +134,8 @@ public class NodeIOService implements IOService {
     }
 
     @Override
-    public String getThreadPrefix() {
-        HazelcastThreadGroup threadGroup = node.getHazelcastThreadGroup();
-        return threadGroup.getThreadPoolNamePrefix("IO");
-    }
-
-    @Override
-    public ThreadGroup getThreadGroup() {
-        HazelcastThreadGroup threadGroup = node.getHazelcastThreadGroup();
-        return threadGroup.getInternalThreadGroup();
+    public boolean isHealthcheckEnabled() {
+        return node.getProperties().getBoolean(GroupProperty.HTTP_HEALTHCHECK_ENABLED);
     }
 
     @Override
@@ -151,7 +151,12 @@ public class NodeIOService implements IOService {
     }
 
     @Override
-    public void onDisconnect(final Address endpoint) {
+    public void onDisconnect(final Address endpoint, Throwable cause) {
+        if (cause == null) {
+            // connection is closed explicitly. we should not attempt to reconnect
+            return;
+        }
+
         if (node.clusterService.getMember(endpoint) != null) {
             nodeEngine.getExecutionService().execute(ExecutionService.IO_EXECUTOR, new ReconnectionTask(endpoint));
         }
@@ -278,16 +283,6 @@ public class NodeIOService implements IOService {
     @Override
     public EventService getEventService() {
         return nodeEngine.getEventService();
-    }
-
-    @Override
-    public Data toData(Object obj) {
-        return nodeEngine.toData(obj);
-    }
-
-    @Override
-    public Object toObject(Data data) {
-        return nodeEngine.toObject(data);
     }
 
     @Override

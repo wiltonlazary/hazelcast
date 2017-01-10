@@ -26,7 +26,6 @@ import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.topic.TopicOverloadException;
 import com.hazelcast.util.EmptyStatement;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -121,7 +120,6 @@ public abstract class TopicOverloadAbstractTest extends HazelcastTestSupport {
     }
 
     @Test
-    @Ignore("please see issues #6819")
     public void whenBlock_whenNoSpace() {
         for (int k = 0; k < ringbuffer.capacity(); k++) {
             topic.publish("old");
@@ -138,7 +136,6 @@ public abstract class TopicOverloadAbstractTest extends HazelcastTestSupport {
             }
         });
 
-        // make sure it doesn't complete within 3 seconds. We have a 2 second error margin to prevent spurious test failures
         assertTrueAllTheTime(new AssertTask() {
             @Override
             public void run() throws Exception {
@@ -146,12 +143,9 @@ public abstract class TopicOverloadAbstractTest extends HazelcastTestSupport {
                 assertEquals(tail, ringbuffer.tailSequence());
                 assertEquals(head, ringbuffer.headSequence());
             }
-        }, 3);
+        }, 5);
 
+        // assert that message is published eventually
         assertCompletesEventually(f);
-
-        assertEquals(tail + 1, ringbuffer.tailSequence());
-        // since the ringbuffer got cleaned, the head is at the tail
-        assertEquals(tail + 1, ringbuffer.headSequence());
     }
 }

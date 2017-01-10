@@ -9,12 +9,14 @@ import com.hazelcast.test.ExpectedRuntimeException;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import static org.junit.Assert.assertEquals;
+import java.util.List;
+
 import static org.junit.Assert.assertSame;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -113,20 +115,20 @@ public class RenderTest {
 
     @Test
     public void getSortedProbes_whenProbeAdded() {
-        SortedProbesInstances instances1 = metricsRegistry.getSortedProbeInstances();
+        List<ProbeInstance> instances1 = metricsRegistry.getSortedProbeInstances();
 
         registerLongMetric("foo", 10);
 
-        SortedProbesInstances instances2 = metricsRegistry.getSortedProbeInstances();
+        List<ProbeInstance> instances2  = metricsRegistry.getSortedProbeInstances();
 
-        assertEquals(instances1.modCount + 1, instances2.modCount);
+        Assert.assertNotSame(instances1, instances2);
     }
 
     @Test
     public void getSortedProbes_whenNoChange() {
-        SortedProbesInstances instances1 = metricsRegistry.getSortedProbeInstances();
+        List<ProbeInstance> instances1 = metricsRegistry.getSortedProbeInstances();
 
-        SortedProbesInstances instances2 = metricsRegistry.getSortedProbeInstances();
+        List<ProbeInstance> instances2 = metricsRegistry.getSortedProbeInstances();
 
         assertSame(instances1, instances2);
     }

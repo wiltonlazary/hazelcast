@@ -5,7 +5,6 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.internal.metrics.LongProbeFunction;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.spi.impl.NodeEngineImpl;
-import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
@@ -28,9 +27,9 @@ public class MetricsPluginTest extends AbstractDiagnosticsPluginTest {
 
     @Before
     public void setup() {
-        Config config = new Config();
-        config.setProperty(Diagnostics.ENABLED.getName(), "true");
-        config.setProperty(MetricsPlugin.PERIOD_SECONDS.getName(), "1");
+        Config config = new Config()
+                .setProperty(Diagnostics.ENABLED.getName(), "true")
+                .setProperty(MetricsPlugin.PERIOD_SECONDS.getName(), "1");
         HazelcastInstance hz = createHazelcastInstance(config);
         NodeEngineImpl nodeEngineImpl = getNodeEngineImpl(hz);
         metricsRegistry = nodeEngineImpl.getMetricsRegistry();
@@ -53,14 +52,8 @@ public class MetricsPluginTest extends AbstractDiagnosticsPluginTest {
             }
         });
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                logWriter.clean();
-                plugin.run(logWriter);
-                assertContains("broken=java.lang.RuntimeException:error");
-            }
-        });
+        plugin.run(logWriter);
+        assertContains("broken=java.lang.RuntimeException:error");
     }
 
     @Test

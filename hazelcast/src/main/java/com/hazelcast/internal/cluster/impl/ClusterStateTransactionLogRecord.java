@@ -37,30 +37,32 @@ import java.io.IOException;
  */
 public class ClusterStateTransactionLogRecord implements TargetAwareTransactionLogRecord {
 
-    private ClusterState newState;
-    private Address initiator;
-    private Address target;
-    private String txnId;
-    private long leaseTime;
-    private int partitionStateVersion;
+    ClusterStateChange stateChange;
+    Address initiator;
+    Address target;
+    String txnId;
+    long leaseTime;
+    int partitionStateVersion;
+    boolean isTransient;
 
     public ClusterStateTransactionLogRecord() {
     }
 
-    public ClusterStateTransactionLogRecord(ClusterState newState, Address initiator, Address target,
-            String txnId, long leaseTime, int partitionStateVersion) {
-        Preconditions.checkNotNull(newState);
+    public ClusterStateTransactionLogRecord(ClusterStateChange stateChange, Address initiator, Address target,
+            String txnId, long leaseTime, int partitionStateVersion, boolean isTransient) {
+        Preconditions.checkNotNull(stateChange);
         Preconditions.checkNotNull(initiator);
         Preconditions.checkNotNull(target);
         Preconditions.checkNotNull(txnId);
         Preconditions.checkPositive(leaseTime, "Lease time should be positive!");
 
-        this.newState = newState;
+        this.stateChange = stateChange;
         this.initiator = initiator;
         this.target = target;
         this.txnId = txnId;
         this.leaseTime = leaseTime;
         this.partitionStateVersion = partitionStateVersion;
+        this.isTransient = isTransient;
     }
 
     @Override
@@ -70,12 +72,12 @@ public class ClusterStateTransactionLogRecord implements TargetAwareTransactionL
 
     @Override
     public Operation newPrepareOperation() {
-        return new LockClusterStateOperation(newState, initiator, txnId, leaseTime, partitionStateVersion);
+        return new LockClusterStateOperation(stateChange, initiator, txnId, leaseTime, partitionStateVersion);
     }
 
     @Override
     public Operation newCommitOperation() {
-        return new ChangeClusterStateOperation(newState, initiator, txnId);
+        return new ChangeClusterStateOperation(stateChange, initiator, txnId, isTransient);
     }
 
     @Override
@@ -90,24 +92,33 @@ public class ClusterStateTransactionLogRecord implements TargetAwareTransactionL
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(newState.toString());
-        initiator.writeData(out);
-        target.writeData(out);
+        out.writeObject(stateChange);
+        out.writeObject(initiator);
+        out.writeObject(target);
         out.writeUTF(txnId);
         out.writeLong(leaseTime);
         out.writeInt(partitionStateVersion);
+        out.writeBoolean(isTransient);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        String stateName = in.readUTF();
-        newState = ClusterState.valueOf(stateName);
-        initiator = new Address();
-        initiator.readData(in);
-        target = new Address();
-        target.readData(in);
+        stateChange = in.readObject();
+        initiator = in.readObject();
+        target = in.readObject();
         txnId = in.readUTF();
         leaseTime = in.readLong();
         partitionStateVersion = in.readInt();
+        isTransient = in.readBoolean();
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ClusterDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ClusterDataSerializerHook.CLUSTER_STATE_TRANSACTION_LOG_RECORD;
     }
 }

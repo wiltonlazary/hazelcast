@@ -83,7 +83,7 @@ public class PartitionServiceSafetyCheckTest extends PartitionCorrectnessTestSup
 
         Collection<HazelcastInstance> instances = factory.getAllHazelcastInstances();
 
-        assertSafe(instances);
+        assertSafeEventually(instances);
     }
 
     @Test
@@ -201,7 +201,7 @@ public class PartitionServiceSafetyCheckTest extends PartitionCorrectnessTestSup
     }
 
     private void assertSafe(Collection<HazelcastInstance> instances) {
-        assertTrue(isAllInSafeState(instances));
+        assertAllInSafeState(instances);
         for (HazelcastInstance instance : instances) {
             isClusterInSafeState(instance);
         }

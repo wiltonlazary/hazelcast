@@ -16,10 +16,10 @@
 
 package com.hazelcast.internal.cluster.impl.operations;
 
+import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationAccessor;
@@ -28,11 +28,12 @@ import com.hazelcast.spi.UrgentSystemOperation;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.logging.Level;
 
 import static com.hazelcast.util.Preconditions.checkNegative;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 
-public class PostJoinOperation extends AbstractOperation implements UrgentSystemOperation, JoinOperation {
+public class PostJoinOperation extends AbstractJoinOperation implements UrgentSystemOperation {
 
     private Operation[] operations;
 
@@ -65,15 +66,10 @@ public class PostJoinOperation extends AbstractOperation implements UrgentSystem
                             logger.warning("Error while running post-join operation: "
                                     + t.getClass().getSimpleName() + ": " + t.getMessage());
 
-                            if (logger.isFinestEnabled()) {
-                                logger.finest(t);
+                            if (logger.isFineEnabled()) {
+                                logger.log(Level.FINE, "Error while running post-join operation: ", t);
                             }
                         }
-                    }
-
-                    @Override
-                    public boolean isLocal() {
-                        return true;
                     }
                 });
 
@@ -140,7 +136,11 @@ public class PostJoinOperation extends AbstractOperation implements UrgentSystem
     @Override
     protected void toString(StringBuilder sb) {
         super.toString(sb);
-
         sb.append(", operations=").append(Arrays.toString(operations));
+    }
+
+    @Override
+    public int getId() {
+        return ClusterDataSerializerHook.POST_JOIN;
     }
 }

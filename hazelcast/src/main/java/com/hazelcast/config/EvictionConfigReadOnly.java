@@ -16,6 +16,7 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import com.hazelcast.internal.eviction.EvictionPolicyComparator;
 
 /**
@@ -23,17 +24,19 @@ import com.hazelcast.internal.eviction.EvictionPolicyComparator;
  *
  * @deprecated this class will be removed in 3.8; it is meant for internal usage only.
  */
-public class EvictionConfigReadOnly
-        extends EvictionConfig {
+@BinaryInterface
+public class EvictionConfigReadOnly extends EvictionConfig {
 
     public EvictionConfigReadOnly(EvictionConfig config) {
         super(config);
     }
 
+    @Override
     public EvictionConfigReadOnly setSize(int size) {
         throw new UnsupportedOperationException("This config is read-only");
     }
 
+    @Override
     public EvictionConfigReadOnly setMaximumSizePolicy(MaxSizePolicy maxSizePolicy) {
         throw new UnsupportedOperationException("This config is read-only");
     }
@@ -52,5 +55,4 @@ public class EvictionConfigReadOnly
     public EvictionConfig setComparator(EvictionPolicyComparator comparator) {
         throw new UnsupportedOperationException("This config is read-only");
     }
-
 }

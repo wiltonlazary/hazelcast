@@ -19,9 +19,11 @@ package com.hazelcast.mapreduce.aggregation.impl;
 import com.hazelcast.mapreduce.Context;
 import com.hazelcast.mapreduce.Mapper;
 import com.hazelcast.mapreduce.aggregation.Supplier;
+import com.hazelcast.mapreduce.impl.task.DefaultContext;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.io.IOException;
@@ -34,6 +36,7 @@ import java.io.IOException;
  * @param <ValueOut> the output value type
  */
 @SuppressFBWarnings("SE_NO_SERIALVERSIONID")
+@BinaryInterface
 class SupplierConsumingMapper<Key, ValueIn, ValueOut>
         implements Mapper<Key, ValueIn, Key, ValueOut>, IdentifiedDataSerializable {
 
@@ -52,6 +55,7 @@ class SupplierConsumingMapper<Key, ValueIn, ValueOut>
     public void map(Key key, ValueIn value, Context<Key, ValueOut> context) {
         entry.setKey(key);
         entry.setValue(value);
+        entry.setSerializationService(((DefaultContext) context).getSerializationService());
         ValueOut valueOut = supplier.apply(entry);
         if (valueOut != null) {
             context.emit(key, valueOut);

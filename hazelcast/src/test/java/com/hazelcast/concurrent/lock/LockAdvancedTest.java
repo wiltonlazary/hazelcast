@@ -8,8 +8,8 @@ import com.hazelcast.internal.serialization.impl.HeapData;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.ObjectNamespace;
+import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
 import com.hazelcast.spi.properties.GroupProperty;
@@ -121,7 +121,7 @@ public class LockAdvancedTest extends HazelcastTestSupport {
             }
         });
         t.start();
-        assertTrue(latch.await(30, TimeUnit.SECONDS));
+        assertOpenEventually(latch, 30);
     }
 
 
@@ -166,7 +166,7 @@ public class LockAdvancedTest extends HazelcastTestSupport {
         latch2.await(3, TimeUnit.SECONDS);
         Thread.sleep(500);
         lock.unlock();
-        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        assertOpenEventually(latch, 5);
     }
 
     //todo:   what does isLocked2 test?
@@ -223,7 +223,7 @@ public class LockAdvancedTest extends HazelcastTestSupport {
         t.start();
         Thread.sleep(2000);
         t.interrupt();
-        assertTrue("tryLock() is not interrupted!", latch.await(30, TimeUnit.SECONDS));
+        assertOpenEventually("tryLock() is not interrupted!", latch, 30);
         lock.unlock();
         assertTrue("Could not acquire lock!", lock.tryLock());
     }
@@ -252,7 +252,53 @@ public class LockAdvancedTest extends HazelcastTestSupport {
         });
         t.start();
         lockOwner.shutdown();
-        assertTrue(latch.await(10, TimeUnit.SECONDS));
+        assertOpenEventually(latch, 10);
+    }
+
+    @Test(timeout = 100000)
+    public void testLockOwnerDies_withMultipleLocks() throws Exception {
+        int lockCount = 10;
+
+        TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(2);
+        HazelcastInstance lockOwner = nodeFactory.newHazelcastInstance();
+        final HazelcastInstance instance1 = nodeFactory.newHazelcastInstance();
+
+        final String[] names = generateKeysBelongingToSamePartitionsOwnedBy(instance1, lockCount);
+        final ILock[] locks = getLocks(lockOwner, names);
+        lockAll(locks);
+        assertAllLocked(locks);
+        final CountDownLatch latch = new CountDownLatch(1);
+        Thread t = new Thread(new Runnable() {
+            public void run() {
+                final ILock[] locks = getLocks(instance1, names);
+                lockAll(locks);
+                latch.countDown();
+
+            }
+        });
+        t.start();
+        lockOwner.shutdown();
+        assertOpenEventually(latch, 10);
+    }
+
+    private void assertAllLocked(ILock... locks) {
+        for (ILock lock : locks) {
+            assertTrue(lock.isLocked());
+        }
+    }
+
+    private void lockAll(ILock... locks) {
+        for (ILock lock : locks) {
+            lock.lock();
+        }
+    }
+
+    private ILock[] getLocks(HazelcastInstance instance, String... names) {
+        ILock[] locks = new ILock[names.length];
+        for (int i = 0; i < names.length; i++) {
+            locks[i] = instance.getLock(names[i]);
+        }
+        return locks;
     }
 
     @Test(timeout = 100000)
@@ -283,7 +329,7 @@ public class LockAdvancedTest extends HazelcastTestSupport {
         assertTrue(lock1.tryLock());
         lock1.unlock();
         lock1.unlock();
-        assertTrue(latch.await(10, TimeUnit.SECONDS));
+        assertOpenEventually(latch, 10);
     }
 
     @Test(timeout = 100000)
@@ -342,7 +388,7 @@ public class LockAdvancedTest extends HazelcastTestSupport {
         t.start();
         sleepMillis(5000);
         t.interrupt();
-        assertTrue(latch.await(15, TimeUnit.SECONDS));
+        assertOpenEventually(latch, 30);
     }
 
     @Test
@@ -427,7 +473,7 @@ public class LockAdvancedTest extends HazelcastTestSupport {
         }, 30);
     }
 
-    private static class SlowLockOperation extends AbstractOperation {
+    private static class SlowLockOperation extends Operation {
 
         Data key;
         ObjectNamespace ns;

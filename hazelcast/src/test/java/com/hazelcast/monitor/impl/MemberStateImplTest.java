@@ -1,15 +1,25 @@
 package com.hazelcast.monitor.impl;
 
 import com.hazelcast.cache.impl.CacheStatisticsImpl;
+import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.hotrestart.BackupTaskState;
+import com.hazelcast.hotrestart.BackupTaskStatus;
 import com.hazelcast.internal.management.TimedMemberStateFactory;
 import com.hazelcast.internal.management.dto.ClientEndPointDTO;
+import com.hazelcast.internal.management.dto.ClusterHotRestartStatusDTO;
+import com.hazelcast.monitor.HotRestartState;
+import com.hazelcast.monitor.NodeState;
 import com.hazelcast.monitor.TimedMemberState;
+import com.hazelcast.monitor.WanSyncState;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.util.Clock;
+import com.hazelcast.version.ClusterVersion;
+import com.hazelcast.version.MemberVersion;
+import com.hazelcast.wan.WanSyncStatus;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -19,9 +29,11 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.hazelcast.config.HotRestartClusterDataRecoveryPolicy.FULL_RECOVERY_ONLY;
 import static com.hazelcast.instance.TestUtil.getHazelcastInstanceImpl;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -53,6 +65,15 @@ public class MemberStateImplTest extends HazelcastTestSupport {
         Map<String, Long> runtimeProps = new HashMap<String, Long>();
         runtimeProps.put("prop1", 598123L);
 
+        ClusterState clusterState = ClusterState.ACTIVE;
+        com.hazelcast.instance.NodeState nodeState = com.hazelcast.instance.NodeState.PASSIVE;
+        ClusterVersion clusterVersion = ClusterVersion.of("3.8.0");
+        MemberVersion memberVersion = MemberVersion.of("3.9.0");
+        NodeState state = new NodeStateImpl(clusterState, nodeState, clusterVersion, memberVersion);
+        final BackupTaskStatus backupTaskStatus = new BackupTaskStatus(BackupTaskState.IN_PROGRESS, 5, 10);
+        final HotRestartStateImpl hotRestartState = new HotRestartStateImpl(backupTaskStatus);
+        final WanSyncState wanSyncState = new WanSyncStateImpl(WanSyncStatus.IN_PROGRESS, 86, "atob", "B");
+
         TimedMemberStateFactory factory = new TimedMemberStateFactory(getHazelcastInstanceImpl(hazelcastInstance));
         TimedMemberState timedMemberState = factory.createTimedMemberState();
 
@@ -69,6 +90,9 @@ public class MemberStateImplTest extends HazelcastTestSupport {
         memberState.setLocalMemoryStats(new LocalMemoryStatsImpl());
         memberState.setOperationStats(new LocalOperationStatsImpl());
         memberState.setClients(clients);
+        memberState.setNodeState(state);
+        memberState.setHotRestartState(hotRestartState);
+        memberState.setWanSyncState(wanSyncState);
 
         MemberStateImpl deserialized = new MemberStateImpl();
         deserialized.fromJson(memberState.toJson());
@@ -93,5 +117,27 @@ public class MemberStateImplTest extends HazelcastTestSupport {
         assertEquals("abc123456", client.uuid);
         assertEquals("localhost", client.address);
         assertEquals("undefined", client.clientType);
+
+        NodeState deserializedState = deserialized.getNodeState();
+        assertEquals(clusterState, deserializedState.getClusterState());
+        assertEquals(nodeState, deserializedState.getNodeState());
+        assertEquals(clusterVersion, deserializedState.getClusterVersion());
+        assertEquals(memberVersion, deserializedState.getMemberVersion());
+
+        final HotRestartState deserializedHotRestartState = deserialized.getHotRestartState();
+        assertEquals(backupTaskStatus, deserializedHotRestartState.getBackupTaskStatus());
+
+        final WanSyncState deserializedWanSyncState = deserialized.getWanSyncState();
+        assertEquals(WanSyncStatus.IN_PROGRESS, deserializedWanSyncState.getStatus());
+        assertEquals(86, deserializedWanSyncState.getSyncedPartitionCount());
+        assertEquals("atob", deserializedWanSyncState.getActiveWanConfigName());
+        assertEquals("B", deserializedWanSyncState.getActivePublisherName());
+
+        ClusterHotRestartStatusDTO clusterHotRestartStatus = deserialized.getClusterHotRestartStatus();
+        assertEquals(FULL_RECOVERY_ONLY, clusterHotRestartStatus.getDataRecoveryPolicy());
+        assertEquals(ClusterHotRestartStatusDTO.ClusterHotRestartStatus.UNKNOWN, clusterHotRestartStatus.getHotRestartStatus());
+        assertEquals(-1, clusterHotRestartStatus.getRemainingValidationTimeMillis());
+        assertEquals(-1, clusterHotRestartStatus.getRemainingDataLoadTimeMillis());
+        assertTrue(clusterHotRestartStatus.getMemberHotRestartStatusMap().isEmpty());
     }
 }

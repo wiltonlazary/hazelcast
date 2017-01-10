@@ -20,7 +20,6 @@ import com.hazelcast.cluster.memberselector.MemberSelectors;
 import com.hazelcast.core.Member;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse;
 
@@ -30,7 +29,7 @@ import java.util.Collection;
 import static com.hazelcast.replicatedmap.impl.ReplicatedMapService.INVOCATION_TRY_COUNT;
 
 
-public abstract class AbstractReplicatedMapOperation extends AbstractOperation {
+public abstract class AbstractReplicatedMapOperation extends AbstractSerializableOperation {
 
     protected String name;
     protected Data key;
@@ -87,17 +86,11 @@ public abstract class AbstractReplicatedMapOperation extends AbstractOperation {
     }
 
     @Override
-    public boolean returnsResponse() {
-        return true;
-    }
-
-    @Override
     public Object getResponse() {
         if (getNodeEngine().getThisAddress().equals(getCallerAddress())) {
             return response;
         } else {
-            NormalResponse resp = new NormalResponse(response, getCallId(), 1, isUrgent());
-            return resp;
+            return new NormalResponse(response, getCallId(), 1, isUrgent());
         }
     }
 

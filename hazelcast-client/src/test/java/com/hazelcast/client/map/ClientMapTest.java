@@ -102,12 +102,12 @@ public class ClientMapTest extends HazelcastTestSupport {
 
         ClientConfig clientConfig = new ClientConfig();
         clientConfig.getSerializationConfig()
-                    .addPortableFactory(TestSerializationConstants.PORTABLE_FACTORY_ID, new PortableFactory() {
-                        public Portable create(int classId) {
-                            return new NamedPortable();
-                        }
+                .addPortableFactory(TestSerializationConstants.PORTABLE_FACTORY_ID, new PortableFactory() {
+                    public Portable create(int classId) {
+                        return new NamedPortable();
+                    }
 
-                    });
+                });
         client = hazelcastFactory.newHazelcastClient(clientConfig);
     }
 
@@ -146,8 +146,9 @@ public class ClientMapTest extends HazelcastTestSupport {
         String id = map.addEntryListener(listener, true);
 
         map.put("key1", new GenericEvent("value1"), 2, TimeUnit.SECONDS);
-        assertTrue("latch.await() took longer than 10 seconds", latch.await(10, TimeUnit.SECONDS));
-        assertTrue("nullLatch.await() tool longer than 1 second", nullLatch.await(1, TimeUnit.SECONDS));
+
+        assertOpenEventually(latch);
+        assertOpenEventually(nullLatch);
 
         map.removeEntryListener(id);
         map.put("key2", new GenericEvent("value2"));
@@ -291,7 +292,7 @@ public class ClientMapTest extends HazelcastTestSupport {
         assertNull(future.get());
         assertEquals("value1", map.get("key"));
 
-        assertTrue(latch.await(10, TimeUnit.SECONDS));
+        assertOpenEventually(latch);
         assertNull(map.get("key"));
     }
 
@@ -449,52 +450,6 @@ public class ClientMapTest extends HazelcastTestSupport {
         }.start();
         assertTrue(latch.await(5, TimeUnit.SECONDS));
         assertEquals("value1", map.get("key1"));
-        map.forceUnlock("key1");
-    }
-
-    @Test
-    public void testLockTtl() throws Exception {
-        final IMap<String, String> map = createMap();
-        map.put("key1", "value1");
-        assertEquals("value1", map.get("key1"));
-        map.lock("key1", 2, TimeUnit.SECONDS);
-
-        final CountDownLatch latch = new CountDownLatch(1);
-        new Thread() {
-            @Override
-            public void run() {
-                map.tryPut("key1", "value2", 5, TimeUnit.SECONDS);
-                latch.countDown();
-            }
-        }.start();
-        assertTrue(latch.await(10, TimeUnit.SECONDS));
-        assertFalse(map.isLocked("key1"));
-        assertEquals("value2", map.get("key1"));
-        map.forceUnlock("key1");
-    }
-
-    @Test
-    public void testLockTtl2() throws Exception {
-        final IMap<String, String> map = createMap();
-        map.lock("key1", 3, TimeUnit.SECONDS);
-
-        final CountDownLatch latch = new CountDownLatch(2);
-        new Thread() {
-            @Override
-            public void run() {
-                if (!map.tryLock("key1")) {
-                    latch.countDown();
-                }
-                try {
-                    if (map.tryLock("key1", 5, TimeUnit.SECONDS)) {
-                        latch.countDown();
-                    }
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-        }.start();
-        assertTrue(latch.await(10, TimeUnit.SECONDS));
         map.forceUnlock("key1");
     }
 

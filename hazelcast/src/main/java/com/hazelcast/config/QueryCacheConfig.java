@@ -25,7 +25,6 @@ import static com.hazelcast.util.Preconditions.checkNotNegative;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 import static com.hazelcast.util.Preconditions.checkPositive;
 
-
 /**
  * Contains configuration for {@code QueryCache}.
  *
@@ -357,12 +356,11 @@ public class QueryCacheConfig {
      * Default value is {@value #DEFAULT_COALESCE}.
      *
      * @param coalesce set {@code true} to enable, otherwise set {@code false}
-     * @return this {@code QueryCacheConfig} instance.
      */
-    public void setCoalesce(boolean coalesce) {
+    public QueryCacheConfig setCoalesce(boolean coalesce) {
         this.coalesce = coalesce;
+        return this;
     }
-
 
     /**
      * Returns {@link EvictionConfig} instance for this {@code QueryCache}
@@ -389,7 +387,7 @@ public class QueryCacheConfig {
     /**
      * Adds {@link EntryListenerConfig} to this {@code QueryCacheConfig}.
      *
-     * @param listenerConfig
+     * @param listenerConfig the {@link EntryListenerConfig} to add
      * @return this {@code QueryCacheConfig} instance.
      */
     public QueryCacheConfig addEntryListenerConfig(EntryListenerConfig listenerConfig) {
@@ -430,76 +428,6 @@ public class QueryCacheConfig {
         return this;
     }
 
-    //CHECKSTYLE:OFF
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-
-        if (!(o instanceof QueryCacheConfig)) {
-            return false;
-        }
-
-        QueryCacheConfig that = (QueryCacheConfig) o;
-
-        if (batchSize != that.batchSize) {
-            return false;
-        }
-        if (bufferSize != that.bufferSize) {
-            return false;
-        }
-        if (delaySeconds != that.delaySeconds) {
-            return false;
-        }
-        if (includeValue != that.includeValue) {
-            return false;
-        }
-        if (populate != that.populate) {
-            return false;
-        }
-        if (coalesce != that.coalesce) {
-            return false;
-        }
-        if (inMemoryFormat != that.inMemoryFormat) {
-            return false;
-        }
-        if (name != null ? !name.equals(that.name) : that.name != null) {
-            return false;
-        }
-        if (predicateConfig != null ? !predicateConfig.equals(that.predicateConfig) : that.predicateConfig != null) {
-            return false;
-        }
-        if (evictionConfig != null ? !evictionConfig.equals(that.evictionConfig) : that.evictionConfig != null) {
-            return false;
-        }
-        if (entryListenerConfigs != null ? !entryListenerConfigs.equals(that.entryListenerConfigs)
-                : that.entryListenerConfigs != null) {
-            return false;
-        }
-        return !(indexConfigs != null ? !indexConfigs.equals(that.indexConfigs) : that.indexConfigs != null);
-
-    }
-
-
-    @Override
-    public int hashCode() {
-        int result = batchSize;
-        result = 31 * result + bufferSize;
-        result = 31 * result + delaySeconds;
-        result = 31 * result + (includeValue ? 1 : 0);
-        result = 31 * result + (populate ? 1 : 0);
-        result = 31 * result + (coalesce ? 1 : 0);
-        result = 31 * result + inMemoryFormat.hashCode();
-        result = 31 * result + (name != null ? name.hashCode() : 0);
-        result = 31 * result + predicateConfig.hashCode();
-        result = 31 * result + evictionConfig.hashCode();
-        result = 31 * result + (entryListenerConfigs != null ? entryListenerConfigs.hashCode() : 0);
-        result = 31 * result + (indexConfigs != null ? indexConfigs.hashCode() : 0);
-        return result;
-    }
-    //CHECKSTYLE:ON
-
     @Override
     public String toString() {
         return "QueryCacheConfig{"
@@ -515,8 +443,6 @@ public class QueryCacheConfig {
                 + ", evictionConfig=" + evictionConfig
                 + ", entryListenerConfigs=" + entryListenerConfigs
                 + ", indexConfigs=" + indexConfigs
-                + ", readOnly=" + (this instanceof QueryCacheConfigReadOnly)
                 + '}';
     }
-
 }

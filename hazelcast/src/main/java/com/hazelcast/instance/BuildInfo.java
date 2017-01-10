@@ -16,7 +16,17 @@
 
 package com.hazelcast.instance;
 
+import com.hazelcast.logging.Logger;
+
+import static com.hazelcast.util.StringUtil.tokenizeVersionString;
+
 public class BuildInfo {
+    public static final int UNKNOWN_HAZELCAST_VERSION = -1;
+
+    // major.minor.patch-RC-SNAPSHOT
+    private static final int MAJOR_VERSION_MULTIPLIER = 10000;
+    private static final int MINOR_VERSION_MULTIPLIER = 100;
+    private static final int PATCH_TOKEN_INDEX = 3;
 
     private final String version;
     private final String build;
@@ -57,6 +67,33 @@ public class BuildInfo {
 
     public byte getSerializationVersion() {
         return serializationVersion;
+    }
+
+    public static int calculateVersion(String version) {
+        if (null == version) {
+            return UNKNOWN_HAZELCAST_VERSION;
+        }
+
+        String[] versionTokens = tokenizeVersionString(version);
+        if (versionTokens != null) {
+            try {
+                int calculatedVersion = MAJOR_VERSION_MULTIPLIER * Integer.parseInt(versionTokens[0])
+                        + MINOR_VERSION_MULTIPLIER * Integer.parseInt(versionTokens[1]);
+
+                int groupCount = versionTokens.length;
+                if (groupCount >= PATCH_TOKEN_INDEX) {
+                    String patchVersionString = versionTokens[PATCH_TOKEN_INDEX];
+                    if (null != patchVersionString && !patchVersionString.startsWith("-")) {
+                        calculatedVersion += Integer.parseInt(patchVersionString);
+                    }
+                }
+                return calculatedVersion;
+            } catch (Exception e) {
+                Logger.getLogger(BuildInfo.class).warning("Failed to calculate version using version string " + version, e);
+            }
+        }
+
+        return UNKNOWN_HAZELCAST_VERSION;
     }
 
     @Override

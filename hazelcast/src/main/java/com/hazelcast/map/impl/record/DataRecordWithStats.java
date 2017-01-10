@@ -49,4 +49,22 @@ class DataRecordWithStats extends AbstractRecordWithStats<Data> {
     public void setValue(Data o) {
         value = o;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (!super.equals(o)) {
+            return false;
+        }
+
+        DataRecordWithStats that = (DataRecordWithStats) o;
+
+        return value.equals(that.value);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = super.hashCode();
+        result = 31 * result + value.hashCode();
+        return result;
+    }
 }

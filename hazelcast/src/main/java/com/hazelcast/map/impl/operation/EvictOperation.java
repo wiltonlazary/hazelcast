@@ -17,6 +17,7 @@
 package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.map.impl.MapContainer;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -45,6 +46,16 @@ public class EvictOperation extends LockAwareOperation implements MutatingOperat
     public void run() {
         dataValue = mapServiceContext.toData(recordStore.evict(dataKey, false));
         evicted = dataValue != null;
+    }
+
+    @Override
+    public void afterRun() {
+        if (!evicted) {
+            return;
+        }
+        mapServiceContext.interceptAfterRemove(name, dataValue);
+        mapEventPublisher.publishEvent(getCallerAddress(), name, EVICTED, dataKey, dataValue, null);
+        invalidateNearCache(dataKey);
     }
 
     @Override
@@ -85,15 +96,6 @@ public class EvictOperation extends LockAwareOperation implements MutatingOperat
         return evicted;
     }
 
-    public void afterRun() {
-        if (!evicted) {
-            return;
-        }
-        mapServiceContext.interceptAfterRemove(name, dataValue);
-        mapEventPublisher.publishEvent(getCallerAddress(), name, EVICTED, dataKey, dataValue, null);
-        invalidateNearCache(dataKey);
-    }
-
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
@@ -104,5 +106,10 @@ public class EvictOperation extends LockAwareOperation implements MutatingOperat
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
         asyncBackup = in.readBoolean();
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.EVICT;
     }
 }

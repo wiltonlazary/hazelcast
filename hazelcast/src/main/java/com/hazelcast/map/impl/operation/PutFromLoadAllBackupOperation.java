@@ -18,11 +18,11 @@ package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.core.EntryView;
 import com.hazelcast.map.impl.EntryViews;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.nio.serialization.DataSerializable;
 import com.hazelcast.spi.BackupOperation;
 import com.hazelcast.spi.impl.MutatingOperation;
 
@@ -36,8 +36,7 @@ import java.util.List;
  *
  * @see PutFromLoadAllOperation
  */
-public class PutFromLoadAllBackupOperation extends MapOperation implements BackupOperation, MutatingOperation,
-        DataSerializable {
+public class PutFromLoadAllBackupOperation extends MapOperation implements BackupOperation, MutatingOperation {
 
     private List<Data> keyValueSequence;
 
@@ -63,6 +62,13 @@ public class PutFromLoadAllBackupOperation extends MapOperation implements Backu
             recordStore.putFromLoadBackup(key, object);
             publishWanReplicationEvent(key, value, recordStore.getRecord(key));
         }
+    }
+
+    @Override
+    public void afterRun() throws Exception {
+        evict(null);
+
+        super.afterRun();
     }
 
     private void publishWanReplicationEvent(Data key, Data value, Record record) {
@@ -101,5 +107,10 @@ public class PutFromLoadAllBackupOperation extends MapOperation implements Backu
             }
             keyValueSequence = tmpKeyValueSequence;
         }
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.PUT_FROM_LOAD_ALL_BACKUP;
     }
 }

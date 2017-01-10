@@ -17,6 +17,7 @@
 package com.hazelcast.map.impl.query;
 
 import com.hazelcast.map.impl.EntryEventFilter;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -84,5 +85,17 @@ public class QueryEventFilter extends EntryEventFilter {
         int result = super.hashCode();
         result = 31 * result + predicate.hashCode();
         return result;
+    }
+
+    @Override
+    public String toString() {
+        return "QueryEventFilter{"
+                + "predicate=" + predicate
+                + '}';
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.QUERY_EVENT_FILTER;
     }
 }

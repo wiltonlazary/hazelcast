@@ -55,9 +55,12 @@ public class HotRestartPersistenceConfig {
 
     private boolean enabled;
     private File baseDir = new File(HOT_RESTART_BASE_DIR_DEFAULT);
+    private File backupDir;
     private int parallelism = DEFAULT_PARALLELISM;
     private int validationTimeoutSeconds = DEFAULT_VALIDATION_TIMEOUT;
     private int dataLoadTimeoutSeconds = DEFAULT_DATA_LOAD_TIMEOUT;
+    private HotRestartClusterDataRecoveryPolicy clusterDataRecoveryPolicy
+            = HotRestartClusterDataRecoveryPolicy.FULL_RECOVERY_ONLY;
 
     /**
      * Returns whether hot restart enabled on this member.
@@ -79,14 +82,36 @@ public class HotRestartPersistenceConfig {
     }
 
     /**
-     * Base directory for all Hot Restart stores.
+     * Returns the policy to be used when the cluster is started
+     *
+     * @return the policy to be used when the cluster is started
+     */
+    public HotRestartClusterDataRecoveryPolicy getClusterDataRecoveryPolicy() {
+        return clusterDataRecoveryPolicy;
+    }
+
+    /**
+     * Sets the policy to be used when the cluster is started
+     *
+     * @param clusterDataRecoveryPolicy the policy to be used when the cluster is started
+     *
+     * @return HotRestartConfig
+     */
+    public HotRestartPersistenceConfig setClusterDataRecoveryPolicy(HotRestartClusterDataRecoveryPolicy
+                                                                            clusterDataRecoveryPolicy) {
+        this.clusterDataRecoveryPolicy = clusterDataRecoveryPolicy;
+        return this;
+    }
+
+    /**
+     * Base directory for all Hot Restart stores. Can be an absolute or relative path to the node startup directory.
      */
     public File getBaseDir() {
         return baseDir;
     }
 
     /**
-     * Sets base directory for all Hot Restart stores.
+     * Sets base directory for all Hot Restart stores. Can be an absolute or relative path to the node startup directory.
      *
      * @param baseDir home directory
      * @return HotRestartConfig
@@ -94,6 +119,25 @@ public class HotRestartPersistenceConfig {
     public HotRestartPersistenceConfig setBaseDir(File baseDir) {
         checkNotNull(baseDir, "Base directory cannot be null!");
         this.baseDir = baseDir;
+        return this;
+    }
+
+    /**
+     * Base directory for hot backups. Each new backup will be created in a separate directory inside this one.
+     * Can be an absolute or relative path to the node startup directory.
+     */
+    public File getBackupDir() {
+        return backupDir;
+    }
+
+    /**
+     * Sets base directory for all Hot Restart stores.
+     *
+     * @param backupDir home directory
+     * @return HotRestartConfig
+     */
+    public HotRestartPersistenceConfig setBackupDir(File backupDir) {
+        this.backupDir = backupDir;
         return this;
     }
 

@@ -21,6 +21,7 @@ import com.hazelcast.collection.impl.queue.QueueDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.spi.BackupOperation;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 import java.util.HashSet;
@@ -29,7 +30,7 @@ import java.util.Set;
 /**
  * This class triggers backup method for items' id.
  */
-public class CompareAndRemoveBackupOperation extends QueueOperation implements BackupOperation {
+public class CompareAndRemoveBackupOperation extends QueueOperation implements BackupOperation, MutatingOperation {
 
     private Set<Long> keySet;
 
@@ -43,7 +44,7 @@ public class CompareAndRemoveBackupOperation extends QueueOperation implements B
 
     @Override
     public void run() throws Exception {
-        QueueContainer queueContainer = getOrCreateContainer();
+        QueueContainer queueContainer = getContainer();
         queueContainer.compareAndRemoveBackup(keySet);
         response = true;
     }

@@ -16,15 +16,18 @@
 
 package com.hazelcast.cache;
 
+import com.hazelcast.cache.impl.CacheEventListener;
 import com.hazelcast.cache.impl.ICacheRecordStore;
 import com.hazelcast.cache.impl.ICacheService;
 import com.hazelcast.config.CacheConfig;
-import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.instance.HazelcastInstanceProxy;
 import com.hazelcast.instance.Node;
+import com.hazelcast.internal.nearcache.impl.invalidation.Invalidation;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.ParallelTest;
@@ -35,10 +38,12 @@ import org.junit.runner.RunWith;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -56,10 +61,9 @@ public class CacheClearTest extends CacheTestSupport {
 
     @Override
     protected void onSetup() {
-        Config config = createConfig();
         hazelcastInstances = new HazelcastInstance[INSTANCE_COUNT];
-        for (int i = 0; i < INSTANCE_COUNT; i++) {
-            hazelcastInstances[i] = factory.newHazelcastInstance(config);
+        for (int i = 0; i < hazelcastInstances.length; i++) {
+            hazelcastInstances[i] = factory.newHazelcastInstance(createConfig());
         }
         warmUpPartitions(hazelcastInstances);
         waitAllForSafeState(hazelcastInstances);
@@ -85,7 +89,7 @@ public class CacheClearTest extends CacheTestSupport {
         return hazelcastInstance;
     }
 
-    private Map<String, String> createAndFillEntries() {
+    protected Map<String, String> createAndFillEntries() {
         final int ENTRY_COUNT_PER_PARTITION = 3;
         Node node = getNode(hazelcastInstance);
         int partitionCount = node.getPartitionService().getPartitionCount();
@@ -165,4 +169,64 @@ public class CacheClearTest extends CacheTestSupport {
         }
     }
 
+    @Test
+    public void testInvalidationListenerCallCount() {
+        final ICache<String, String> cache = createCache();
+        Map<String, String> entries = createAndFillEntries();
+
+        for (Map.Entry<String, String> entry : entries.entrySet()) {
+            cache.put(entry.getKey(), entry.getValue());
+        }
+
+        // Verify that put works
+        for (Map.Entry<String, String> entry : entries.entrySet()) {
+            String key = entry.getKey();
+            String expectedValue = entries.get(key);
+            String actualValue = cache.get(key);
+            assertEquals(expectedValue, actualValue);
+        }
+
+        final AtomicInteger counter = new AtomicInteger(0);
+
+        final CacheConfig config = cache.getConfiguration(CacheConfig.class);
+
+        registerInvalidationListener(new CacheEventListener() {
+            @Override
+            public void handleEvent(Object eventObject) {
+                if (eventObject instanceof Invalidation) {
+                    Invalidation event = (Invalidation) eventObject;
+                    if (null == event.getKey() && config.getNameWithPrefix().equals(event.getName())) {
+                        counter.incrementAndGet();
+                    }
+                }
+            }
+        }, config.getNameWithPrefix());
+
+        cache.clear();
+
+        // Make sure that one event is received
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run()
+                    throws Exception {
+                assertEquals(1, counter.get());
+            }
+        }, 5);
+
+        // Make sure that the callback is not called for a while
+        assertTrueAllTheTime(new AssertTask() {
+            @Override
+            public void run()
+                    throws Exception {
+                assertTrue(counter.get() <= 1);
+            }
+        }, 3);
+
+    }
+
+    private void registerInvalidationListener(CacheEventListener cacheEventListener, String name) {
+        HazelcastInstanceProxy hzInstance = (HazelcastInstanceProxy) this.hazelcastInstance;
+        hzInstance.getOriginal().node.getNodeEngine().getEventService()
+                .registerListener(ICacheService.SERVICE_NAME, name, cacheEventListener);
+    }
 }

@@ -18,6 +18,7 @@ package com.hazelcast.client.spi;
 
 import com.hazelcast.cache.impl.ICacheService;
 import com.hazelcast.cache.impl.JCacheDetector;
+import com.hazelcast.cardinality.impl.CardinalityEstimatorService;
 import com.hazelcast.client.ClientExtension;
 import com.hazelcast.client.LoadBalancer;
 import com.hazelcast.client.cache.impl.ClientCacheProxyFactory;
@@ -31,7 +32,9 @@ import com.hazelcast.client.impl.protocol.codec.ClientCreateProxyCodec;
 import com.hazelcast.client.impl.protocol.codec.ClientRemoveDistributedObjectListenerCodec;
 import com.hazelcast.client.proxy.ClientAtomicLongProxy;
 import com.hazelcast.client.proxy.ClientAtomicReferenceProxy;
+import com.hazelcast.client.proxy.ClientCardinalityEstimatorProxy;
 import com.hazelcast.client.proxy.ClientCountDownLatchProxy;
+import com.hazelcast.client.proxy.ClientDurableExecutorServiceProxy;
 import com.hazelcast.client.proxy.ClientExecutorServiceProxy;
 import com.hazelcast.client.proxy.ClientIdGeneratorProxy;
 import com.hazelcast.client.proxy.ClientListProxy;
@@ -42,6 +45,7 @@ import com.hazelcast.client.proxy.ClientQueueProxy;
 import com.hazelcast.client.proxy.ClientReliableTopicProxy;
 import com.hazelcast.client.proxy.ClientReplicatedMapProxy;
 import com.hazelcast.client.proxy.ClientRingbufferProxy;
+import com.hazelcast.client.proxy.ClientScheduledExecutorProxy;
 import com.hazelcast.client.proxy.ClientSemaphoreProxy;
 import com.hazelcast.client.proxy.ClientSetProxy;
 import com.hazelcast.client.proxy.ClientTopicProxy;
@@ -67,6 +71,7 @@ import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IAtomicLong;
 import com.hazelcast.core.Member;
+import com.hazelcast.durableexecutor.impl.DistributedDurableExecutorService;
 import com.hazelcast.executor.impl.DistributedExecutorService;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.mapreduce.impl.MapReduceService;
@@ -76,6 +81,7 @@ import com.hazelcast.nio.ClassLoaderUtil;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.ringbuffer.impl.RingbufferService;
+import com.hazelcast.scheduledexecutor.impl.DistributedScheduledExecutorService;
 import com.hazelcast.spi.DefaultObjectNamespace;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.exception.RetryableException;
@@ -100,11 +106,12 @@ import java.util.concurrent.TimeUnit;
 import static com.hazelcast.client.spi.properties.ClientProperty.INVOCATION_TIMEOUT_SECONDS;
 
 /**
- * The ProxyManager handles client proxy instantiation and retrieval at start- and runtime by registering
+ * The ProxyManager handles client proxy instantiation and retrieval at start and runtime by registering
  * corresponding service manager names and their {@link com.hazelcast.client.spi.ClientProxyFactory}s.
  */
 @SuppressWarnings("checkstyle:classfanoutcomplexity")
 public final class ProxyManager {
+
     private static final String PROVIDER_ID = "com.hazelcast.client.spi.ClientProxyDescriptorProvider";
     private static final Class[] CONSTRUCTOR_ARGUMENT_TYPES = new Class[]{String.class, String.class};
 
@@ -150,7 +157,7 @@ public final class ProxyManager {
     public void init(ClientConfig config) {
         // register defaults
         register(MapService.SERVICE_NAME, createServiceProxyFactory(MapService.class));
-        if (JCacheDetector.isJcacheAvailable(config.getClassLoader())) {
+        if (JCacheDetector.isJCacheAvailable(config.getClassLoader())) {
             register(ICacheService.SERVICE_NAME, new ClientCacheProxyFactory(client));
         }
         register(QueueService.SERVICE_NAME, ClientQueueProxy.class);
@@ -162,6 +169,7 @@ public final class ProxyManager {
         register(AtomicLongService.SERVICE_NAME, ClientAtomicLongProxy.class);
         register(AtomicReferenceService.SERVICE_NAME, ClientAtomicReferenceProxy.class);
         register(DistributedExecutorService.SERVICE_NAME, ClientExecutorServiceProxy.class);
+        register(DistributedDurableExecutorService.SERVICE_NAME, ClientDurableExecutorServiceProxy.class);
         register(LockServiceImpl.SERVICE_NAME, ClientLockProxy.class);
         register(CountDownLatchService.SERVICE_NAME, ClientCountDownLatchProxy.class);
         register(MapReduceService.SERVICE_NAME, ClientMapReduceProxy.class);
@@ -179,6 +187,8 @@ public final class ProxyManager {
                 return new ClientIdGeneratorProxy(IdGeneratorService.SERVICE_NAME, id, atomicLong);
             }
         });
+        register(CardinalityEstimatorService.SERVICE_NAME, ClientCardinalityEstimatorProxy.class);
+        register(DistributedScheduledExecutorService.SERVICE_NAME, ClientScheduledExecutorProxy.class);
 
         for (ProxyFactoryConfig proxyFactoryConfig : config.getProxyFactoryConfigs()) {
             try {
@@ -218,6 +228,13 @@ public final class ProxyManager {
         }
     }
 
+    /**
+     * Creates a {@code ClientProxyFactory} for the supplied service class. Currently only the {@link MapService} is supported.
+     *
+     * @param service service for the proxy to create.
+     * @return {@code ClientProxyFactory} for the service.
+     * @throws java.lang.IllegalArgumentException if service is not known. Currently only the {@link MapService} is known
+     */
     private <T> ClientProxyFactory createServiceProxyFactory(Class<T> service) {
         ClientExtension clientExtension = client.getClientExtension();
         return clientExtension.createServiceProxyFactory(service);

@@ -22,7 +22,6 @@ import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.core.MigrationEvent;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
-import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.partition.InternalPartition;
 import com.hazelcast.internal.partition.InternalPartitionService;
@@ -35,7 +34,7 @@ import com.hazelcast.internal.partition.impl.MigrationPlanner.MigrationDecisionC
 import com.hazelcast.internal.partition.operation.FinalizeMigrationOperation;
 import com.hazelcast.internal.partition.operation.MigrationCommitOperation;
 import com.hazelcast.internal.partition.operation.MigrationRequestOperation;
-import com.hazelcast.internal.partition.operation.PromoteFromBackupOperation;
+import com.hazelcast.internal.partition.operation.PromotionCommitOperation;
 import com.hazelcast.internal.partition.operation.ShutdownResponseOperation;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
@@ -84,6 +83,7 @@ public class MigrationManager {
     private static final boolean ASSERTION_ENABLED = MigrationManager.class.desiredAssertionStatus();
     private static final int PARTITION_STATE_VERSION_INCREMENT_DELTA_ON_MIGRATION_FAILURE = 2;
     private static final int MIGRATION_PAUSE_DURATION_SECONDS_ON_MIGRATION_FAILURE = 3;
+    private static final String INVALID_UUID = "<invalid-uuid>";
 
     final long partitionMigrationInterval;
 
@@ -171,6 +171,7 @@ public class MigrationManager {
         delayedResumeMigrationTrigger.executeWithDelay();
     }
 
+    /** Is a migration allowed. The migration is not allowed during repartitioning or a node joining the cluster */
     boolean isMigrationAllowed() {
         return migrationAllowed.get();
     }
@@ -201,12 +202,13 @@ public class MigrationManager {
 
                 op.setPartitionId(partitionId).setNodeEngine(nodeEngine).setValidateTarget(false)
                         .setService(partitionService);
-                nodeEngine.getOperationService().executeOperation(op);
+                nodeEngine.getOperationService().execute(op);
                 removeActiveMigration(partitionId);
             } else {
                 final Address partitionOwner = partitionStateManager.getPartitionImpl(partitionId).getOwnerOrNull();
                 if (node.getThisAddress().equals(partitionOwner)) {
                     removeActiveMigration(partitionId);
+                    partitionStateManager.clearMigratingFlag(partitionId);
                 } else {
                     logger.severe("Failed to finalize migration because this member " + thisAddress
                             + " is not a participant of the migration: " + migrationInfo);
@@ -219,17 +221,19 @@ public class MigrationManager {
         }
     }
 
-    public boolean addActiveMigration(MigrationInfo migrationInfo) {
+    public MigrationInfo setActiveMigration(MigrationInfo migrationInfo) {
         partitionServiceLock.lock();
         try {
             if (activeMigrationInfo == null) {
-                partitionStateManager.setMigrating(migrationInfo.getPartitionId(), true);
                 activeMigrationInfo = migrationInfo;
-                return true;
+                return null;
             }
 
-            logger.warning(migrationInfo + " not added! Already existing active migration: " + activeMigrationInfo);
-            return false;
+            if (logger.isFineEnabled()) {
+                logger.fine("Active migration is not set: " + migrationInfo
+                        + ". Existing active migration: " + activeMigrationInfo + "\n");
+            }
+            return activeMigrationInfo;
         } finally {
             partitionServiceLock.unlock();
         }
@@ -244,14 +248,13 @@ public class MigrationManager {
         try {
             if (activeMigrationInfo != null) {
                 if (activeMigrationInfo.getPartitionId() == partitionId) {
-                    partitionStateManager.setMigrating(partitionId, false);
                     activeMigrationInfo = null;
                     return true;
                 }
 
-                if (logger.isFinestEnabled()) {
-                    logger.finest("Active migration is not removed, because it has different partitionId! "
-                            + "PartitionId=" + partitionId + ", Active migration=" + activeMigrationInfo);
+                if (logger.isFineEnabled()) {
+                    logger.fine("Active migration is not removed, because it has different partitionId! "
+                            + "partitionId=" + partitionId + ", active migration=" + activeMigrationInfo);
                 }
             }
         } finally {
@@ -260,9 +263,6 @@ public class MigrationManager {
         return false;
     }
 
-    // suppressed intentionally since it is easier the follow the cases in one place.
-    // if this part gets more complicated, method can be divided into multiple methods
-    @SuppressWarnings("checkstyle:cyclomaticcomplexity")
     void scheduleActiveMigrationFinalization(final MigrationInfo migrationInfo) {
         partitionServiceLock.lock();
         try {
@@ -290,45 +290,33 @@ public class MigrationManager {
                 finalizeMigration(migrationInfo);
                 return;
             }
-
-            if (migrationInfo.getSource() == null
-                    && node.getThisAddress().equals(migrationInfo.getDestination())
-                    && migrationInfo.getDestinationCurrentReplicaIndex() > 0
-                    && migrationInfo.getDestinationNewReplicaIndex() == 0) {
-
-                // shift up when a partition owner is removed
-                assert migrationInfo.getStatus() == MigrationStatus.SUCCESS
-                        : "Promotion status should be SUCCESS! -> " + migrationInfo;
-                PromoteFromBackupOperation op = new PromoteFromBackupOperation(migrationInfo.getDestinationCurrentReplicaIndex());
-                op.setPartitionId(migrationInfo.getPartitionId()).setNodeEngine(nodeEngine).setService(partitionService);
-                nodeEngine.getOperationService().executeOperation(op);
-                return;
-            }
         } finally {
             partitionServiceLock.unlock();
         }
     }
 
-    private boolean commitMigrationToDestination(Address destination, MigrationInfo... migrations) {
-        assert migrations.length > 0 : "No migrations to commit!";
-        if (!node.isMaster()) {
-            return false;
-        }
+    private boolean commitMigrationToDestination(Address destination, MigrationInfo migration) {
+        assert migration != null : "No migrations to commit! destination=" + destination;
 
         if (node.getThisAddress().equals(destination)) {
             if (logger.isFinestEnabled()) {
-                logger.finest("Shortcutting migration commit,"
-                        + " since destination is master. Migrations " + Arrays.toString(migrations));
+                logger.finest("Shortcutting migration commit, since destination is master. -> " + migration);
             }
             return true;
         }
 
+        MemberImpl member = node.getClusterService().getMember(destination);
+        if (member == null) {
+            logger.warning("Destination " + destination + " is not member anymore");
+            return false;
+        }
+
         try {
             if (logger.isFinestEnabled()) {
-                logger.finest("Sending commit operation to " + destination + " for " + Arrays.toString(migrations));
+                logger.finest("Sending commit operation to " + destination + " for " + migration);
             }
-            PartitionRuntimeState partitionState = partitionService.createMigrationCommitPartitionState(migrations);
-            String destinationUuid = partitionStateManager.getMemberUuid(destination);
+            PartitionRuntimeState partitionState = partitionService.createMigrationCommitPartitionState(migration);
+            String destinationUuid = member.getUuid();
             MigrationCommitOperation operation = new MigrationCommitOperation(partitionState, destinationUuid);
             Future<Boolean> future = nodeEngine.getOperationService()
                     .createInvocationBuilder(SERVICE_NAME, operation, destination)
@@ -337,25 +325,31 @@ public class MigrationManager {
 
             boolean result = future.get();
             if (logger.isFinestEnabled()) {
-                logger.finest("Migration commit result " + result + " from " + destination
-                        + " for migrations " + Arrays.toString(migrations));
+                logger.finest("Migration commit result " + result + " from " + destination + " for " + migration);
             }
             return result;
         } catch (Throwable t) {
-            boolean memberLeft = t instanceof MemberLeftException
-                        || t.getCause() instanceof TargetNotMemberException
-                        || t.getCause() instanceof HazelcastInstanceNotActiveException;
-
-            if (memberLeft) {
-                logger.warning("Migration commit failed for "
-                        + (migrations.length == 1 ? migrations[0] : "multiple migrations")
-                        + " since destination " + destination + " left the cluster");
-            } else {
-                logger.severe("Migration commit to " + destination + " failed for "
-                        + (migrations.length == 1 ? migrations[0] : "multiple migrations"), t);
-            }
+            logMigrationCommitFailure(destination, migration, t);
         }
         return false;
+    }
+
+    private void logMigrationCommitFailure(Address destination, MigrationInfo migration, Throwable t) {
+        boolean memberLeft = t instanceof MemberLeftException
+                    || t.getCause() instanceof TargetNotMemberException
+                    || t.getCause() instanceof HazelcastInstanceNotActiveException;
+
+        if (memberLeft) {
+            if (node.getThisAddress().equals(destination)) {
+                logger.fine("Migration commit failed for " + migration
+                        + " since this node is shutting down.");
+                return;
+            }
+            logger.warning("Migration commit failed for " + migration
+                        + " since destination " + destination + " left the cluster");
+        } else {
+            logger.severe("Migration commit to " + destination + " failed for " + migration, t);
+        }
     }
 
     boolean addCompletedMigration(MigrationInfo migrationInfo) {
@@ -388,7 +382,7 @@ public class MigrationManager {
     private void evictCompletedMigrations(MigrationInfo currentMigration) {
         partitionServiceLock.lock();
         try {
-            assert completedMigrations.contains(currentMigration);
+            assert completedMigrations.contains(currentMigration) : currentMigration + " to evict is not in completed migrations";
 
             Iterator<MigrationInfo> iter = completedMigrations.iterator();
             while (iter.hasNext()) {
@@ -408,6 +402,11 @@ public class MigrationManager {
 
     void triggerControlTask() {
         migrationQueue.clear();
+        if (!node.joined()) {
+            logger.fine("Node is not joined, will not trigger ControlTask");
+            return;
+        }
+
         migrationQueue.add(new ControlTask());
         if (logger.isFinestEnabled()) {
             logger.finest("Migration queue is cleared and control task is scheduled");
@@ -462,7 +461,7 @@ public class MigrationManager {
         migrationQueue.add(runnable);
     }
 
-    List<MigrationInfo> getCompletedMigrations() {
+    List<MigrationInfo> getCompletedMigrationsCopy() {
         partitionServiceLock.lock();
         try {
             return new ArrayList<MigrationInfo>(completedMigrations);
@@ -530,6 +529,15 @@ public class MigrationManager {
         }
     }
 
+    MigrationRunnable getActiveTask() {
+        return migrationThread.getActiveTask();
+    }
+
+    private String getMemberUuid(Address address) {
+        MemberImpl member = node.getClusterService().getMember(address);
+        return member != null ? member.getUuid() : INVALID_UUID;
+    }
+
     private class RepartitioningTask implements MigrationRunnable {
 
         @Override
@@ -547,11 +555,10 @@ public class MigrationManager {
 
                 lastRepartitionTime.set(Clock.currentTimeMillis());
 
-                partitionStateManager.updateMemberUuidMap();
                 processNewPartitionState(newState);
 
                 if (ASSERTION_ENABLED) {
-                    migrationQueue.add(new AssertPartitionTableTask());
+                    migrationQueue.add(new AssertPartitionTableTask(partitionService.getMaxAllowedBackupCount()));
                 }
 
                 migrationQueue.add(new ProcessShutdownRequestsTask());
@@ -593,7 +600,7 @@ public class MigrationManager {
 
                 MigrationCollector migrationCollector = new MigrationCollector(currentPartition, migrationCount, lostCount);
                 if (logger.isFinestEnabled()) {
-                    logger.finest("Planning migrations for partition: " + partitionId
+                    logger.finest("Planning migrations for partitionId=" + partitionId
                             + ". Current replicas: " + Arrays.toString(currentReplicas)
                             + ", New replicas: " + Arrays.toString(newReplicas));
                 }
@@ -634,7 +641,7 @@ public class MigrationManager {
         }
 
         private void assignNewPartitionOwner(int partitionId, InternalPartitionImpl currentPartition, Address newOwner) {
-            String destinationUuid = partitionStateManager.getMemberUuid(newOwner);
+            String destinationUuid = getMemberUuid(newOwner);
             MigrationInfo migrationInfo = new MigrationInfo(partitionId, null, null, newOwner, destinationUuid, -1, -1, -1, 0);
             PartitionEventManager partitionEventManager = partitionService.getPartitionEventManager();
             partitionEventManager.sendMigrationEvent(migrationInfo, MigrationEvent.MigrationStatus.STARTED);
@@ -680,31 +687,38 @@ public class MigrationManager {
                     Address destination, int destinationCurrentReplicaIndex, int destinationNewReplicaIndex) {
 
                 if (logger.isFineEnabled()) {
-                    logger.fine("Planned migration -> partition = " + partitionId
-                            + ", source = " + source + ", sourceCurrentReplicaIndex = " + sourceCurrentReplicaIndex
-                            + ", sourceNewReplicaIndex = " + sourceNewReplicaIndex + ", destination = " + destination
-                            + ", destinationCurrentReplicaIndex = " + destinationCurrentReplicaIndex
-                            + ", destinationNewReplicaIndex = " + destinationNewReplicaIndex);
+                    logger.fine("Planned migration -> partitionId=" + partitionId
+                            + ", source=" + source + ", sourceCurrentReplicaIndex=" + sourceCurrentReplicaIndex
+                            + ", sourceNewReplicaIndex=" + sourceNewReplicaIndex + ", destination=" + destination
+                            + ", destinationCurrentReplicaIndex=" + destinationCurrentReplicaIndex
+                            + ", destinationNewReplicaIndex=" + destinationNewReplicaIndex);
                 }
 
                 if (source == null && destinationCurrentReplicaIndex == -1 && destinationNewReplicaIndex == 0) {
-                    assert destination != null;
-                    assert sourceCurrentReplicaIndex == -1 : "invalid index: " + sourceCurrentReplicaIndex;
-                    assert sourceNewReplicaIndex == -1 : "invalid index: " + sourceNewReplicaIndex;
+                    assert destination != null : "partitionId=" + partitionId + " destination is null";
+                    assert sourceCurrentReplicaIndex == -1
+                            : "partitionId=" + partitionId + " invalid index: " + sourceCurrentReplicaIndex;
+                    assert sourceNewReplicaIndex == -1
+                            : "partitionId=" + partitionId + " invalid index: " + sourceNewReplicaIndex;
 
                     lostCount.value++;
                     assignNewPartitionOwner(partitionId, partition, destination);
 
                 } else if (destination == null && sourceNewReplicaIndex == -1) {
-                    assert source != null;
-                    assert sourceCurrentReplicaIndex != -1 : "invalid index: " + sourceCurrentReplicaIndex;
-                    assert sourceCurrentReplicaIndex != 0 : "invalid index: " + sourceCurrentReplicaIndex;
-                    assert source.equals(partition.getReplicaAddress(sourceCurrentReplicaIndex));
+                    assert source != null : "partitionId=" + partitionId + " source is null";
+                    assert sourceCurrentReplicaIndex != -1
+                            : "partitionId=" + partitionId + " invalid index: " + sourceCurrentReplicaIndex;
+                    assert sourceCurrentReplicaIndex != 0
+                            : "partitionId=" + partitionId + " invalid index: " + sourceCurrentReplicaIndex;
+                    final Address currentSource = partition.getReplicaAddress(sourceCurrentReplicaIndex);
+                    assert source.equals(currentSource)
+                            : "partitionId=" + partitionId + " current source="
+                            + source + " is different than expected source=" + source;
 
                     partition.setReplicaAddress(sourceCurrentReplicaIndex, null);
                 } else {
-                    String sourceUuid = partitionStateManager.getMemberUuid(source);
-                    String destinationUuid = partitionStateManager.getMemberUuid(destination);
+                    String sourceUuid = getMemberUuid(source);
+                    String destinationUuid = getMemberUuid(destination);
                     MigrationInfo migration = new MigrationInfo(partitionId, source, sourceUuid, destination, destinationUuid,
                             sourceCurrentReplicaIndex, sourceNewReplicaIndex,
                             destinationCurrentReplicaIndex, destinationNewReplicaIndex);
@@ -716,11 +730,22 @@ public class MigrationManager {
         }
     }
 
-    private class AssertPartitionTableTask implements MigrationRunnable {
+    @SuppressWarnings({"checkstyle:npathcomplexity"})
+    private final class AssertPartitionTableTask implements MigrationRunnable {
+
+        final int maxBackupCount;
+
+        private AssertPartitionTableTask(int maxBackupCount) {
+            this.maxBackupCount = maxBackupCount;
+        }
 
         @Override
         public void run() {
             if (!ASSERTION_ENABLED) {
+                return;
+            }
+
+            if (!node.isMaster()) {
                 return;
             }
 
@@ -732,7 +757,6 @@ public class MigrationManager {
                 }
 
                 final InternalPartition[] partitions = partitionStateManager.getPartitions();
-                final int maxBackupCount = partitionService.getMaxAllowedBackupCount();
                 final Set<Address> replicas = new HashSet<Address>();
 
                 for (InternalPartition partition : partitions) {
@@ -902,6 +926,7 @@ public class MigrationManager {
                 scheduleActiveMigrationFinalization(migrationInfo);
                 int delta = PARTITION_STATE_VERSION_INCREMENT_DELTA_ON_MIGRATION_FAILURE;
                 partitionService.getPartitionStateManager().incrementVersion(delta);
+                node.getNodeExtension().onPartitionStateChange();
                 if (partitionService.syncPartitionRuntimeState()) {
                     evictCompletedMigrations(migrationInfo);
                 }
@@ -958,6 +983,7 @@ public class MigrationManager {
 
                 addCompletedMigration(migrationInfo);
                 scheduleActiveMigrationFinalization(migrationInfo);
+                node.getNodeExtension().onPartitionStateChange();
                 if (partitionService.syncPartitionRuntimeState()) {
                     evictCompletedMigrations(migrationInfo);
                 }
@@ -1003,10 +1029,7 @@ public class MigrationManager {
         private Map<Address, Collection<MigrationInfo>> removeUnknownAddressesAndCollectPromotions() {
             partitionServiceLock.lock();
             try {
-                Collection<Address> addresses = collectUnknownAddresses();
-                for (Address address : addresses) {
-                    partitionStateManager.removeDeadAddress(address);
-                }
+                partitionStateManager.removeUnknownAddresses();
 
                 Map<Address, Collection<MigrationInfo>> promotions = new HashMap<Address, Collection<MigrationInfo>>();
                 for (int partitionId = 0; partitionId < partitionService.getPartitionCount(); partitionId++) {
@@ -1040,23 +1063,26 @@ public class MigrationManager {
         }
 
         private boolean commitPromotionMigrations(Address destination, Collection<MigrationInfo> migrations) {
-            boolean success;
-            if (node.getThisAddress().equals(destination)) {
-                if (logger.isFinestEnabled()) {
-                    logger.finest("Shortcutting promotions with result: true. since destination is master.");
-                }
-                success = true;
-            } else {
-                MigrationInfo[] migrationsArray = migrations.toArray(new MigrationInfo[migrations.size()]);
-                success = commitMigrationToDestination(destination, migrationsArray);
+            boolean success = commitPromotionsToDestination(destination, migrations);
+
+            boolean local = node.getThisAddress().equals(destination);
+            if (!local) {
+                processPromotionCommitResult(destination, migrations, success);
             }
 
+            partitionService.syncPartitionRuntimeState();
+            return success;
+        }
+
+        private void processPromotionCommitResult(Address destination, Collection<MigrationInfo> migrations,
+                boolean success) {
             partitionServiceLock.lock();
             try {
                 if (!partitionStateManager.isInitialized()) {
                     // node reset/terminated while running task
-                    return false;
+                    return;
                 }
+
                 if (success) {
                     for (MigrationInfo migration : migrations) {
                         InternalPartitionImpl partition = partitionStateManager.getPartitionImpl(migration.getPartitionId());
@@ -1066,9 +1092,8 @@ public class MigrationManager {
                                 : "Invalid replica! Destination: " + destination + ", index: "
                                         + migration.getDestinationCurrentReplicaIndex() + ", " + partition;
 
+                        // single partition update increments partition state version by 1
                         partition.swapAddresses(0, migration.getDestinationCurrentReplicaIndex());
-                        addCompletedMigration(migration);
-                        scheduleActiveMigrationFinalization(migration);
                     }
                 } else {
                     int delta = migrations.size() + 1;
@@ -1077,10 +1102,6 @@ public class MigrationManager {
             } finally {
                 partitionServiceLock.unlock();
             }
-
-            partitionService.syncPartitionRuntimeState();
-
-            return success;
         }
 
         private MigrationInfo createPromotionMigrationIfOwnerIsNull(int partitionId) {
@@ -1108,7 +1129,7 @@ public class MigrationManager {
                 }
 
                 if (destination != null) {
-                    String destinationUuid = partitionStateManager.getMemberUuid(destination);
+                    String destinationUuid = getMemberUuid(destination);
                     MigrationInfo migration =
                             new MigrationInfo(partitionId, null, null, destination, destinationUuid, -1, -1, index, 0);
                     migration.setMaster(node.getThisAddress());
@@ -1126,27 +1147,69 @@ public class MigrationManager {
             return null;
         }
 
-        private Collection<Address> collectUnknownAddresses() {
-            InternalPartition[] partitions = partitionStateManager.getPartitions();
-            ClusterServiceImpl clusterService = node.getClusterService();
+        private boolean commitPromotionsToDestination(Address destination, Collection<MigrationInfo> migrations) {
+            assert migrations.size() > 0 : "No promotions to commit! destination=" + destination;
 
-            Collection<Address> addresses = new HashSet<Address>();
-
-            for (InternalPartition partition : partitions) {
-                for (int i = 0; i < InternalPartition.MAX_REPLICA_COUNT; i++) {
-                    Address address = partition.getReplicaAddress(i);
-                    if (address == null) {
-                        continue;
-                    }
-
-                    MemberImpl member = clusterService.getMember(address);
-                    if (member == null || !partitionStateManager.isKnownMemberUuid(address, member.getUuid())) {
-                        addresses.add(address);
-                    }
-                }
+            MemberImpl member = node.getClusterService().getMember(destination);
+            if (member == null) {
+                logger.warning("Destination " + destination + " is not member anymore");
+                return false;
             }
 
-            return addresses;
+            try {
+                if (logger.isFinestEnabled()) {
+                    logger.finest("Sending commit operation to " + destination + " for " + migrations);
+                }
+                PartitionRuntimeState partitionState = partitionService.createPromotionCommitPartitionState(migrations);
+                String destinationUuid = member.getUuid();
+                PromotionCommitOperation op = new PromotionCommitOperation(partitionState, migrations, destinationUuid);
+                Future<Boolean> future = nodeEngine.getOperationService()
+                        .createInvocationBuilder(SERVICE_NAME, op, destination)
+                        .setTryCount(Integer.MAX_VALUE)
+                        .setCallTimeout(Long.MAX_VALUE).invoke();
+
+                boolean result = future.get();
+                if (logger.isFinestEnabled()) {
+                    logger.finest("Promotion commit result " + result + " from " + destination
+                            + " for migrations " + migrations);
+                }
+                return result;
+            } catch (Throwable t) {
+                logPromotionCommitFailure(destination, migrations, t);
+            }
+            return false;
+        }
+
+        private void logPromotionCommitFailure(Address destination, Collection<MigrationInfo> migrations, Throwable t) {
+            boolean memberLeft = t instanceof MemberLeftException
+                    || t.getCause() instanceof TargetNotMemberException
+                    || t.getCause() instanceof HazelcastInstanceNotActiveException;
+
+            int migrationsSize = migrations.size();
+            if (memberLeft) {
+                if (node.getThisAddress().equals(destination)) {
+                    logger.fine("Promotion commit failed for " + migrationsSize + " migrations"
+                            + " since this node is shutting down.");
+                    return;
+                }
+
+                if (logger.isFinestEnabled()) {
+                    logger.warning("Promotion commit failed for " + migrations
+                            + " since destination " + destination + " left the cluster");
+                } else {
+                    logger.warning("Promotion commit failed for "
+                            + (migrationsSize == 1 ? migrations.iterator().next() : migrationsSize + " migrations")
+                            + " since destination " + destination + " left the cluster");
+                }
+                return;
+            }
+
+            if (logger.isFinestEnabled()) {
+                logger.severe("Promotion commit to " + destination + " failed for " + migrations, t);
+            } else {
+                logger.severe("Promotion commit to " + destination + " failed for "
+                        + (migrationsSize == 1 ? migrations.iterator().next() : migrationsSize + " migrations"), t);
+            }
         }
     }
 
@@ -1157,11 +1220,6 @@ public class MigrationManager {
             partitionServiceLock.lock();
             try {
                 migrationQueue.clear();
-
-                if (!partitionStateManager.isInitialized()) {
-                    logger.info("Skipping control task since partition table state is reset");
-                    return;
-                }
 
                 if (partitionService.scheduleFetchMostRecentPartitionTableTaskIfRequired()) {
                     if (logger.isFinestEnabled()) {
@@ -1201,7 +1259,7 @@ public class MigrationManager {
                     } else {
                         boolean present = false;
                         for (Address address : shutdownRequestedAddresses) {
-                            if (isAbsentInPartitionTable(address)) {
+                            if (partitionStateManager.isAbsentInPartitionTable(address)) {
                                 sendShutdownOperation(address);
                             } else {
                                 logger.warning(address + " requested to shutdown but still in partition table");
@@ -1218,17 +1276,6 @@ public class MigrationManager {
                 partitionServiceLock.unlock();
             }
         }
-
-        private boolean isAbsentInPartitionTable(Address address) {
-            for (InternalPartition partition : partitionStateManager.getPartitions()) {
-                if (partition.isOwnerOrBackup(address)) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
     }
 
 }

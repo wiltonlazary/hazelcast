@@ -38,6 +38,9 @@ class MigrationThread extends Thread implements Runnable {
     private final long partitionMigrationInterval;
     private final long sleepTime;
 
+    private volatile MigrationRunnable activeTask;
+    private volatile boolean running = true;
+
     MigrationThread(MigrationManager migrationManager, HazelcastThreadGroup hazelcastThreadGroup, ILogger logger,
                     MigrationQueue queue) {
         super(hazelcastThreadGroup.getInternalThreadGroup(), hazelcastThreadGroup.getThreadNamePrefix("migration"));
@@ -52,7 +55,7 @@ class MigrationThread extends Thread implements Runnable {
     @Override
     public void run() {
         try {
-            while (!isInterrupted()) {
+            while (running) {
                 doRun();
             }
         } catch (InterruptedException e) {
@@ -79,7 +82,7 @@ class MigrationThread extends Thread implements Runnable {
 
             migrating |= runnable instanceof MigrationManager.MigrateTask;
             processTask(runnable);
-            if (partitionMigrationInterval > 0) {
+            if (migrating && partitionMigrationInterval > 0) {
                 Thread.sleep(partitionMigrationInterval);
             }
         }
@@ -96,23 +99,48 @@ class MigrationThread extends Thread implements Runnable {
 
     private boolean processTask(MigrationRunnable runnable) {
         try {
-            if (runnable == null || isInterrupted()) {
+            if (runnable == null || !running) {
                 return false;
             }
 
+            activeTask = runnable;
             runnable.run();
         } catch (Throwable t) {
             logger.warning(t);
         } finally {
             queue.afterTaskCompletion(runnable);
+            activeTask = null;
         }
 
         return true;
     }
 
+    MigrationRunnable getActiveTask() {
+        return activeTask;
+    }
+
+    /**
+     * Interrupts the migration thread and joins on it.
+     * <strong>Must not be called on the migration thread itself</strong> because it will result in infinite blocking.
+     */
     void stopNow() {
+        assert currentThread() != this : "stopNow must not be called on the migration thread";
+        running = false;
         queue.clear();
         interrupt();
+        boolean currentThreadInterrupted = false;
+        while (true) {
+            try {
+                join();
+            } catch (InterruptedException e) {
+                currentThreadInterrupted = true;
+                continue;
+            }
+            break;
+        }
+        if (currentThreadInterrupted) {
+            currentThread().interrupt();
+        }
     }
 
 }

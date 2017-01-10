@@ -17,6 +17,7 @@
 package com.hazelcast.collection.impl.txncollection;
 
 import com.hazelcast.collection.impl.CollectionTxnUtil;
+import com.hazelcast.collection.impl.collection.CollectionDataSerializerHook;
 import com.hazelcast.collection.impl.txncollection.operations.CollectionCommitOperation;
 import com.hazelcast.collection.impl.txncollection.operations.CollectionPrepareOperation;
 import com.hazelcast.collection.impl.txncollection.operations.CollectionRollbackOperation;
@@ -98,6 +99,12 @@ public class CollectionTransactionLogRecord implements TransactionLogRecord {
         return operationList.size();
     }
 
+    /**
+     * Creates an array of IDs for all operations in this transaction log. The ID is negative if the operation is a remove
+     * operation.
+     *
+     * @return an array of IDs for all operations in this transaction log
+     */
     protected long[] createItemIdArray() {
         int size = operationList.size();
         long[] itemIds = new long[size];
@@ -126,5 +133,13 @@ public class CollectionTransactionLogRecord implements TransactionLogRecord {
         operationList = CollectionTxnUtil.read(in);
     }
 
+    @Override
+    public int getFactoryId() {
+        return CollectionDataSerializerHook.F_ID;
+    }
 
+    @Override
+    public int getId() {
+        return CollectionDataSerializerHook.COLLECTION_TRANSACTION_LOG_RECORD;
+    }
 }

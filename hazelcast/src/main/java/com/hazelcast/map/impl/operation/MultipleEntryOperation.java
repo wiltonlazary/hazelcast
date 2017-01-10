@@ -19,6 +19,7 @@ package com.hazelcast.map.impl.operation;
 import com.hazelcast.core.ManagedContext;
 import com.hazelcast.map.EntryBackupProcessor;
 import com.hazelcast.map.EntryProcessor;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -75,7 +76,7 @@ public class MultipleEntryOperation extends AbstractMultipleEntryOperation imple
             }
 
             // first call noOp, other if checks below depends on it.
-            if (noOp(entry, value)) {
+            if (noOp(entry, value, now)) {
                 continue;
             }
             if (entryRemoved(entry, key, value, now)) {
@@ -84,7 +85,7 @@ public class MultipleEntryOperation extends AbstractMultipleEntryOperation imple
 
             entryAddedOrUpdated(entry, key, value, now);
 
-            evict();
+            evict(key);
         }
     }
 
@@ -140,5 +141,10 @@ public class MultipleEntryOperation extends AbstractMultipleEntryOperation imple
         for (Data key : keys) {
             out.writeData(key);
         }
+    }
+
+    @Override
+    public int getId() {
+        return MapDataSerializerHook.MULTIPLE_ENTRY;
     }
 }

@@ -22,7 +22,6 @@ import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.TestUtil;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
-import com.hazelcast.spi.AbstractOperation;
 import com.hazelcast.spi.AbstractWaitNotifyKey;
 import com.hazelcast.spi.BlockingOperation;
 import com.hazelcast.spi.ExceptionAction;
@@ -30,7 +29,7 @@ import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.WaitNotifyKey;
 import com.hazelcast.spi.impl.NodeEngineImpl;
-import com.hazelcast.spi.impl.waitnotifyservice.impl.WaitNotifyServiceImpl;
+import com.hazelcast.spi.impl.operationparker.impl.OperationParkerImpl;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
@@ -149,11 +148,11 @@ public class Invocation_NetworkSplitTest extends HazelcastTestSupport {
         OperationService operationService1 = nodeEngine1.getOperationService();
         operationService1.invokeOnPartition("", new AlwaysBlockingOperation(), partitionId);
 
-        final WaitNotifyServiceImpl waitNotifyService3 = (WaitNotifyServiceImpl) node3.getNodeEngine().getWaitNotifyService();
+        final OperationParkerImpl waitNotifyService3 = (OperationParkerImpl) node3.getNodeEngine().getOperationParker();
         assertEqualsEventually(new Callable<Integer>() {
             @Override
             public Integer call() throws Exception {
-                return waitNotifyService3.getTotalWaitingOperationCount();
+                return waitNotifyService3.getTotalParkedOperationCount();
             }
         }, 1);
 
@@ -178,7 +177,7 @@ public class Invocation_NetworkSplitTest extends HazelcastTestSupport {
         assertEquals(4, node2.getClusterService().getSize());
         assertEquals(4, node3.getClusterService().getSize());
 
-        assertEquals(0, waitNotifyService3.getTotalWaitingOperationCount());
+        assertEquals(0, waitNotifyService3.getTotalParkedOperationCount());
     }
 
     private Config createConfig() {
@@ -189,7 +188,7 @@ public class Invocation_NetworkSplitTest extends HazelcastTestSupport {
         return config;
     }
 
-    private static class AlwaysBlockingOperation extends AbstractOperation implements BlockingOperation {
+    private static class AlwaysBlockingOperation extends Operation implements BlockingOperation {
 
         @Override
         public void run() throws Exception {
@@ -227,6 +226,7 @@ public class Invocation_NetworkSplitTest extends HazelcastTestSupport {
     }
 
     private static class FullSplitAction implements SplitAction {
+
         @Override
         public void run(final Node node1, final Node node2, final Node node3) {
             // Artificially create a network-split
@@ -247,6 +247,7 @@ public class Invocation_NetworkSplitTest extends HazelcastTestSupport {
     }
 
     private static class PartialSplitAction implements SplitAction {
+
         @Override
         public void run(final Node node1, final Node node2, final Node node3) {
             // Artificially create a partial network-split;
@@ -266,6 +267,7 @@ public class Invocation_NetworkSplitTest extends HazelcastTestSupport {
     }
 
     private static class HalfPartialSplitAction implements SplitAction {
+
         @Override
         public void run(final Node node1, final Node node2, final Node node3) {
             // Artificially create a partial network-split;

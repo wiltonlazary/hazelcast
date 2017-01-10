@@ -18,22 +18,28 @@ package com.hazelcast.nio.tcp;
 
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
+import com.hazelcast.nio.ConnectionManager;
 import com.hazelcast.nio.ConnectionType;
 import com.hazelcast.nio.OutboundFrame;
+import com.hazelcast.test.mocknetwork.MockConnectionManager;
 import com.hazelcast.util.Clock;
 import com.hazelcast.util.ExceptionUtil;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 class DroppingConnection implements Connection {
 
     final Address endpoint;
     final long timestamp = Clock.currentTimeMillis();
+    private final ConnectionManager connectionManager;
+    private AtomicBoolean isClosing = new AtomicBoolean(false);
 
-    DroppingConnection(Address endpoint) {
+    DroppingConnection(Address endpoint, ConnectionManager connectionManager) {
         this.endpoint = endpoint;
+        this.connectionManager = connectionManager;
     }
 
     @Override
@@ -68,6 +74,11 @@ class DroppingConnection implements Connection {
 
     @Override
     public void close(String msg, Throwable cause) {
+        if (connectionManager instanceof MockConnectionManager) {
+            if (isClosing.compareAndSet(false, true)) {
+                ((MockConnectionManager)connectionManager).destroyConnection(this);
+            }
+        }
     }
 
     @Override

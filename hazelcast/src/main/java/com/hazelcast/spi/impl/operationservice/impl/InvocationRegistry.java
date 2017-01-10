@@ -17,6 +17,7 @@
 package com.hazelcast.spi.impl.operationservice.impl;
 
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
+import com.hazelcast.core.HazelcastOverloadException;
 import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.internal.metrics.MetricsProvider;
 import com.hazelcast.internal.metrics.MetricsRegistry;
@@ -28,9 +29,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeoutException;
 
 import static com.hazelcast.internal.metrics.ProbeLevel.MANDATORY;
-import static com.hazelcast.spi.Operation.CALL_ID_LOCAL_SKIPPED;
+import static com.hazelcast.spi.OperationAccessor.deactivate;
 import static com.hazelcast.spi.OperationAccessor.setCallId;
 
 /**
@@ -49,6 +51,9 @@ import static com.hazelcast.spi.OperationAccessor.setCallId;
  * the PartitionInvocation and TargetInvocation can be folded into Invocation.
  */
 public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider {
+    private static final int CORE_SIZE_CHECK = 8;
+    private static final int CORE_SIZE_FACTOR = 4;
+    private static final int CONCURRENCY_LEVEL = 16;
 
     private static final int INITIAL_CAPACITY = 1000;
     private static final float LOAD_FACTOR = 0.75f;
@@ -59,15 +64,22 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
     private final ILogger logger;
     private final CallIdSequence callIdSequence;
 
-    public InvocationRegistry(ILogger logger, CallIdSequence callIdSequence, int concurrencyLevel) {
+    private volatile boolean alive = true;
+
+    public InvocationRegistry(ILogger logger, CallIdSequence callIdSequence) {
         this.logger = logger;
         this.callIdSequence = callIdSequence;
+
+        int coreSize = Runtime.getRuntime().availableProcessors();
+        boolean reallyMultiCore = coreSize >= CORE_SIZE_CHECK;
+        int concurrencyLevel = reallyMultiCore ? coreSize * CORE_SIZE_FACTOR : CONCURRENCY_LEVEL;
+
         this.invocations = new ConcurrentHashMap<Long, Invocation>(INITIAL_CAPACITY, LOAD_FACTOR, concurrencyLevel);
     }
 
     @Override
-    public void provideMetrics(MetricsRegistry metricsRegistry) {
-        metricsRegistry.scanAndRegister(this, "operation");
+    public void provideMetrics(MetricsRegistry registry) {
+        registry.scanAndRegister(this, "operation");
     }
 
     @Probe(name = "invocations.usedPercentage")
@@ -89,42 +101,44 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
      * Registers an invocation.
      *
      * @param invocation The invocation to register.
+     * @return false when InvocationRegistry is not alive and registration is not successful, true otherwise
      */
-    public void register(Invocation invocation) {
-        assert invocation.op.getCallId() == 0 : "can't register twice: " + invocation;
-
-        long callId = callIdSequence.next(invocation);
-        setCallId(invocation.op, callId);
-
-        if (callId == CALL_ID_LOCAL_SKIPPED) {
-            return;
+    public boolean register(Invocation invocation) {
+        final long callId;
+        try {
+            boolean force = invocation.op.isUrgent() || invocation.isRetryCandidate();
+            callId = callIdSequence.next(force);
+        } catch (TimeoutException e) {
+            throw new HazelcastOverloadException("Failed to start invocation due to overload: " + invocation, e);
         }
-
+        try {
+            // Fails with IllegalStateException if the operation is already active
+            setCallId(invocation.op, callId);
+        } catch (IllegalStateException e) {
+            callIdSequence.complete();
+            throw e;
+        }
         invocations.put(callId, invocation);
+        if (!alive) {
+            invocation.notifyError(new HazelcastInstanceNotActiveException());
+            return false;
+        }
+        return true;
     }
 
     /**
-     * Deregisters an invocation.
-     * <p/>
-     * If the invocation registration was skipped, the call is ignored.
-     *
+     * Deregisters an invocation. If the associated operation is inactive, takes no action and returns {@code false}.
+     * This ensures the idempotence of deregistration.
      * @param invocation The Invocation to deregister.
+     * @return {@code true} if this call deregistered the invocation; {@code false} if the invocation wasn't registered
      */
-    public void deregister(Invocation invocation) {
-        long callId = invocation.op.getCallId();
-
-        callIdSequence.complete(invocation);
-
-        setCallId(invocation.op, 0);
-
-        if (callId == 0 || callId == CALL_ID_LOCAL_SKIPPED) {
-            return;
+    public boolean deregister(Invocation invocation) {
+        if (!deactivate(invocation.op)) {
+            return false;
         }
-
-        boolean deleted = invocations.remove(callId) != null;
-        if (!deleted && logger.isFinestEnabled()) {
-            logger.finest("failed to deregister callId: " + callId + " " + invocation);
-        }
+        invocations.remove(invocation.op.getCallId());
+        callIdSequence.complete();
+        return true;
     }
 
     /**
@@ -171,6 +185,8 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
     }
 
     public void shutdown() {
+        alive = false;
+
         for (Invocation invocation : this) {
             try {
                 invocation.notifyError(new HazelcastInstanceNotActiveException());

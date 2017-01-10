@@ -17,7 +17,6 @@
 package com.hazelcast.replicatedmap.impl.operation;
 
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.logging.Logger;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
@@ -25,7 +24,6 @@ import com.hazelcast.replicatedmap.impl.record.AbstractReplicatedRecordStore;
 import com.hazelcast.replicatedmap.impl.record.InternalReplicatedMapStorage;
 import com.hazelcast.replicatedmap.impl.record.RecordMigrationInfo;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecord;
-import com.hazelcast.spi.AbstractOperation;
 
 import java.io.IOException;
 import java.util.HashSet;
@@ -35,9 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Carries set of replicated map records for a partition from one node to another
  */
-public class SyncReplicatedMapDataOperation<K, V> extends AbstractOperation {
-
-    private static ILogger logger = Logger.getLogger(SyncReplicatedMapDataOperation.class.getName());
+public class SyncReplicatedMapDataOperation<K, V> extends AbstractSerializableOperation {
 
     private String name;
     private Set<RecordMigrationInfo> recordSet;
@@ -54,8 +50,11 @@ public class SyncReplicatedMapDataOperation<K, V> extends AbstractOperation {
 
     @Override
     public void run() throws Exception {
-        logger.finest("Carrying " + recordSet.size() + " records for partition -> " + getPartitionId()
-                + " from -> " + getCallerAddress() + ", to -> " + getNodeEngine().getThisAddress());
+        ILogger logger = getLogger();
+        if (logger.isFineEnabled()) {
+            logger.fine("Syncing " + recordSet.size() + " records and version: " + version + " for map: " + name + " partitionId="
+                    + getPartitionId() + " from: " + getCallerAddress() + " to: " + getNodeEngine().getThisAddress());
+        }
         ReplicatedMapService service = getService();
         AbstractReplicatedRecordStore store = (AbstractReplicatedRecordStore) service
                 .getReplicatedRecordStore(name, true, getPartitionId());
@@ -68,12 +67,13 @@ public class SyncReplicatedMapDataOperation<K, V> extends AbstractOperation {
             if (oldRecord != null) {
                 replicatedRecord.setHits(oldRecord.getHits());
             }
-            newStorage.putInternal(key, replicatedRecord);
+            newStorage.put(key, replicatedRecord);
             if (record.getTtl() > 0) {
                 store.scheduleTtlEntry(record.getTtl(), key, value);
             }
         }
-        newStorage.setVersion(version);
+
+        newStorage.syncVersion(version);
         AtomicReference<InternalReplicatedMapStorage<K, V>> storageRef = store.getStorageRef();
         storageRef.set(newStorage);
         store.setLoaded(true);
@@ -104,5 +104,10 @@ public class SyncReplicatedMapDataOperation<K, V> extends AbstractOperation {
             record.readData(in);
             recordSet.add(record);
         }
+    }
+
+    @Override
+    public int getId() {
+        return ReplicatedMapDataSerializerHook.SYNC_REPLICATED_DATA;
     }
 }

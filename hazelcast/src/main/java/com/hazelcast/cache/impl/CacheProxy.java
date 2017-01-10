@@ -275,21 +275,31 @@ public class CacheProxy<K, V>
 
     @Override
     public void registerCacheEntryListener(CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
+        registerCacheEntryListener(cacheEntryListenerConfiguration, true);
+    }
+
+    @Override
+    public void registerCacheEntryListener(CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration,
+                                           boolean addToConfig) {
         ensureOpen();
         checkNotNull(cacheEntryListenerConfiguration, "CacheEntryListenerConfiguration can't be null");
 
         final ICacheService service = getService();
         final CacheEventListenerAdaptor<K, V> entryListener =
                 new CacheEventListenerAdaptor<K, V>(this,
-                                                    cacheEntryListenerConfiguration,
-                                                    getNodeEngine().getSerializationService(),
-                                                    getNodeEngine().getHazelcastInstance());
+                        cacheEntryListenerConfiguration,
+                        getNodeEngine().getSerializationService(),
+                        getNodeEngine().getHazelcastInstance());
         final String regId =
                 service.registerListener(getDistributedObjectName(), entryListener, entryListener, false);
         if (regId != null) {
-            cacheConfig.addCacheEntryListenerConfiguration(cacheEntryListenerConfiguration);
+            if (addToConfig) {
+                cacheConfig.addCacheEntryListenerConfiguration(cacheEntryListenerConfiguration);
+            }
             addListenerLocally(regId, cacheEntryListenerConfiguration);
-            updateCacheListenerConfigOnOtherNodes(cacheEntryListenerConfiguration, true);
+            if (addToConfig) {
+                updateCacheListenerConfigOnOtherNodes(cacheEntryListenerConfiguration, true);
+            }
         }
     }
 
@@ -328,13 +338,18 @@ public class CacheProxy<K, V>
     @Override
     public Iterator<Entry<K, V>> iterator() {
         ensureOpen();
-        return new ClusterWideIterator<K, V>(this);
+        return new ClusterWideIterator<K, V>(this, false);
     }
 
     @Override
     public Iterator<Entry<K, V>> iterator(int fetchSize) {
         ensureOpen();
-        return new ClusterWideIterator<K, V>(this, fetchSize);
+        return new ClusterWideIterator<K, V>(this, fetchSize, false);
+    }
+
+    public Iterator<Entry<K, V>> iterator(int fetchSize, int partitionId, boolean prefetchValues) {
+        ensureOpen();
+        return new CachePartitionIterator<K, V>(this, fetchSize, partitionId, prefetchValues);
     }
 
     @Override

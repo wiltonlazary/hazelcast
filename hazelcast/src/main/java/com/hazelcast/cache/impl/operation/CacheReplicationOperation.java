@@ -16,6 +16,7 @@
 
 package com.hazelcast.cache.impl.operation;
 
+import com.hazelcast.cache.impl.CacheDataSerializerHook;
 import com.hazelcast.cache.impl.CachePartitionSegment;
 import com.hazelcast.cache.impl.ICacheRecordStore;
 import com.hazelcast.cache.impl.ICacheService;
@@ -24,7 +25,8 @@ import com.hazelcast.config.CacheConfig;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.AbstractOperation;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.spi.Operation;
 import com.hazelcast.util.Clock;
 
 import java.io.IOException;
@@ -36,33 +38,29 @@ import java.util.Map;
 
 /**
  * Replication operation is the data migration operation of {@link com.hazelcast.cache.impl.CacheRecordStore}.
- *
+ * <p>
  * <p>Cache record store's records and configurations will be migrated into their new nodes.
- *
+ * <p>
  * Steps;
  * <ul>
- *     <li>Serialize all non expired data.</li>
- *     <li>Deserialize the data and config.</li>
- *     <li>Create the configuration in the new node service.</li>
- *     <li>Insert each record into {@link ICacheRecordStore}.</li>
+ * <li>Serialize all non expired data.</li>
+ * <li>Deserialize the data and config.</li>
+ * <li>Create the configuration in the new node service.</li>
+ * <li>Insert each record into {@link ICacheRecordStore}.</li>
  * </ul>
  * </p>
  * <p><b>Note:</b> This operation is a per partition operation.</p>
  */
-public class CacheReplicationOperation extends AbstractOperation {
+public class CacheReplicationOperation extends Operation implements IdentifiedDataSerializable {
 
-    protected Map<String, Map<Data, CacheRecord>> data;
-
-    protected List<CacheConfig> configs;
+    protected final Map<String, Map<Data, CacheRecord>> data = new HashMap<String, Map<Data, CacheRecord>>();
+    protected final List<CacheConfig> configs = new ArrayList<CacheConfig>();
+    protected final CacheNearCacheStateHolder nearCacheStateHolder = new CacheNearCacheStateHolder(this);
 
     public CacheReplicationOperation() {
-        data = new HashMap<String, Map<Data, CacheRecord>>();
-        configs = new ArrayList<CacheConfig>();
     }
 
     public CacheReplicationOperation(CachePartitionSegment segment, int replicaIndex) {
-        data = new HashMap<String, Map<Data, CacheRecord>>();
-
         Iterator<ICacheRecordStore> iter = segment.recordStoreIterator();
         while (iter.hasNext()) {
             ICacheRecordStore cacheRecordStore = iter.next();
@@ -72,7 +70,8 @@ public class CacheReplicationOperation extends AbstractOperation {
             }
         }
 
-        configs = new ArrayList<CacheConfig>(segment.getCacheConfigs());
+        configs.addAll(segment.getCacheConfigs());
+        nearCacheStateHolder.prepare(segment);
     }
 
     @Override
@@ -85,23 +84,27 @@ public class CacheReplicationOperation extends AbstractOperation {
     }
 
     @Override
-    public void run()
-            throws Exception {
+    public void run() throws Exception {
         ICacheService service = getService();
         for (Map.Entry<String, Map<Data, CacheRecord>> entry : data.entrySet()) {
             ICacheRecordStore cache = service.getOrCreateRecordStore(entry.getKey(), getPartitionId());
+            cache.clear();
             Map<Data, CacheRecord> map = entry.getValue();
 
-            Iterator<Map.Entry<Data, CacheRecord>> iter = map.entrySet().iterator();
-            while (iter.hasNext()) {
-                Map.Entry<Data, CacheRecord> next = iter.next();
+            Iterator<Map.Entry<Data, CacheRecord>> iterator = map.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<Data, CacheRecord> next = iterator.next();
                 Data key = next.getKey();
                 CacheRecord record = next.getValue();
-                iter.remove();
+                iterator.remove();
                 cache.putRecord(key, record);
             }
         }
         data.clear();
+
+        if (getReplicaIndex() == 0) {
+            nearCacheStateHolder.applyState();
+        }
     }
 
     @Override
@@ -141,6 +144,8 @@ public class CacheReplicationOperation extends AbstractOperation {
             // before
             out.writeData(null);
         }
+
+        nearCacheStateHolder.writeData(out);
     }
 
     @Override
@@ -172,10 +177,21 @@ public class CacheReplicationOperation extends AbstractOperation {
                 m.put(key, record);
             }
         }
+
+        nearCacheStateHolder.readData(in);
     }
 
     public boolean isEmpty() {
         return (configs == null || configs.isEmpty()) && (data == null || data.isEmpty());
     }
 
+    @Override
+    public int getFactoryId() {
+        return CacheDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return CacheDataSerializerHook.CACHE_REPLICATION;
+    }
 }

@@ -26,16 +26,15 @@ import com.hazelcast.query.SampleObjects.Value;
 import com.hazelcast.query.SqlPredicate;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
-import com.hazelcast.test.HazelcastSerialClassRunner;
+import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.ParallelTest;
-import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.test.annotation.SlowTest;
 import com.hazelcast.util.Clock;
 import com.hazelcast.util.IterableUtil;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -59,8 +58,8 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-@RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParallelClassRunner.class)
+@Category({SlowTest.class, ParallelTest.class})
 public class QueryIndexMigrationTest extends HazelcastTestSupport {
 
     private Random random = new Random();
@@ -161,9 +160,7 @@ public class QueryIndexMigrationTest extends HazelcastTestSupport {
     /**
      * test for issue #359
      */
-    //Ignored due to : https://github.com/hazelcast/hazelcast/issues/6471
-    @Ignore
-    @Test(timeout = MINUTE)
+    @Test(timeout = 4 * MINUTE)
     public void testIndexCleanupOnMigration() throws Exception {
         int nodeCount = 6;
         final int runCount = 500;

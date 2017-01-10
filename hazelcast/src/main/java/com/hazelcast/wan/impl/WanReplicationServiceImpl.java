@@ -19,8 +19,8 @@ package com.hazelcast.wan.impl;
 import com.hazelcast.config.WanPublisherConfig;
 import com.hazelcast.config.WanReplicationConfig;
 import com.hazelcast.instance.Node;
-import com.hazelcast.logging.ILogger;
 import com.hazelcast.monitor.LocalWanStats;
+import com.hazelcast.monitor.WanSyncState;
 import com.hazelcast.nio.ClassLoaderUtil;
 import com.hazelcast.util.ExceptionUtil;
 import com.hazelcast.wan.WanReplicationEndpoint;
@@ -37,13 +37,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public class WanReplicationServiceImpl implements WanReplicationService {
 
     private final Node node;
-    private final ILogger logger;
 
     private final Map<String, WanReplicationPublisherDelegate> wanReplications = initializeWanReplicationPublisherMapping();
 
     public WanReplicationServiceImpl(Node node) {
         this.node = node;
-        this.logger = node.getLogger(WanReplicationServiceImpl.class.getName());
     }
 
     @Override
@@ -123,12 +121,32 @@ public class WanReplicationServiceImpl implements WanReplicationService {
         throw new UnsupportedOperationException("WAN sync for map is not supported.");
     }
 
+    @Override
+    public void syncAllMaps(String wanReplicationName, String targetGroupName) {
+        throw new UnsupportedOperationException("WAN sync is not supported.");
+    }
+
+    @Override
+    public void clearQueues(String wanReplicationName, String targetGroupName) {
+        throw new UnsupportedOperationException("Clearing WAN replication queues is not supported.");
+    }
+
+    @Override
+    public void addWanReplicationConfig(WanReplicationConfig wanConfig) {
+        throw new UnsupportedOperationException("Adding new WAN config is not supported.");
+    }
+
+    @Override
+    public Map<String, LocalWanStats> getStats() {
+        return null;
+    }
+
     private ConcurrentHashMap<String, WanReplicationPublisherDelegate> initializeWanReplicationPublisherMapping() {
         return new ConcurrentHashMap<String, WanReplicationPublisherDelegate>(2);
     }
 
     @Override
-    public Map<String, LocalWanStats> getStats() {
+    public WanSyncState getWanSyncState() {
         return null;
     }
 }

@@ -16,7 +16,7 @@
 
 package com.hazelcast.mapreduce;
 
-import com.hazelcast.spi.annotation.Beta;
+import com.hazelcast.nio.serialization.impl.BinaryInterface;
 
 import java.io.Serializable;
 
@@ -50,8 +50,10 @@ import java.io.Serializable;
  * @param <KeyOut>   The key type for mapped results
  * @param <ValueOut> The value type for mapped results
  * @since 3.2
+ * @deprecated Hazelcast Jet will replace, maybe re-implement this API shortly
  */
-@Beta
+@Deprecated
+@BinaryInterface
 public interface Mapper<KeyIn, ValueIn, KeyOut, ValueOut>
         extends Serializable {
 

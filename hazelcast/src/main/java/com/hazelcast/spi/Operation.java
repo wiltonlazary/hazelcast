@@ -27,13 +27,15 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
 import com.hazelcast.quorum.QuorumException;
 import com.hazelcast.spi.exception.RetryableException;
-import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.properties.GroupProperty;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.logging.Level;
 
+import static com.hazelcast.spi.ExceptionAction.RETRY_INVOCATION;
+import static com.hazelcast.spi.ExceptionAction.THROW_EXCEPTION;
 import static com.hazelcast.util.EmptyStatement.ignore;
 import static com.hazelcast.util.StringUtil.timeToString;
 
@@ -43,16 +45,8 @@ import static com.hazelcast.util.StringUtil.timeToString;
  */
 public abstract class Operation implements DataSerializable {
 
-    /**
-     * Marks an {@link Operation} as non partition specific.
-     */
+    /** Marks an {@link Operation} as non-partition-specific. */
     public static final int GENERIC_PARTITION_ID = -1;
-
-    /**
-     * A call id for an invocation that is skipping local registration. For example, a local call without backups
-     * doesn't need to have its call id registered since it won't receive a response from a remote system.
-     */
-    public static final long CALL_ID_LOCAL_SKIPPED = Long.MAX_VALUE;
 
     static final int BITMASK_VALIDATE_TARGET = 1;
     static final int BITMASK_CALLER_UUID_SET = 1 << 1;
@@ -62,11 +56,14 @@ public abstract class Operation implements DataSerializable {
     static final int BITMASK_CALL_TIMEOUT_64_BIT = 1 << 5;
     static final int BITMASK_SERVICE_NAME_SET = 1 << 6;
 
+    private static final AtomicLongFieldUpdater<Operation> CALL_ID =
+            AtomicLongFieldUpdater.newUpdater(Operation.class, "callId");
+
     // serialized
+    private volatile long callId;
     private String serviceName;
     private int partitionId = GENERIC_PARTITION_ID;
     private int replicaIndex;
-    private long callId;
     private short flags;
     private long invocationTime = -1;
     private long callTimeout = Long.MAX_VALUE;
@@ -80,9 +77,13 @@ public abstract class Operation implements DataSerializable {
     private transient Connection connection;
     private transient OperationResponseHandler responseHandler;
 
-    public Operation() {
+    protected Operation() {
         setFlag(true, BITMASK_VALIDATE_TARGET);
         setFlag(true, BITMASK_CALL_TIMEOUT_64_BIT);
+    }
+
+    public boolean executedLocally() {
+        return nodeEngine.getThisAddress().equals(callerAddress);
     }
 
     public boolean isUrgent() {
@@ -90,17 +91,23 @@ public abstract class Operation implements DataSerializable {
     }
 
     // runs before wait-support
-    public abstract void beforeRun() throws Exception;
+    public void beforeRun() throws Exception {
+    }
 
     // runs after wait-support, supposed to do actual operation
     public abstract void run() throws Exception;
 
     // runs after backups, before wait-notify
-    public abstract void afterRun() throws Exception;
+    public void afterRun() throws Exception {
+    }
 
-    public abstract boolean returnsResponse();
+    public boolean returnsResponse() {
+        return true;
+    }
 
-    public abstract Object getResponse();
+    public Object getResponse() {
+        return null;
+    }
 
     // Gets the actual service name without looking at overriding methods. This method only exists for testing purposes.
     String getRawServiceName() {
@@ -173,37 +180,85 @@ public abstract class Operation implements DataSerializable {
     }
 
     /**
-     * Gets the callId of this Operation.
-     *
-     * The callId is used to associate the invocation of an Operation on a remote system, with the response from the execution
-     * of that operation.
-     *
-     * @return the callId.
+     * Gets the call ID of this operation. The call ID is used to associate the invocation of an operation
+     * on a remote system with the response from the execution of that operation.
+     * <ul>
+     *     <li>Initially the call ID is zero.</li>
+     *     <li>When an Invocation of the operation is created, call ID is assigned a positive value.</li>
+     *     <li>When the invocation ends, the operation is {@link #deactivate()}d, but the call ID is preserved.</li>
+     *     <li>The same operation may be involved in a further invocation (retrying); this will assign a
+     *     new call ID and reactivate the operation.</li>
+     * </ul>
+     * @return the call ID
      */
     public final long getCallId() {
-        return callId;
-    }
-
-    // Accessed using OperationAccessor
-    final Operation setCallId(long callId) {
-        this.callId = callId;
-        onSetCallId();
-        return this;
+        return Math.abs(callId);
     }
 
     /**
-     * This method is called every time a new <tt>callId</tt> is set to the operation.
-     * A new <tt>callId</tt> is set to an operation before initial invocation
-     * and before every invocation retry.
-     * <p/>
-     * By default this is a no-op method. Operation implementations which are willing to
-     * get notified on <tt>callId</tt> changes can override this method. New <tt>callId</tt>
-     * can be accessed by calling {@link #getCallId()}.
-     * <p/>
+     * Tells whether this operation is involved in an ongoing invocation. Such an operation always has a
+     * positive call ID.
+     * @return {@code true} if the operation's invocation is active; {@code false} otherwise
+     */
+    final boolean isActive() {
+        return callId > 0;
+    }
+
+    /**
+     * Marks this operation as "not involved in an ongoing invocation".
+     * @return {@code true} if this call deactivated the operation; {@code false} if it was already inactive
+     */
+    final boolean deactivate() {
+        long c = callId;
+        if (c <= 0) {
+            return false;
+        }
+        if (CALL_ID.compareAndSet(this, c, -c)) {
+            return true;
+        }
+        if (callId > 0) {
+            throw new IllegalStateException("Operation concurrently re-activated while executing deactivate(). " + this);
+        }
+        return false;
+    }
+
+    /**
+     * Atomically ensures that the operation is not already involved in an invocation and sets the supplied call ID.
+     * @param newId the requested call ID, must be positive
+     * @throws IllegalArgumentException if the supplied call ID is non-positive
+     * @throws IllegalStateException if the operation already has an ongoing invocation
+     */
+    // Accessed using OperationAccessor
+    final void setCallId(long newId) {
+        if (newId <= 0) {
+            throw new IllegalArgumentException(String.format("Attempted to set non-positive call ID %d on %s",
+                    newId, this));
+        }
+        final long c = callId;
+        if (c > 0) {
+            throw new IllegalStateException(String.format(
+                    "Attempt to overwrite the call ID of an active operation: current %d, requested %d. %s",
+                    callId, newId, this));
+        }
+        if (!CALL_ID.compareAndSet(this, c, newId)) {
+            throw new IllegalStateException(String.format("Concurrent modification of call ID. Initially observed %d,"
+                    + " then attempted to set %d, then observed %d. %s", c, newId, callId, this));
+        }
+        onSetCallId(newId);
+    }
+
+    /**
+     * Called every time a new <tt>callId</tt> is set on the operation.
+     * A new <tt>callId</tt> is set before initial invocation and before every invocation retry.
+     * <p>
+     * By default this is a no-op method. Operation implementations which want to
+     * get notified on <tt>callId</tt> changes can override it.
+     * <p>
      * For example an operation can distinguish the first invocation and invocation retries by keeping
      * the initial <tt>callId</tt>.
+     * @param callId the new call ID that was set on the operation
      */
-    protected void onSetCallId() {
+    protected void onSetCallId(long callId) {
     }
 
     public boolean validatesTarget() {
@@ -228,7 +283,7 @@ public abstract class Operation implements DataSerializable {
         if (service == null) {
             // one might have overridden getServiceName() method...
             final String name = serviceName != null ? serviceName : getServiceName();
-            service = ((NodeEngineImpl) nodeEngine).getService(name);
+            service = nodeEngine.getService(name);
         }
         return (T) service;
     }
@@ -259,18 +314,18 @@ public abstract class Operation implements DataSerializable {
     }
 
     /**
-     * Gets the OperationResponseHandler tied to this Operation. The returned value can be null.
+     * Gets the {@link OperationResponseHandler} tied to this Operation. The returned value can be null.
      *
-     * @return the OperationResponseHandler
+     * @return the {@link OperationResponseHandler}
      */
     public final OperationResponseHandler getOperationResponseHandler() {
         return responseHandler;
     }
 
     /**
-     * Sets the OperationResponseHandler. Value is allowed to be null.
+     * Sets the {@link OperationResponseHandler}. Value is allowed to be null.
      *
-     * @param responseHandler the OperationResponseHandler to set.
+     * @param responseHandler the {@link OperationResponseHandler} to set.
      * @return this instance.
      */
     public final Operation setOperationResponseHandler(OperationResponseHandler responseHandler) {
@@ -283,7 +338,7 @@ public abstract class Operation implements DataSerializable {
         operationResponseHandler.sendResponse(this, value);
     }
 
-     /**
+    /**
      * Gets the time in milliseconds since this invocation started.
      *
      * For more information, see {@link ClusterClock#getClusterTime()}.
@@ -301,8 +356,9 @@ public abstract class Operation implements DataSerializable {
     }
 
     /**
-     * Gets the call timeout in milliseconds. For example, if a call should be executed within 60 seconds orotherwise it should be
-     * aborted, then the call-timeout is 60000 milliseconds.
+     * Gets the call timeout in milliseconds. For example, if a call should start execution within 60 seconds otherwise
+     * it should be aborted, then the call-timeout is 60000 milliseconds. Once an operation starts execution and runs for a
+     * long period (e.g. 5 minutes with an IExecutorService execute operation), then the call timeout isn't relevant any longer.
      *
      * For more information about the default value, see
      * {@link GroupProperty#OPERATION_CALL_TIMEOUT_MILLIS}
@@ -329,22 +385,36 @@ public abstract class Operation implements DataSerializable {
         return this;
     }
 
+    /**
+     * Returns the wait timeout in millis. -1 means infinite wait, and 0 means no waiting at all.
+     *
+     * The wait timeout is the amount of time a {@link BlockingOperation} is allowed to parked in the
+     * {@link com.hazelcast.spi.impl.operationparker.OperationParker}.
+     *
+     * Examples:
+     * <ol>
+     *     <li>in case of ILock.tryLock(10, ms), the wait timeout is 10 ms</li>
+     *     <li>in case of ILock.lock(), the wait timeout is -1</li>
+     *     <li>in case of ILock.tryLock(), the wait timeout is 0.</li>
+     * </ol>
+     *
+     * The waitTimeout only has meaning for blocking operations. For non blocking operations the value is undefined.
+     *
+     * @return the wait timeout.
+     */
     public final long getWaitTimeout() {
         return waitTimeout;
     }
 
+    /**
+     * Sets the wait timeout in millis.
+     *
+     * @param timeout the wait timeout.
+     * @see #getWaitTimeout() for more detail.
+     */
     public final void setWaitTimeout(long timeout) {
         this.waitTimeout = timeout;
         setFlag(timeout != -1, BITMASK_WAIT_TIMEOUT_SET);
-    }
-
-    /**
-     * @deprecated Use & override {@link #onInvocationException(Throwable)} instead.
-     */
-    @Deprecated
-    public ExceptionAction onException(Throwable throwable) {
-        return (throwable instanceof RetryableException)
-                ? ExceptionAction.RETRY_INVOCATION : ExceptionAction.THROW_EXCEPTION;
     }
 
     /**
@@ -358,7 +428,7 @@ public abstract class Operation implements DataSerializable {
      * @return <tt>ExceptionAction</tt>
      */
     public ExceptionAction onInvocationException(Throwable throwable) {
-        return onException(throwable);
+        return throwable instanceof RetryableException ? RETRY_INVOCATION : THROW_EXCEPTION;
     }
 
     public String getCallerUuid() {
@@ -520,9 +590,11 @@ public abstract class Operation implements DataSerializable {
         readInternal(in);
     }
 
-    protected abstract void writeInternal(ObjectDataOutput out) throws IOException;
+    protected void writeInternal(ObjectDataOutput out) throws IOException {
+    }
 
-    protected abstract void readInternal(ObjectDataInput in) throws IOException;
+    protected void readInternal(ObjectDataInput in) throws IOException {
+    }
 
     /**
      * A template method allows for additional information to be passed into the {@link #toString()} method. So an Operation

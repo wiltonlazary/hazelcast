@@ -64,14 +64,8 @@ public class DefaultEvictionPolicyEvaluator<A, E extends Evictable>
             } else {
                 E evictable = currentEvictionCandidate.getEvictable();
 
-                if (evictable == null) {
-                    continue;
-                }
-
                 if (isExpired(now, evictable)) {
-                    return currentEvictionCandidate instanceof Iterable
-                            ? (Iterable<C>) currentEvictionCandidate
-                            : Collections.singleton(currentEvictionCandidate);
+                    return returnEvictionCandidate(currentEvictionCandidate);
                 }
 
                 int comparisonResult = evictionPolicyComparator.compare(selectedEvictionCandidate, currentEvictionCandidate);
@@ -80,23 +74,28 @@ public class DefaultEvictionPolicyEvaluator<A, E extends Evictable>
                 }
             }
         }
-        if (selectedEvictionCandidate == null) {
+        return returnEvictionCandidate(selectedEvictionCandidate);
+    }
+
+    private <C extends EvictionCandidate<A, E>> Iterable<C> returnEvictionCandidate(C evictionCandidate) {
+        if (evictionCandidate == null) {
             return null;
         } else {
-            return selectedEvictionCandidate instanceof Iterable
-                    ? (Iterable<C>) selectedEvictionCandidate
-                    : Collections.singleton(selectedEvictionCandidate);
+            return evictionCandidate instanceof Iterable
+                    ? (Iterable<C>) evictionCandidate
+                    : Collections.singleton(evictionCandidate);
         }
     }
 
     private boolean isExpired(long now, Evictable evictable) {
+        boolean expired = false;
         // If evictable is also an expirable
         if (evictable instanceof Expirable) {
             Expirable expirable = (Expirable) evictable;
             // If there is an expired candidate, let's evict that one immediately
-            return expirable.isExpiredAt(now);
+            expired = expirable.isExpiredAt(now);
         }
-        return false;
+        return expired;
     }
 
 }

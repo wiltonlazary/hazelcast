@@ -19,17 +19,19 @@ package com.hazelcast.internal.partition.operation;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.internal.partition.ReplicaErrorLogger;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
+import com.hazelcast.internal.partition.impl.PartitionDataSerializerHook;
+import com.hazelcast.internal.partition.impl.PartitionReplicaManager;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionAwareOperation;
 import com.hazelcast.spi.impl.AllowedDuringPassiveState;
 
 import java.io.IOException;
 
 // should not be an urgent operation. required to be in order with backup operations on target node
-public final class CheckReplicaVersion extends Operation implements PartitionAwareOperation, AllowedDuringPassiveState {
+public final class CheckReplicaVersion extends AbstractPartitionOperation
+        implements PartitionAwareOperation, AllowedDuringPassiveState {
 
     private long version;
     private boolean returnResponse;
@@ -44,23 +46,20 @@ public final class CheckReplicaVersion extends Operation implements PartitionAwa
     }
 
     @Override
-    public void beforeRun() throws Exception {
-    }
-
-    @Override
     public void run() throws Exception {
         InternalPartitionServiceImpl partitionService = getService();
         int partitionId = getPartitionId();
         int replicaIndex = getReplicaIndex();
-        long[] currentVersions = partitionService.getPartitionReplicaVersions(partitionId);
+        PartitionReplicaManager replicaManager = partitionService.getReplicaManager();
+        long[] currentVersions = replicaManager.getPartitionReplicaVersions(partitionId);
         long currentVersion = currentVersions[replicaIndex - 1];
 
-        if (currentVersion == version) {
-            response = true;
-        } else {
+        if (replicaManager.isPartitionReplicaVersionDirty(partitionId) || currentVersion != version) {
             logBackupVersionMismatch(currentVersion);
-            partitionService.getReplicaManager().triggerPartitionReplicaSync(partitionId, replicaIndex, 0L);
+            replicaManager.triggerPartitionReplicaSync(partitionId, replicaIndex, 0L);
             response = false;
+        } else {
+            response = true;
         }
     }
 
@@ -71,10 +70,6 @@ public final class CheckReplicaVersion extends Operation implements PartitionAwa
                     + " version is not matching to version of the owner! "
                     + " expected-version=" + version + ", current-version=" + currentVersion);
         }
-    }
-
-    @Override
-    public void afterRun() throws Exception {
     }
 
     @Override
@@ -119,5 +114,10 @@ public final class CheckReplicaVersion extends Operation implements PartitionAwa
         super.toString(sb);
 
         sb.append(", version=").append(version);
+    }
+
+    @Override
+    public int getId() {
+        return PartitionDataSerializerHook.CHECK_REPLICA_VERSION;
     }
 }

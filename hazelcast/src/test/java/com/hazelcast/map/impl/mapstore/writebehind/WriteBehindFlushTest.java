@@ -47,6 +47,7 @@ public class WriteBehindFlushTest extends HazelcastTestSupport {
     public void testWriteBehindQueues_flushed_onNodeShutdown() throws Exception {
         int nodeCount = 3;
         String mapName = randomName();
+
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(nodeCount);
 
         MapStoreConfig mapStoreConfig = new MapStoreConfig();
@@ -60,8 +61,7 @@ public class WriteBehindFlushTest extends HazelcastTestSupport {
         factory.newHazelcastInstance(config);
         factory.newHazelcastInstance(config);
 
-        IMap map = member.getMap(mapName);
-
+        IMap<Integer, Integer> map = member.getMap(mapName);
         for (int i = 0; i < 1000; i++) {
             map.put(i, i);
         }
@@ -71,7 +71,9 @@ public class WriteBehindFlushTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                assertEquals(1000, mapStore.countStore.get());
+                for (int i = 0; i < 1000; i++) {
+                    assertEquals(i, mapStore.store.get(i));
+                }
             }
         });
     }
@@ -94,8 +96,7 @@ public class WriteBehindFlushTest extends HazelcastTestSupport {
         HazelcastInstance member2 = factory.newHazelcastInstance(config);
         HazelcastInstance member3 = factory.newHazelcastInstance(config);
 
-        IMap map = member1.getMap(mapName);
-
+        IMap<Integer, Integer> map = member1.getMap(mapName);
         for (int i = 0; i < 1000; i++) {
             map.put(i, i);
         }
@@ -113,12 +114,11 @@ public class WriteBehindFlushTest extends HazelcastTestSupport {
         Config config = newMapStoredConfig(store, 2000);
 
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
-        HazelcastInstance node1 = factory.newHazelcastInstance(config);
-        HazelcastInstance node2 = factory.newHazelcastInstance(config);
-        HazelcastInstance node3 = factory.newHazelcastInstance(config);
+        HazelcastInstance instance = factory.newHazelcastInstance(config);
+        factory.newHazelcastInstance(config);
+        factory.newHazelcastInstance(config);
 
-        IMap<String, String> map = node1.getMap("default");
-
+        IMap<String, String> map = instance.getMap("default");
         int numberOfPuts = 1000;
         for (int i = 0; i < numberOfPuts; i++) {
             map.put(i + "", i + "");
@@ -128,7 +128,6 @@ public class WriteBehindFlushTest extends HazelcastTestSupport {
 
         assertEquals("Expecting " + numberOfPuts + " store after flush", numberOfPuts, store.getStoreOperationCount());
     }
-
 
     @Test
     public void testWriteBehindQueues_flushed_uponEviction() throws Exception {
@@ -147,12 +146,10 @@ public class WriteBehindFlushTest extends HazelcastTestSupport {
         HazelcastInstance node2 = factory.newHazelcastInstance(config);
         HazelcastInstance node3 = factory.newHazelcastInstance(config);
 
-        IMap map = node1.getMap(mapName);
-
+        IMap<Integer, Integer> map = node1.getMap(mapName);
         for (int i = 0; i < 1000; i++) {
             map.put(i, i);
         }
-
         for (int i = 0; i < 1000; i++) {
             map.evict(i);
         }
@@ -166,7 +163,7 @@ public class WriteBehindFlushTest extends HazelcastTestSupport {
         assertWriteBehindQueuesEmpty(mapName, asList(node1, node2, node3));
     }
 
-    protected Config newMapStoredConfig(MapStore store, int writeDelaySeconds) {
+    private Config newMapStoredConfig(MapStore store, int writeDelaySeconds) {
         MapStoreConfig mapStoreConfig = new MapStoreConfig();
         mapStoreConfig.setEnabled(true);
         mapStoreConfig.setWriteDelaySeconds(writeDelaySeconds);
@@ -179,7 +176,7 @@ public class WriteBehindFlushTest extends HazelcastTestSupport {
         return config;
     }
 
-    protected void assertWriteBehindQueuesEmpty(final String mapName, final List<HazelcastInstance> nodes) {
+    public static void assertWriteBehindQueuesEmpty(final String mapName, final List<HazelcastInstance> nodes) {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
@@ -189,5 +186,4 @@ public class WriteBehindFlushTest extends HazelcastTestSupport {
             }
         }, 240);
     }
-
 }

@@ -18,7 +18,6 @@ package com.hazelcast.concurrent.lock.operations;
 
 import com.hazelcast.concurrent.lock.LockDataSerializerHook;
 import com.hazelcast.concurrent.lock.LockStoreImpl;
-import com.hazelcast.concurrent.lock.LockWaitNotifyKey;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -27,10 +26,11 @@ import com.hazelcast.spi.Notifier;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
-public class BeforeAwaitOperation extends AbstractLockOperation implements Notifier, BackupAwareOperation {
+public class BeforeAwaitOperation extends AbstractLockOperation implements Notifier, BackupAwareOperation, MutatingOperation {
 
     private String conditionId;
 
@@ -40,6 +40,12 @@ public class BeforeAwaitOperation extends AbstractLockOperation implements Notif
     public BeforeAwaitOperation(ObjectNamespace namespace, Data key, long threadId, String conditionId) {
         super(namespace, key, threadId);
         this.conditionId = conditionId;
+    }
+
+    public BeforeAwaitOperation(ObjectNamespace namespace, Data key, long threadId, String conditionId, long referenceId) {
+        super(namespace, key, threadId);
+        this.conditionId = conditionId;
+        setReferenceCallId(referenceId);
     }
 
     @Override
@@ -80,7 +86,8 @@ public class BeforeAwaitOperation extends AbstractLockOperation implements Notif
 
     @Override
     public WaitNotifyKey getNotifiedKey() {
-        return new LockWaitNotifyKey(namespace, key);
+        LockStoreImpl lockStore = getLockStore();
+        return lockStore.getNotifiedKey(key);
     }
 
     @Override

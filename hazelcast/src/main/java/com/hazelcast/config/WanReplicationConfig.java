@@ -16,13 +16,18 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.DataSerializable;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Configuration for wan replication.
  */
-public class WanReplicationConfig {
+public class WanReplicationConfig implements DataSerializable {
 
     private String name;
     private WanConsumerConfig wanConsumerConfig;
@@ -46,16 +51,14 @@ public class WanReplicationConfig {
         return this;
     }
 
-    public void setWanPublisherConfigs(List<WanPublisherConfig> wanPublisherConfigs) {
-        if (wanPublisherConfigs == null
-                || wanPublisherConfigs.isEmpty()) {
-            throw new InvalidConfigurationException("WanReplicationConfig must have at least one WanPublisherConfig.");
-        }
-        this.wanPublisherConfigs = wanPublisherConfigs;
-    }
-
     public List<WanPublisherConfig> getWanPublisherConfigs() {
         return wanPublisherConfigs;
+    }
+
+    public void setWanPublisherConfigs(List<WanPublisherConfig> wanPublisherConfigs) {
+        if (wanPublisherConfigs != null && !wanPublisherConfigs.isEmpty()) {
+            this.wanPublisherConfigs = wanPublisherConfigs;
+        }
     }
 
     public WanReplicationConfig addWanPublisherConfig(WanPublisherConfig wanPublisherConfig) {
@@ -69,5 +72,38 @@ public class WanReplicationConfig {
                 + "{name='" + name + '\''
                 + ", wanPublisherConfigs=" + wanPublisherConfigs
                 + '}';
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(name);
+        if (wanConsumerConfig != null) {
+            out.writeBoolean(true);
+            wanConsumerConfig.writeData(out);
+        } else {
+            out.writeBoolean(false);
+        }
+        int publisherCount = wanPublisherConfigs.size();
+        out.writeInt(publisherCount);
+        for (WanPublisherConfig wanPublisherConfig : wanPublisherConfigs) {
+            wanPublisherConfig.writeData(out);
+        }
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        name = in.readUTF();
+        boolean consumerConfigExists = in.readBoolean();
+        if (consumerConfigExists) {
+            WanConsumerConfig consumerConfig = new WanConsumerConfig();
+            consumerConfig.readData(in);
+            wanConsumerConfig = consumerConfig;
+        }
+        int publisherCount = in.readInt();
+        for (int i = 0; i < publisherCount; i++) {
+            WanPublisherConfig publisherConfig = new WanPublisherConfig();
+            publisherConfig.readData(in);
+            wanPublisherConfigs.add(publisherConfig);
+        }
     }
 }

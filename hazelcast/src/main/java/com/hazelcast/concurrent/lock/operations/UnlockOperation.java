@@ -16,10 +16,8 @@
 
 package com.hazelcast.concurrent.lock.operations;
 
-import com.hazelcast.concurrent.lock.ConditionKey;
 import com.hazelcast.concurrent.lock.LockDataSerializerHook;
 import com.hazelcast.concurrent.lock.LockStoreImpl;
-import com.hazelcast.concurrent.lock.LockWaitNotifyKey;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
@@ -27,14 +25,14 @@ import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.Notifier;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
 import static java.lang.Boolean.TRUE;
 
-public class UnlockOperation extends AbstractLockOperation implements Notifier, BackupAwareOperation {
+public class UnlockOperation extends AbstractLockOperation implements Notifier, BackupAwareOperation, MutatingOperation {
 
     private boolean force;
     private boolean shouldNotify;
@@ -51,6 +49,12 @@ public class UnlockOperation extends AbstractLockOperation implements Notifier, 
         this.force = force;
     }
 
+    public UnlockOperation(ObjectNamespace namespace, Data key, long threadId, boolean force, long referenceId) {
+        super(namespace, key, threadId);
+        this.force = force;
+        this.setReferenceCallId(referenceId);
+    }
+
     @Override
     public void run() throws Exception {
         if (force) {
@@ -64,16 +68,10 @@ public class UnlockOperation extends AbstractLockOperation implements Notifier, 
         LockStoreImpl lockStore = getLockStore();
         boolean unlocked = lockStore.unlock(key, getCallerUuid(), threadId, getReferenceCallId());
         response = unlocked;
-        ensureUnlocked(lockStore, unlocked);
-    }
-
-    private void ensureUnlocked(LockStoreImpl lockStore, boolean unlocked) {
         if (!unlocked) {
-            boolean isRetry = getReferenceCallId() != getCallId();
-            if (!isRetry) {
-                String ownerInfo = lockStore.getOwnerInfo(key);
-                throw new IllegalMonitorStateException("Current thread is not owner of the lock! -> " + ownerInfo);
-            }
+            // we can not check for retry here, hence just throw the exception
+            String ownerInfo = lockStore.getOwnerInfo(key);
+            throw new IllegalMonitorStateException("Current thread is not owner of the lock! -> " + ownerInfo);
         }
     }
 
@@ -85,12 +83,11 @@ public class UnlockOperation extends AbstractLockOperation implements Notifier, 
     @Override
     public void afterRun() throws Exception {
         LockStoreImpl lockStore = getLockStore();
-        AwaitOperation awaitResponse = lockStore.pollExpiredAwaitOp(key);
-        if (awaitResponse != null) {
-            OperationService operationService = getNodeEngine().getOperationService();
-            operationService.runOperationOnCallingThread(awaitResponse);
+        AwaitOperation awaitOperation = lockStore.pollExpiredAwaitOp(key);
+        if (awaitOperation != null) {
+            awaitOperation.runExpired();
         }
-        shouldNotify = awaitResponse == null;
+        shouldNotify = awaitOperation == null;
     }
 
     @Override
@@ -114,12 +111,7 @@ public class UnlockOperation extends AbstractLockOperation implements Notifier, 
     @Override
     public final WaitNotifyKey getNotifiedKey() {
         LockStoreImpl lockStore = getLockStore();
-        ConditionKey conditionKey = lockStore.getSignalKey(key);
-        if (conditionKey == null) {
-            return new LockWaitNotifyKey(namespace, key);
-        } else {
-            return conditionKey;
-        }
+        return lockStore.getNotifiedKey(key);
     }
 
     @Override

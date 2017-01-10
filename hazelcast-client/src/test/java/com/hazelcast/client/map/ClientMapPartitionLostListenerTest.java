@@ -4,15 +4,17 @@ import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.config.Config;
+import com.hazelcast.core.DistributedObject;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.MapPartitionLostEvent;
-import com.hazelcast.map.MapPartitionLostListenerStressTest.EventCollectingMapPartitionLostListener;
+import com.hazelcast.map.TestEventCollectingMapPartitionLostListener;
 import com.hazelcast.map.impl.MapPartitionLostEventFilter;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.listener.MapPartitionLostListener;
 import com.hazelcast.nio.Address;
 import com.hazelcast.spi.EventRegistration;
 import com.hazelcast.spi.impl.eventservice.InternalEventService;
+import com.hazelcast.spi.impl.proxyservice.InternalProxyService;
 import com.hazelcast.spi.partition.IPartitionLostEvent;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
@@ -23,6 +25,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import java.util.Collection;
 import java.util.List;
 
 import static com.hazelcast.client.impl.ClientTestUtil.getHazelcastClientInstanceImpl;
@@ -35,7 +38,6 @@ import static com.hazelcast.test.HazelcastTestSupport.randomMapName;
 import static com.hazelcast.test.HazelcastTestSupport.warmUpPartitions;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
@@ -87,7 +89,7 @@ public class ClientMapPartitionLostListenerTest {
         final HazelcastInstance client = hazelcastFactory.newHazelcastClient();
         warmUpPartitions(instance, client);
 
-        final EventCollectingMapPartitionLostListener listener = new EventCollectingMapPartitionLostListener(0);
+        final TestEventCollectingMapPartitionLostListener listener = new TestEventCollectingMapPartitionLostListener(0);
         client.getMap(mapName).addPartitionLostListener(listener);
 
         final MapService mapService = getNode(instance).getNodeEngine().getService(MapService.SERVICE_NAME);
@@ -97,7 +99,7 @@ public class ClientMapPartitionLostListenerTest {
         assertMapPartitionLostEventEventually(listener, partitionId);
     }
 
-    private void assertMapPartitionLostEventEventually(final EventCollectingMapPartitionLostListener listener,
+    private void assertMapPartitionLostEventEventually(final TestEventCollectingMapPartitionLostListener listener,
                                                        final int partitionId) {
         assertTrueEventually(new AssertTask() {
             @Override
@@ -124,19 +126,19 @@ public class ClientMapPartitionLostListenerTest {
         clientConfig.getNetworkConfig().setSmartRouting(false);
         final HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
 
-        assertMapContainerCreated(instance1, mapName);
-        assertMapContainerCreated(instance2, mapName);
-
         final HazelcastClientInstanceImpl clientInstanceImpl = getHazelcastClientInstanceImpl(client);
         final Address clientOwnerAddress = clientInstanceImpl.getClientClusterService().getOwnerConnectionAddress();
 
         final HazelcastInstance other = getAddress(instance1).equals(clientOwnerAddress) ? instance2 : instance1;
 
-        final EventCollectingMapPartitionLostListener listener = new EventCollectingMapPartitionLostListener(0);
+        final TestEventCollectingMapPartitionLostListener listener = new TestEventCollectingMapPartitionLostListener(0);
         client.getMap(mapName).addPartitionLostListener(listener);
 
         assertRegistrationEventually(instance1, mapName, true);
         assertRegistrationEventually(instance2, mapName, true);
+
+        assertProxyExistsEventually(instance1, mapName);
+        assertProxyExistsEventually(instance2, mapName);
 
         final MapService mapService = getNode(other).getNodeEngine().getService(SERVICE_NAME);
         final int partitionId = 5;
@@ -145,13 +147,18 @@ public class ClientMapPartitionLostListenerTest {
         assertMapPartitionLostEventEventually(listener, partitionId);
     }
 
-    private void assertMapContainerCreated(final HazelcastInstance instance, final String mapName) {
+    private void assertProxyExistsEventually(HazelcastInstance instance, final String proxyName) {
+        final InternalProxyService proxyService = getNodeEngineImpl(instance).getProxyService();
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
-                final MapService mapService = getNodeEngineImpl(instance).getService(MapService.SERVICE_NAME);
-                assertNotNull(mapService.getMapServiceContext().getMapContainer(mapName));
+            public void run() throws Exception {
+                Collection<DistributedObject> allDistributedObjects = proxyService.getAllDistributedObjects();
+                for (DistributedObject distributedObject : allDistributedObjects) {
+                    if (distributedObject.getName().equals(proxyName)) {
+                        return;
+                    }
+                }
+                fail("There is no proxy with name " + proxyName + " created (yet)");
             }
         });
     }

@@ -23,8 +23,11 @@ import com.hazelcast.util.Clock;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 import static com.hazelcast.util.JsonUtil.getLong;
+import static com.hazelcast.util.JsonUtil.getString;
+import static java.lang.String.format;
 import static java.util.concurrent.atomic.AtomicLongFieldUpdater.newUpdater;
 
+@SuppressWarnings("checkstyle:methodcount")
 public class NearCacheStatsImpl implements NearCacheStats {
 
     private static final double PERCENTAGE = 100.0;
@@ -37,12 +40,27 @@ public class NearCacheStatsImpl implements NearCacheStats {
             newUpdater(NearCacheStatsImpl.class, "hits");
     private static final AtomicLongFieldUpdater<NearCacheStatsImpl> MISSES =
             newUpdater(NearCacheStatsImpl.class, "misses");
+    private static final AtomicLongFieldUpdater<NearCacheStatsImpl> EVICTIONS =
+            newUpdater(NearCacheStatsImpl.class, "evictions");
+    private static final AtomicLongFieldUpdater<NearCacheStatsImpl> EXPIRATIONS =
+            newUpdater(NearCacheStatsImpl.class, "expirations");
+    private static final AtomicLongFieldUpdater<NearCacheStatsImpl> PERSISTENCE_COUNT =
+            newUpdater(NearCacheStatsImpl.class, "persistenceCount");
 
     private volatile long creationTime;
     private volatile long ownedEntryCount;
     private volatile long ownedEntryMemoryCost;
     private volatile long hits;
     private volatile long misses;
+    private volatile long evictions;
+    private volatile long expirations;
+
+    private volatile long persistenceCount;
+    private volatile long lastPersistenceTime;
+    private volatile long lastPersistenceDuration;
+    private volatile long lastPersistenceWrittenBytes;
+    private volatile long lastPersistenceKeyCount;
+    private volatile String lastPersistenceFailure = "";
 
     public NearCacheStatsImpl() {
         this.creationTime = Clock.currentTimeMillis();
@@ -92,12 +110,13 @@ public class NearCacheStatsImpl implements NearCacheStats {
         return hits;
     }
 
-    public void incrementHits() {
-        HITS.incrementAndGet(this);
+    // just for testing
+    void setHits(long hits) {
+        HITS.set(this, hits);
     }
 
-    public void setHits(long hits) {
-        HITS.set(this, hits);
+    public void incrementHits() {
+        HITS.incrementAndGet(this);
     }
 
     @Override
@@ -105,7 +124,8 @@ public class NearCacheStatsImpl implements NearCacheStats {
         return misses;
     }
 
-    public void setMisses(long misses) {
+    // just for testing
+    void setMisses(long misses) {
         MISSES.set(this, misses);
     }
 
@@ -127,6 +147,72 @@ public class NearCacheStatsImpl implements NearCacheStats {
     }
 
     @Override
+    public long getEvictions() {
+        return evictions;
+    }
+
+    public void incrementEvictions() {
+        EVICTIONS.incrementAndGet(this);
+    }
+
+    @Override
+    public long getExpirations() {
+        return expirations;
+    }
+
+    public void incrementExpirations() {
+        EXPIRATIONS.incrementAndGet(this);
+    }
+
+    @Override
+    public long getPersistenceCount() {
+        return persistenceCount;
+    }
+
+    public void addPersistence(long duration, int writtenBytes, int keyCount) {
+        PERSISTENCE_COUNT.incrementAndGet(this);
+        lastPersistenceTime = Clock.currentTimeMillis();
+        lastPersistenceDuration = duration;
+        lastPersistenceWrittenBytes = writtenBytes;
+        lastPersistenceKeyCount = keyCount;
+        lastPersistenceFailure = "";
+    }
+
+    public void addPersistenceFailure(Throwable t) {
+        PERSISTENCE_COUNT.incrementAndGet(this);
+        lastPersistenceTime = Clock.currentTimeMillis();
+        lastPersistenceDuration = 0;
+        lastPersistenceWrittenBytes = 0;
+        lastPersistenceKeyCount = 0;
+        lastPersistenceFailure = t.getClass().getSimpleName() + ": " + t.getMessage();
+    }
+
+    @Override
+    public long getLastPersistenceTime() {
+        return lastPersistenceTime;
+    }
+
+    @Override
+    public long getLastPersistenceDuration() {
+        return lastPersistenceDuration;
+    }
+
+    @Override
+    public long getLastPersistenceWrittenBytes() {
+        return lastPersistenceWrittenBytes;
+    }
+
+    @Override
+    public long getLastPersistenceKeyCount() {
+        return lastPersistenceKeyCount;
+    }
+
+    @Override
+    public String getLastPersistenceFailure() {
+        return lastPersistenceFailure;
+    }
+
+    @Override
     public JsonObject toJson() {
         JsonObject root = new JsonObject();
         root.add("ownedEntryCount", ownedEntryCount);
@@ -134,6 +220,14 @@ public class NearCacheStatsImpl implements NearCacheStats {
         root.add("creationTime", creationTime);
         root.add("hits", hits);
         root.add("misses", misses);
+        root.add("evictions", evictions);
+        root.add("expirations", expirations);
+        root.add("persistenceCount", persistenceCount);
+        root.add("lastPersistenceTime", lastPersistenceTime);
+        root.add("lastPersistenceDuration", lastPersistenceDuration);
+        root.add("lastPersistenceWrittenBytes", lastPersistenceWrittenBytes);
+        root.add("lastPersistenceKeyCount", lastPersistenceKeyCount);
+        root.add("lastPersistenceFailure", lastPersistenceFailure);
         return root;
     }
 
@@ -144,6 +238,14 @@ public class NearCacheStatsImpl implements NearCacheStats {
         creationTime = getLong(json, "creationTime", -1L);
         hits = getLong(json, "hits", -1L);
         misses = getLong(json, "misses", -1L);
+        evictions = getLong(json, "evictions", -1L);
+        expirations = getLong(json, "expirations", -1L);
+        persistenceCount = getLong(json, "persistenceCount", -1L);
+        lastPersistenceTime = getLong(json, "lastPersistenceTime", -1L);
+        lastPersistenceDuration = getLong(json, "lastPersistenceDuration", -1L);
+        lastPersistenceWrittenBytes = getLong(json, "lastPersistenceWrittenBytes", -1L);
+        lastPersistenceKeyCount = getLong(json, "lastPersistenceKeyCount", -1L);
+        lastPersistenceFailure = getString(json, "lastPersistenceFailure", "");
     }
 
     @Override
@@ -154,7 +256,15 @@ public class NearCacheStatsImpl implements NearCacheStats {
                 + ", creationTime=" + creationTime
                 + ", hits=" + hits
                 + ", misses=" + misses
-                + ", ratio=" + String.format("%.1f%%", getRatio())
+                + ", ratio=" + format("%.1f%%", getRatio())
+                + ", evictions=" + evictions
+                + ", expirations=" + expirations
+                + ", lastPersistenceTime=" + lastPersistenceTime
+                + ", persistenceCount=" + persistenceCount
+                + ", lastPersistenceDuration=" + lastPersistenceDuration
+                + ", lastPersistenceWrittenBytes=" + lastPersistenceWrittenBytes
+                + ", lastPersistenceKeyCount=" + lastPersistenceKeyCount
+                + ", lastPersistenceFailure='" + lastPersistenceFailure + "'"
                 + '}';
     }
 }

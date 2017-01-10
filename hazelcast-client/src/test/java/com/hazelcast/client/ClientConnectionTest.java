@@ -25,6 +25,8 @@ import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.core.Client;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IExecutorService;
+import com.hazelcast.core.LifecycleEvent;
+import com.hazelcast.core.LifecycleListener;
 import com.hazelcast.core.Member;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
@@ -41,19 +43,19 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.Collection;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -133,8 +135,27 @@ public class ClientConnectionTest extends HazelcastTestSupport {
         final Address serverAddress = new Address(server.getCluster().getLocalMember().getSocketAddress());
         final Connection connectionToServer = connectionManager.getConnection(serverAddress);
 
-        connectionManager.destroyConnection(connectionToServer, null, null);
-        connectionManager.destroyConnection(connectionToServer, null, null);
+        final CountDownLatch isConnected = new CountDownLatch(1);
+        clientImpl.getLifecycleService().addLifecycleListener(new LifecycleListener() {
+            @Override
+            public void stateChanged(LifecycleEvent event) {
+                if (LifecycleEvent.LifecycleState.CLIENT_CONNECTED == event.getState()) {
+                    isConnected.countDown();
+                }
+            }
+        });
+
+        connectionToServer.close(null, null);
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run()
+                    throws Exception {
+                assertTrue(isConnected.await(5, TimeUnit.SECONDS));
+            }
+        });
+
+        connectionToServer.close(null, null);
 
         assertEquals("connection removed should be called only once", 1, listener.count.get());
     }
@@ -221,10 +242,4 @@ public class ClientConnectionTest extends HazelcastTestSupport {
         }
     }
 
-    static class DummySerializableCallable implements Callable, Serializable {
-        @Override
-        public Object call() throws Exception {
-            return null;
-        }
-    }
 }

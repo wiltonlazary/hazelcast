@@ -17,48 +17,52 @@
 package com.hazelcast.internal.cluster;
 
 import com.hazelcast.instance.MemberImpl;
+import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.version.MemberVersion;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-public class MemberInfo implements DataSerializable {
+public class MemberInfo implements IdentifiedDataSerializable {
 
     private Address address;
     private String uuid;
     private boolean liteMember;
+    private MemberVersion version;
     private Map<String, Object> attributes;
 
     public MemberInfo() {
     }
 
-    public MemberInfo(Address address) {
-        this.address = address;
+    public MemberInfo(Address address, String uuid, Map<String, Object> attributes, MemberVersion version) {
+        this(address, uuid, attributes, false, version);
     }
 
-    public MemberInfo(Address address, String uuid, Map<String, Object> attributes) {
-        this(address, uuid, attributes, false);
-    }
-
-    public MemberInfo(Address address, String uuid, Map<String, Object> attributes, boolean liteMember) {
+    public MemberInfo(Address address, String uuid, Map<String, Object> attributes, boolean liteMember, MemberVersion version) {
         this.address = address;
         this.uuid = uuid;
         this.attributes = attributes == null || attributes.isEmpty()
                 ? Collections.<String, Object>emptyMap() : new HashMap<String, Object>(attributes);
         this.liteMember = liteMember;
+        this.version = version;
     }
 
     public MemberInfo(MemberImpl member) {
-        this(member.getAddress(), member.getUuid(), member.getAttributes(), member.isLiteMember());
+        this(member.getAddress(), member.getUuid(), member.getAttributes(), member.isLiteMember(), member.getVersion());
     }
 
     public Address getAddress() {
         return address;
+    }
+
+    public MemberVersion getVersion() {
+        return version;
     }
 
     public String getUuid() {
@@ -90,6 +94,7 @@ public class MemberInfo implements DataSerializable {
             Object value = in.readObject();
             attributes.put(key, value);
         }
+        version = in.readObject();
     }
 
     @Override
@@ -108,6 +113,7 @@ public class MemberInfo implements DataSerializable {
                 out.writeObject(entry.getValue());
             }
         }
+        out.writeObject(version);
     }
 
     @Override
@@ -147,5 +153,15 @@ public class MemberInfo implements DataSerializable {
                 + ", uuid=" + uuid
                 + ", liteMember=" + liteMember
                 + '}';
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ClusterDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ClusterDataSerializerHook.MEMBER_INFO;
     }
 }

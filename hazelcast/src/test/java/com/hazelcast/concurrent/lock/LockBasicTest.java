@@ -180,7 +180,7 @@ public abstract class LockBasicTest extends HazelcastTestSupport {
             }
         }).start();
         latch.await();
-        assertTrue(lock.tryLock(3, TimeUnit.SECONDS));
+        assertTrue(lock.tryLock(30, TimeUnit.SECONDS));
 
         assertTrue(lock.isLocked());
         assertTrue(lock.isLockedByCurrentThread());
@@ -310,7 +310,7 @@ public abstract class LockBasicTest extends HazelcastTestSupport {
             public void run() throws Exception {
                 assertFalse(lock.isLocked());
             }
-        }, 5);
+        }, 20);
     }
 
     @Test(expected = NullPointerException.class, timeout = 60000)
@@ -489,6 +489,39 @@ public abstract class LockBasicTest extends HazelcastTestSupport {
         }).start();
 
         lock.lock();
+    }
+
+    @Test
+    public void test_whenLockDestroyed_thenUnlocked() {
+        lock.lock();
+        lock.destroy();
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertFalse("Lock should have been unlocked by destroy.", lock.isLocked());
+            }
+        });
+    }
+
+    @Test
+    public void test_whenLockDestroyedFromAnotherThread_thenUnlocked() {
+        lock.lock();
+
+        Thread thread = new Thread() {
+            public void run() {
+                lock.destroy();
+            }
+        };
+        thread.start();
+        assertJoinable(thread);
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertFalse("Lock should have been unlocked by destroy.", lock.isLocked());
+            }
+        });
     }
 
     @Test

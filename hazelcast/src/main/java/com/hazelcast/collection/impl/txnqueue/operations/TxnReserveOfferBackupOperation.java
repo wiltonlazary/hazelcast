@@ -22,13 +22,14 @@ import com.hazelcast.collection.impl.queue.operations.QueueOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.spi.BackupOperation;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
 /**
-* Reserve offer backup operation for the transactional queue.
-*/
-public class TxnReserveOfferBackupOperation extends QueueOperation implements BackupOperation {
+ * Reserve offer backup operation for the transactional queue.
+ */
+public class TxnReserveOfferBackupOperation extends QueueOperation implements BackupOperation, MutatingOperation {
 
     private long itemId;
 
@@ -45,7 +46,7 @@ public class TxnReserveOfferBackupOperation extends QueueOperation implements Ba
 
     @Override
     public void run() throws Exception {
-        QueueContainer queueContainer = getOrCreateContainer();
+        QueueContainer queueContainer = getContainer();
         queueContainer.txnOfferBackupReserve(itemId, transactionId);
     }
 

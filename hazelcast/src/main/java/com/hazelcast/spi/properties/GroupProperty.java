@@ -16,6 +16,7 @@
 
 package com.hazelcast.spi.properties;
 
+import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.instance.BuildInfo;
 import com.hazelcast.instance.BuildInfoProvider;
@@ -81,7 +82,7 @@ public final class GroupProperty {
      * The number of priority generic operation handler threads per Member.
      * <p/>
      * The default is 1.
-     *
+     * <p>
      * Having at least 1 priority generic operation thread helps to improve cluster stability since a lot of the cluster
      * operations are generic priority operations and they should get executed as soon as possible. If there is a dedicated
      * generic operation thread, than these operations don't get delayed because the generic threads are busy executing regular
@@ -139,11 +140,11 @@ public final class GroupProperty {
             = new HazelcastProperty("hazelcast.io.output.thread.count", IO_THREAD_COUNT);
 
     /**
-     * The interval in seconds between {@link com.hazelcast.nio.tcp.nonblocking.iobalancer.IOBalancer IOBalancer}
+     * The interval in seconds between {@link com.hazelcast.internal.networking.nonblocking.iobalancer.IOBalancer IOBalancer}
      * executions. The shorter intervals will catch I/O Imbalance faster, but they will cause higher overhead.
      * <p/>
-     * Please see the documentation of {@link com.hazelcast.nio.tcp.nonblocking.iobalancer.IOBalancer IOBalancer} for a
-     * detailed explanation of the problem.
+     * Please see the documentation of {@link com.hazelcast.internal.networking.nonblocking.iobalancer.IOBalancer IOBalancer}
+     * for a detailed explanation of the problem.
      * <p/>
      * The default is 20 seconds. A value smaller than 1 disables the balancer.
      */
@@ -168,6 +169,9 @@ public final class GroupProperty {
             = new HazelcastProperty("hazelcast.memcache.enabled", false);
     public static final HazelcastProperty REST_ENABLED
             = new HazelcastProperty("hazelcast.rest.enabled", false);
+
+    public static final HazelcastProperty HTTP_HEALTHCHECK_ENABLED
+            = new HazelcastProperty("hazelcast.http.healthcheck.enabled", false);
 
     public static final HazelcastProperty MAP_LOAD_CHUNK_SIZE
             = new HazelcastProperty("hazelcast.map.load.chunk.size", 1000);
@@ -253,6 +257,23 @@ public final class GroupProperty {
 
     public static final HazelcastProperty SHUTDOWNHOOK_ENABLED
             = new HazelcastProperty("hazelcast.shutdownhook.enabled", true);
+
+    /**
+     * Behaviour when JVM is about to exit while Hazelcast instance is still running.
+     *
+     * Possible values:
+     * TERMINATE: Terminate Hazelcast immediately
+     * GRACEFUL:  Initiate graceful shutdown. This can significantly slow-down JVM exit process, but it's tries to
+     *            retain data safety.
+     *
+     * Default: TERMINATE
+     *
+     * You should always shutdown Hazelcast explicitly via {@link HazelcastInstance#shutdown()}
+     * It's not recommended to rely on shutdown hook, this is a last-effort measure.
+     *
+     */
+    public static final HazelcastProperty SHUTDOWNHOOK_POLICY
+            = new HazelcastProperty("hazelcast.shutdownhook.policy", "TERMINATE");
 
     public static final HazelcastProperty WAIT_SECONDS_BEFORE_JOIN
             = new HazelcastProperty("hazelcast.wait.seconds.before.join", 5, SECONDS);
@@ -443,19 +464,19 @@ public final class GroupProperty {
             = new HazelcastProperty("hazelcast.cache.invalidation.batchfrequency.seconds", 10, SECONDS);
 
     /**
-     * Defines near-cache invalidation event batch sending is enabled or not.
+     * Defines Near Cache invalidation event batch sending is enabled or not.
      */
     public static final HazelcastProperty MAP_INVALIDATION_MESSAGE_BATCH_ENABLED
             = new HazelcastProperty("hazelcast.map.invalidation.batch.enabled", true);
 
     /**
-     * Defines the maximum number of near-cache invalidation events to be drained and sent to the event near-caches in a batch.
+     * Defines the maximum number of Near Cache invalidation events to be drained and sent to the event Near Cache in a batch.
      */
     public static final HazelcastProperty MAP_INVALIDATION_MESSAGE_BATCH_SIZE
             = new HazelcastProperty("hazelcast.map.invalidation.batch.size", 100);
 
     /**
-     * Defines the near-cache invalidation event batch sending frequency in seconds.
+     * Defines the Near Cache invalidation event batch sending frequency in seconds.
      * <p/>
      * When the number of events do not come up to {@link #MAP_INVALIDATION_MESSAGE_BATCH_SIZE} in the given time period (which
      * is defined by this property); those events are gathered into a batch and sent to target.
@@ -538,6 +559,18 @@ public final class GroupProperty {
             = new HazelcastProperty("hazelcast.query.predicate.parallel.evaluation", false);
 
     /**
+     * Run aggregation accumulation for multiple entries in parallel.
+     * <p/>
+     * Each Hazelcast member executes the accumulation stage of an aggregation using a single thread by default.
+     * In most cases it pays off to do it in parallel.
+     * <p/>
+     * The default is true.
+     */
+    public static final HazelcastProperty AGGREGATION_ACCUMULATION_PARALLEL_EVALUATION
+            = new HazelcastProperty("hazelcast.aggregation.accumulation.parallel.evaluation", true);
+
+
+    /**
      * Result size limit for query operations on maps.
      * <p/>
      * This value defines the maximum number of returned elements for a single query result. If a query exceeds this number of
@@ -611,6 +644,13 @@ public final class GroupProperty {
             = new HazelcastProperty("hazelcast.discovery.public.ip.enabled", false);
 
     /**
+     * When this property is true, if the server can not determine the connected client version, it shall assume that it is of
+     * 3.6.x version client. This property is especially needed if you are using ICache (or JCache).
+     */
+    public static final HazelcastProperty COMPATIBILITY_3_6_CLIENT_ENABLED
+            = new HazelcastProperty("hazelcast.compatibility.3.6.client", false);
+
+    /**
      * Hazelcast serialization version. This is single byte value between 1 and Max supported serialization version.
      *
      * @see BuildInfo#getSerializationVersion()
@@ -618,6 +658,15 @@ public final class GroupProperty {
     public static final HazelcastProperty SERIALIZATION_VERSION
             = new HazelcastProperty("hazelcast.serialization.version",
             BuildInfoProvider.getBuildInfo().getSerializationVersion());
+
+    /**
+     * Override cluster version to use while node is not yet member of a cluster. The cluster version assumed before joining
+     * a cluster may affect the serialization format of cluster discovery & join operations and its compatibility with members
+     * of a cluster running on different Hazelcast codebase versions. The default is to use the node's codebase version. You may
+     * need to override it for your node to join a cluster running on a previous cluster version.
+     */
+    public static final HazelcastProperty INIT_CLUSTER_VERSION
+            = new HazelcastProperty("hazelcast.init.cluster.version");
 
     private GroupProperty() {
     }

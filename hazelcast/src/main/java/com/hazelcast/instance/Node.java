@@ -23,26 +23,31 @@ import com.hazelcast.cluster.impl.TcpIpJoiner;
 import com.hazelcast.cluster.memberselector.MemberSelectors;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.DiscoveryConfig;
+import com.hazelcast.config.DistributedClassloadingConfig;
 import com.hazelcast.config.JoinConfig;
 import com.hazelcast.config.ListenerConfig;
 import com.hazelcast.config.MemberAttributeConfig;
 import com.hazelcast.core.ClientListener;
 import com.hazelcast.core.DistributedObjectListener;
 import com.hazelcast.core.HazelcastInstanceAware;
+import com.hazelcast.core.LifecycleEvent.LifecycleState;
 import com.hazelcast.core.LifecycleListener;
 import com.hazelcast.core.MembershipListener;
 import com.hazelcast.core.MigrationListener;
 import com.hazelcast.internal.ascii.TextCommandService;
 import com.hazelcast.internal.ascii.TextCommandServiceImpl;
+import com.hazelcast.internal.cluster.impl.ClusterJoinManager;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.internal.cluster.impl.ConfigCheck;
 import com.hazelcast.internal.cluster.impl.DiscoveryJoiner;
-import com.hazelcast.internal.cluster.impl.JoinMessage;
 import com.hazelcast.internal.cluster.impl.JoinRequest;
 import com.hazelcast.internal.cluster.impl.MulticastJoiner;
 import com.hazelcast.internal.cluster.impl.MulticastService;
+import com.hazelcast.internal.cluster.impl.SplitBrainJoinMessage;
+import com.hazelcast.internal.distributedclassloading.DistributedClassLoader;
 import com.hazelcast.internal.management.ManagementCenterService;
 import com.hazelcast.internal.partition.InternalPartitionService;
+import com.hazelcast.internal.partition.impl.InternalMigrationListener;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.logging.ILogger;
@@ -52,7 +57,6 @@ import com.hazelcast.nio.ClassLoaderUtil;
 import com.hazelcast.nio.ConnectionManager;
 import com.hazelcast.nio.Packet;
 import com.hazelcast.partition.PartitionLostListener;
-import com.hazelcast.internal.partition.impl.InternalMigrationListener;
 import com.hazelcast.security.Credentials;
 import com.hazelcast.security.SecurityContext;
 import com.hazelcast.spi.annotation.PrivateApi;
@@ -70,12 +74,15 @@ import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.ExceptionUtil;
 import com.hazelcast.util.PhoneHome;
 import com.hazelcast.util.UuidUtil;
+import com.hazelcast.version.MemberVersion;
 
 import java.lang.reflect.Constructor;
 import java.nio.channels.ServerSocketChannel;
+import java.security.PrivilegedAction;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -87,7 +94,8 @@ import static com.hazelcast.spi.properties.GroupProperty.GRACEFUL_SHUTDOWN_MAX_W
 import static com.hazelcast.spi.properties.GroupProperty.LOGGING_TYPE;
 import static com.hazelcast.spi.properties.GroupProperty.MAX_JOIN_SECONDS;
 import static com.hazelcast.spi.properties.GroupProperty.SHUTDOWNHOOK_ENABLED;
-import static com.hazelcast.util.UuidUtil.createMemberUuid;
+import static com.hazelcast.spi.properties.GroupProperty.SHUTDOWNHOOK_POLICY;
+import static java.security.AccessController.doPrivileged;
 
 @SuppressWarnings({"checkstyle:methodcount", "checkstyle:visibilitymodifier", "checkstyle:classdataabstractioncoupling",
         "checkstyle:classfanoutcomplexity"})
@@ -113,16 +121,17 @@ public class Node {
     public final ConnectionManager connectionManager;
 
     public final Address address;
-    public final MemberImpl localMember;
 
     public final SecurityContext securityContext;
+
+    private volatile MemberImpl localMember;
 
     private final ILogger logger;
 
     private final AtomicBoolean joined = new AtomicBoolean(false);
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
-    private final NodeShutdownHookThread shutdownHookThread = new NodeShutdownHookThread("hz.ShutdownThread");
+    private final NodeShutdownHookThread shutdownHookThread;
 
     private final PhoneHome phoneHome = new PhoneHome();
 
@@ -144,16 +153,27 @@ public class Node {
 
     private volatile NodeState state;
 
+    /**
+     * Codebase version of Hazelcast being executed at this Node, as resolved by {@link BuildInfoProvider}.
+     * For example, when running on hazelcast-3.8.jar, this would resolve to {@code Version.of(3,8,0)}.
+     * A node's codebase version may be different than cluster version.
+     */
+    private final MemberVersion version;
+
     private volatile Address masterAddress;
 
-    @SuppressWarnings("checkstyle:executablestatementcount")
+    @SuppressWarnings({"checkstyle:executablestatementcount", "checkstyle:methodlength"})
     public Node(HazelcastInstanceImpl hazelcastInstance, Config config, NodeContext nodeContext) {
         this.hazelcastInstance = hazelcastInstance;
         this.config = config;
         this.liteMember = config.isLiteMember();
-        this.configClassLoader = config.getClassLoader();
+        this.configClassLoader = getConfigClassloader(config);
         this.properties = new HazelcastProperties(config);
+
+        String policy = properties.getString(SHUTDOWNHOOK_POLICY);
+        this.shutdownHookThread = new NodeShutdownHookThread("hz.ShutdownThread", policy);
         this.buildInfo = BuildInfoProvider.getBuildInfo();
+        this.version = MemberVersion.of(buildInfo.getVersion());
 
         String loggingType = properties.getString(LOGGING_TYPE);
         loggingService = new LoggingServiceImpl(config.getGroupConfig().getName(), loggingType, buildInfo);
@@ -167,14 +187,14 @@ public class Node {
         final ServerSocketChannel serverSocketChannel = addressPicker.getServerSocketChannel();
         try {
             address = addressPicker.getPublicAddress();
+            nodeExtension = nodeContext.createNodeExtension(this);
             final Map<String, Object> memberAttributes = findMemberAttributes(config.getMemberAttributeConfig().asReadOnly());
-            localMember = new MemberImpl(address, true, createMemberUuid(address),
+            localMember = new MemberImpl(address, version, true, nodeExtension.createMemberUuid(address),
                     hazelcastInstance, memberAttributes, liteMember);
             loggingService.setThisMember(localMember);
             logger = loggingService.getLogger(Node.class.getName());
             hazelcastThreadGroup = new HazelcastThreadGroup(hazelcastInstance.getName(), logger, configClassLoader);
 
-            this.nodeExtension = createNodeExtension(nodeContext);
             nodeExtension.printNodeInfo();
             nodeExtension.beforeStart();
 
@@ -199,6 +219,24 @@ public class Node {
             }
             throw ExceptionUtil.rethrow(e);
         }
+    }
+
+    private ClassLoader getConfigClassloader(Config config) {
+        DistributedClassloadingConfig distributedClassloadingConfig = config.getDistributedClassloadingConfig();
+        ClassLoader classLoader;
+        if (distributedClassloadingConfig.isEnabled()) {
+            ClassLoader parent = config.getClassLoader();
+            final ClassLoader theParent = parent == null ? Node.class.getClassLoader() : parent;
+            classLoader = doPrivileged(new PrivilegedAction<DistributedClassLoader>() {
+                @Override
+                public DistributedClassLoader run() {
+                    return new DistributedClassLoader(theParent);
+                }
+            });
+        } else {
+            classLoader = config.getClassLoader();
+        }
+        return classLoader;
     }
 
     public HazelcastThreadGroup getHazelcastThreadGroup() {
@@ -286,10 +324,6 @@ public class Node {
         }
     }
 
-    protected NodeExtension createNodeExtension(NodeContext nodeContext) {
-        return nodeContext.createNodeExtension(this);
-    }
-
     public ManagementCenterService getManagementCenterService() {
         return managementCenterService;
     }
@@ -338,6 +372,8 @@ public class Node {
     void start() {
         nodeEngine.start();
         initializeListeners(config);
+        hazelcastInstance.lifecycleService.fireLifecycleEvent(LifecycleState.STARTING);
+        clusterService.sendLocalMembershipEvent();
         connectionManager.start();
         if (config.getNetworkConfig().getJoin().getMulticastConfig().isEnabled()) {
             final Thread multicastServiceThread = new Thread(
@@ -587,10 +623,17 @@ public class Node {
         return discoveryService;
     }
 
-    public class NodeShutdownHookThread extends Thread {
+    private enum ShutdownHookPolicy {
+        TERMINATE,
+        GRACEFUL
+    }
 
-        NodeShutdownHookThread(String name) {
+    public class NodeShutdownHookThread extends Thread {
+        private final ShutdownHookPolicy policy;
+
+        NodeShutdownHookThread(String name, String policy) {
             super(name);
+            this.policy = ShutdownHookPolicy.valueOf(policy);
         }
 
         @Override
@@ -598,7 +641,16 @@ public class Node {
             try {
                 if (isRunning()) {
                     logger.info("Running shutdown hook... Current state: " + state);
-                    hazelcastInstance.getLifecycleService().terminate();
+                    switch (policy) {
+                        case TERMINATE:
+                            hazelcastInstance.getLifecycleService().terminate();
+                            break;
+                        case GRACEFUL:
+                            hazelcastInstance.getLifecycleService().shutdown();
+                            break;
+                        default:
+                            throw new IllegalArgumentException("Unimplemented shutdown hook policy: " + policy);
+                    }
                 }
             } catch (Exception e) {
                 logger.warning(e);
@@ -610,19 +662,20 @@ public class Node {
         joined.set(true);
     }
 
-    public JoinMessage createSplitBrainJoinMessage() {
-        return new JoinMessage(Packet.VERSION, buildInfo.getBuildNumber(), address, localMember.getUuid(),
+    public SplitBrainJoinMessage createSplitBrainJoinMessage() {
+        return new SplitBrainJoinMessage(Packet.VERSION, buildInfo.getBuildNumber(), version, address, localMember.getUuid(),
                 localMember.isLiteMember(), createConfigCheck(), clusterService.getMemberAddresses(),
-                clusterService.getSize(MemberSelectors.DATA_MEMBER_SELECTOR));
+                clusterService.getSize(MemberSelectors.DATA_MEMBER_SELECTOR), clusterService.getClusterVersion());
     }
 
     public JoinRequest createJoinRequest(boolean withCredentials) {
         final Credentials credentials = (withCredentials && securityContext != null)
                 ? securityContext.getCredentialsFactory().newCredentials() : null;
+        final Set<String> excludedMemberUuids = nodeExtension.getInternalHotRestartService().getExcludedMemberUuids();
 
-        return new JoinRequest(Packet.VERSION, buildInfo.getBuildNumber(), address,
+        return new JoinRequest(Packet.VERSION, buildInfo.getBuildNumber(), version, address,
                 localMember.getUuid(), localMember.isLiteMember(), createConfigCheck(), credentials,
-                config.getMemberAttributeConfig().getAttributes());
+                localMember.getAttributes(), excludedMemberUuids);
     }
 
     public ConfigCheck createConfigCheck() {
@@ -631,15 +684,23 @@ public class Node {
     }
 
     public void join() {
+        if (joined()) {
+            if (logger.isFinestEnabled()) {
+                logger.finest("Calling join on already joined node. ", new Exception("stacktrace"));
+            } else {
+                logger.warning("Calling join on already joined node. ");
+            }
+            return;
+        }
         if (joiner == null) {
             logger.warning("No join method is enabled! Starting standalone.");
-            setAsMaster();
+            ClusterJoinManager clusterJoinManager = clusterService.getClusterJoinManager();
+            clusterJoinManager.setAsMaster();
             return;
         }
 
         try {
             masterAddress = null;
-            joined.set(false);
             joiner.join();
         } catch (Throwable e) {
             logger.severe("Error while joining the cluster!", e);
@@ -686,12 +747,26 @@ public class Node {
         return null;
     }
 
-    public void setAsMaster() {
-        logger.finest("This node is being set as the master");
-        masterAddress = address;
-        setJoined();
-        getClusterService().getClusterClock().setClusterStartTime(Clock.currentTimeMillis());
-        getClusterService().setClusterId(UuidUtil.createClusterUuid());
+    public String getThisUuid() {
+        return localMember.getUuid();
+    }
+
+    public void setNewLocalMember() {
+        if (joined()) {
+            logger.severe("Cannot set new local member when joined.");
+            return;
+        } else if (nodeExtension.isStartCompleted()) {
+            logger.severe("Cannot set new local member since start completed.");
+            return;
+        } else if (!nodeExtension.getInternalHotRestartService().isMemberExcluded(getThisAddress(), getThisUuid())) {
+            logger.severe("Cannot set new local member since this member is not excluded.");
+            return;
+        }
+
+        String newUuid = UuidUtil.createMemberUuid(address);
+        logger.warning("Setting new local member. old uuid: " + localMember.getUuid() + " new uuid: " + newUuid);
+        Map<String, Object> memberAttributes = localMember.getAttributes();
+        localMember = new MemberImpl(address, version, true, newUuid, hazelcastInstance, memberAttributes, liteMember);
     }
 
     public Config getConfig() {
@@ -705,6 +780,15 @@ public class Node {
      */
     public NodeState getState() {
         return state;
+    }
+
+    /**
+     * Returns the codebase version of the node.
+     *
+     * @return codebase version of the node
+     */
+    public MemberVersion getVersion() {
+        return version;
     }
 
     public boolean isLiteMember() {
@@ -732,4 +816,5 @@ public class Node {
         }
         return attributes;
     }
+
 }

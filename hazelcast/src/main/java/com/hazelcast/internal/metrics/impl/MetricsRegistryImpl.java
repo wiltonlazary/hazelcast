@@ -16,6 +16,7 @@
 
 package com.hazelcast.internal.metrics.impl;
 
+import com.hazelcast.internal.metrics.DiscardableMetricsProvider;
 import com.hazelcast.internal.metrics.DoubleGauge;
 import com.hazelcast.internal.metrics.DoubleProbeFunction;
 import com.hazelcast.internal.metrics.LongProbeFunction;
@@ -23,16 +24,15 @@ import com.hazelcast.internal.metrics.MetricsProvider;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.ProbeFunction;
 import com.hazelcast.internal.metrics.ProbeLevel;
-import com.hazelcast.internal.metrics.metricsets.ClassLoadingMetricSet;
-import com.hazelcast.internal.metrics.metricsets.GarbageCollectionMetricSet;
-import com.hazelcast.internal.metrics.metricsets.OperatingSystemMetricSet;
-import com.hazelcast.internal.metrics.metricsets.RuntimeMetricSet;
-import com.hazelcast.internal.metrics.metricsets.ThreadMetricSet;
 import com.hazelcast.internal.metrics.renderers.ProbeRenderer;
+import com.hazelcast.internal.util.concurrent.ThreadFactoryImpl;
 import com.hazelcast.logging.ILogger;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,7 +40,6 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.hazelcast.util.Preconditions.checkNotNull;
@@ -51,24 +50,30 @@ import static java.lang.String.format;
  */
 public class MetricsRegistryImpl implements MetricsRegistry {
 
+    private static final Comparator<ProbeInstance> COMPARATOR = new Comparator<ProbeInstance>() {
+        @Override
+        public int compare(ProbeInstance o1, ProbeInstance o2) {
+            return o1.name.compareTo(o2.name);
+        }
+    };
+
     final ILogger logger;
     final ProbeLevel minimumLevel;
 
-    private final ScheduledExecutorService scheduledExecutorService = new ScheduledThreadPoolExecutor(2);
-    private final AtomicInteger modCount = new AtomicInteger();
+    private final ScheduledExecutorService scheduledExecutorService
+            = new ScheduledThreadPoolExecutor(2, new ThreadFactoryImpl("MetricsRegistry-thread-"));
+
     private final ConcurrentMap<String, ProbeInstance> probeInstances = new ConcurrentHashMap<String, ProbeInstance>();
     private final ConcurrentMap<Class<?>, SourceMetadata> metadataMap
             = new ConcurrentHashMap<Class<?>, SourceMetadata>();
     private final LockStripe lockStripe = new LockStripe();
 
-    private AtomicReference<SortedProbesInstances> sortedProbeInstance = new AtomicReference<SortedProbesInstances>(
-            new SortedProbesInstances()
-    );
+    private final AtomicReference<SortedProbeInstances> sortedProbeInstancesRef
+            = new AtomicReference<SortedProbeInstances>(new SortedProbeInstances(0));
+
 
     /**
      * Creates a MetricsRegistryImpl instance.
-     *
-     * Automatically registers the com.hazelcast.internal.metrics.metricsets
      *
      * @param logger       the ILogger used
      * @param minimumLevel the minimum ProbeLevel. If a probe is registered with a ProbeLevel lower than the minimum ProbeLevel,
@@ -82,16 +87,10 @@ public class MetricsRegistryImpl implements MetricsRegistry {
         if (logger.isFinestEnabled()) {
             logger.finest("MetricsRegistry minimumLevel:" + minimumLevel);
         }
-
-        RuntimeMetricSet.register(this);
-        GarbageCollectionMetricSet.register(this);
-        OperatingSystemMetricSet.register(this);
-        ThreadMetricSet.register(this);
-        ClassLoadingMetricSet.register(this);
     }
 
-    int modCount() {
-        return modCount.get();
+    long modCount() {
+        return sortedProbeInstancesRef.get().mod;
     }
 
     @Override
@@ -106,7 +105,7 @@ public class MetricsRegistryImpl implements MetricsRegistry {
      * @param clazz the Class to be analyzed.
      * @return the loaded SourceMetadata.
      */
-    SourceMetadata loadSourceMetadata(Class<?> clazz) {
+    private SourceMetadata loadSourceMetadata(Class<?> clazz) {
         SourceMetadata metadata = metadataMap.get(clazz);
         if (metadata == null) {
             metadata = new SourceMetadata(clazz);
@@ -146,7 +145,7 @@ public class MetricsRegistryImpl implements MetricsRegistry {
         registerInternal(source, name, level, function);
     }
 
-    public ProbeInstance getProbeInstance(String name) {
+    ProbeInstance getProbeInstance(String name) {
         checkNotNull(name, "name can't be null");
 
         return probeInstances.get(name);
@@ -173,7 +172,18 @@ public class MetricsRegistryImpl implements MetricsRegistry {
             probeInstance.source = source;
             probeInstance.function = function;
         }
-        modCount.incrementAndGet();
+
+        incrementMod();
+    }
+
+    private void incrementMod() {
+        for (; ; ) {
+            SortedProbeInstances current = sortedProbeInstancesRef.get();
+            SortedProbeInstances update = new SortedProbeInstances(current.mod + 1);
+            if (sortedProbeInstancesRef.compareAndSet(current, update)) {
+                break;
+            }
+        }
     }
 
     private void logOverwrite(ProbeInstance probeInstance) {
@@ -198,7 +208,9 @@ public class MetricsRegistryImpl implements MetricsRegistry {
 
     @Override
     public <S> void deregister(S source) {
-        checkNotNull(source, "source can't be null");
+        if (source == null) {
+            return;
+        }
 
         boolean changed = false;
         for (Map.Entry<String, ProbeInstance> entry : probeInstances.entrySet()) {
@@ -227,7 +239,7 @@ public class MetricsRegistryImpl implements MetricsRegistry {
         }
 
         if (changed) {
-            modCount.incrementAndGet();
+            incrementMod();
         }
     }
 
@@ -249,27 +261,30 @@ public class MetricsRegistryImpl implements MetricsRegistry {
         }
     }
 
-    /**
-     * Returns the SortedProbesInstances. This method is eventually consistent; so eventually it will return
-     * a SortedProbesInstances where the content exactly matches the mod-count. It can be that this method
-     * returns a probe-instances in combination with a too old mod-count (in-consistent). This is not a
-     * problem, since the next time this method is called, it will update the SortedProbeInstances again.
-     *
-     * If this method is being called while
-     * probes are being added or removed, then it will return whatever is available.
-     *
-     * @return
-     */
-    SortedProbesInstances getSortedProbeInstances() {
-        SortedProbesInstances sortedProbeInstances = this.sortedProbeInstance.get();
-        int lastModCount = modCount.get();
-        if (lastModCount == sortedProbeInstances.modCount) {
-            return sortedProbeInstances;
+    @Override
+    public void discardMetrics(Object... objects) {
+        for (Object object : objects) {
+            if (object instanceof DiscardableMetricsProvider) {
+                ((DiscardableMetricsProvider) object).discardMetrics(this);
+            }
         }
+    }
 
-        SortedProbesInstances newSortedProbeInstances = new SortedProbesInstances(probeInstances.values(), lastModCount);
-        this.sortedProbeInstance.compareAndSet(sortedProbeInstances, newSortedProbeInstances);
-        return sortedProbeInstance.get();
+    List<ProbeInstance> getSortedProbeInstances() {
+        for (; ; ) {
+            SortedProbeInstances current = sortedProbeInstancesRef.get();
+            if (current.probeInstances != null) {
+                return current.probeInstances;
+            }
+
+            List<ProbeInstance> probeInstanceList = new ArrayList<ProbeInstance>(probeInstances.values());
+            Collections.sort(probeInstanceList, COMPARATOR);
+
+            SortedProbeInstances update = new SortedProbeInstances(current.mod, probeInstanceList);
+            if (sortedProbeInstancesRef.compareAndSet(current, update)) {
+                return update.probeInstances;
+            }
+        }
     }
 
     private void render(ProbeRenderer renderer, ProbeInstance probeInstance) {
@@ -302,5 +317,20 @@ public class MetricsRegistryImpl implements MetricsRegistry {
 
     public void shutdown() {
         scheduledExecutorService.shutdown();
+    }
+
+    private static class SortedProbeInstances {
+        private final long mod;
+        private final List<ProbeInstance> probeInstances;
+
+        private SortedProbeInstances(long mod) {
+            this.mod = mod;
+            this.probeInstances = null;
+        }
+
+        public SortedProbeInstances(long mod, List<ProbeInstance> probeInstances) {
+            this.mod = mod;
+            this.probeInstances = probeInstances;
+        }
     }
 }

@@ -16,6 +16,7 @@
 
 package com.hazelcast.client.proxy;
 
+import com.hazelcast.client.impl.ClientLockReferenceIdGenerator;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.LockForceUnlockCodec;
 import com.hazelcast.client.impl.protocol.codec.LockGetLockCountCodec;
@@ -32,12 +33,15 @@ import com.hazelcast.util.ThreadUtil;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 
+import static com.hazelcast.util.Preconditions.checkNotNull;
 import static com.hazelcast.util.Preconditions.checkPositive;
 
 /**
  * Proxy implementation of {@link ILock}.
  */
 public class ClientLockProxy extends PartitionSpecificClientProxy implements ILock {
+
+    private ClientLockReferenceIdGenerator referenceIdGenerator;
 
     public ClientLockProxy(String serviceName, String objectId) {
         super(serviceName, objectId);
@@ -48,6 +52,7 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
         return name;
     }
 
+    @Override
     public boolean isLocked() {
         ClientMessage request = LockIsLockedCodec.encodeRequest(name);
         LockIsLockedCodec.ResponseParameters resultParameters =
@@ -55,6 +60,7 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
         return resultParameters.response;
     }
 
+    @Override
     public boolean isLockedByCurrentThread() {
         ClientMessage request = LockIsLockedByCurrentThreadCodec.encodeRequest(name, ThreadUtil.getThreadId());
         LockIsLockedByCurrentThreadCodec.ResponseParameters resultParameters =
@@ -63,6 +69,7 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
         return resultParameters.response;
     }
 
+    @Override
     public int getLockCount() {
         ClientMessage request = LockGetLockCountCodec.encodeRequest(name);
         LockGetLockCountCodec.ResponseParameters resultParameters
@@ -70,6 +77,7 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
         return resultParameters.response;
     }
 
+    @Override
     public long getRemainingLeaseTime() {
         ClientMessage request = LockGetRemainingLeaseTimeCodec.encodeRequest(name);
         LockGetRemainingLeaseTimeCodec.ResponseParameters resultParameters =
@@ -77,34 +85,43 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
         return resultParameters.response;
     }
 
+    @Override
     public void lock(long leaseTime, TimeUnit timeUnit) {
         checkPositive(leaseTime, "leaseTime should be positive");
         ClientMessage request = LockLockCodec.encodeRequest(name,
-                getTimeInMillis(leaseTime, timeUnit), ThreadUtil.getThreadId());
+                getTimeInMillis(leaseTime, timeUnit), ThreadUtil.getThreadId(), referenceIdGenerator.getNextReferenceId());
         invokeOnPartition(request);
     }
 
+    @Override
     public void forceUnlock() {
-        ClientMessage request = LockForceUnlockCodec.encodeRequest(name);
+        ClientMessage request = LockForceUnlockCodec.encodeRequest(name, referenceIdGenerator.getNextReferenceId());
         invokeOnPartition(request);
     }
 
+    @Override
     public ICondition newCondition(String name) {
+        checkNotNull(name, "Condition name can't be null");
         ClientConditionProxy clientConditionProxy = new ClientConditionProxy(this, name, getContext());
         clientConditionProxy.onInitialize();
         return clientConditionProxy;
     }
 
+    @Override
     public void lock() {
-        ClientMessage request = LockLockCodec.encodeRequest(name, -1, ThreadUtil.getThreadId());
+        ClientMessage request = LockLockCodec
+                .encodeRequest(name, -1, ThreadUtil.getThreadId(), referenceIdGenerator.getNextReferenceId());
         invokeOnPartition(request);
     }
 
+    @Override
     public void lockInterruptibly() throws InterruptedException {
-        ClientMessage request = LockLockCodec.encodeRequest(name, -1, ThreadUtil.getThreadId());
+        ClientMessage request = LockLockCodec
+                .encodeRequest(name, -1, ThreadUtil.getThreadId(), referenceIdGenerator.getNextReferenceId());
         invokeOnPartitionInterruptibly(request);
     }
 
+    @Override
     public boolean tryLock() {
         try {
             return tryLock(0, null);
@@ -113,6 +130,7 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
         }
     }
 
+    @Override
     public boolean tryLock(long timeout, TimeUnit unit) throws InterruptedException {
         return tryLock(timeout, unit, Long.MAX_VALUE, null);
     }
@@ -122,16 +140,20 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
         long timeoutInMillis = getTimeInMillis(timeout, unit);
         long leaseTimeInMillis = getTimeInMillis(leaseTime, leaseUnit);
         long threadId = ThreadUtil.getThreadId();
-        ClientMessage request = LockTryLockCodec.encodeRequest(name, threadId, leaseTimeInMillis, timeoutInMillis);
+        ClientMessage request = LockTryLockCodec
+                .encodeRequest(name, threadId, leaseTimeInMillis, timeoutInMillis, referenceIdGenerator.getNextReferenceId());
         LockTryLockCodec.ResponseParameters resultParameters = LockTryLockCodec.decodeResponse(invokeOnPartition(request));
         return resultParameters.response;
     }
 
+    @Override
     public void unlock() {
-        ClientMessage request = LockUnlockCodec.encodeRequest(name, ThreadUtil.getThreadId());
+        ClientMessage request = LockUnlockCodec
+                .encodeRequest(name, ThreadUtil.getThreadId(), referenceIdGenerator.getNextReferenceId());
         invokeOnPartition(request);
     }
 
+    @Override
     public Condition newCondition() {
         throw new UnsupportedOperationException();
     }
@@ -143,5 +165,12 @@ public class ClientLockProxy extends PartitionSpecificClientProxy implements ILo
     @Override
     public String toString() {
         return "ILock{" + "name='" + name + '\'' + '}';
+    }
+
+    @Override
+    protected void onInitialize() {
+        super.onInitialize();
+
+        referenceIdGenerator = getClient().getLockReferenceIdGenerator();
     }
 }

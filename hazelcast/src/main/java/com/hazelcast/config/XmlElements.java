@@ -28,6 +28,8 @@ enum XmlElements {
     NETWORK("network", false),
     PARTITION_GROUP("partition-group", false),
     EXECUTOR_SERVICE("executor-service", true),
+    DURABLE_EXECUTOR_SERVICE("durable-executor-service", true),
+    SCHEDULED_EXECUTOR_SERVICE("scheduled-executor-service", true),
     QUEUE("queue", true),
     MAP("map", true),
     CACHE("cache", true),
@@ -39,6 +41,7 @@ enum XmlElements {
     RELIABLE_TOPIC("reliable-topic", true),
     JOB_TRACKER("jobtracker", true),
     SEMAPHORE("semaphore", true),
+    LOCK("lock", true),
     RINGBUFFER("ringbuffer", true),
     LISTENERS("listeners", false),
     SERIALIZATION("serialization", false),
@@ -49,6 +52,7 @@ enum XmlElements {
     QUORUM("quorum", true),
     LITE_MEMBER("lite-member", false),
     HOT_RESTART_PERSISTENCE("hot-restart-persistence", false),
+    DISTRIBUTED_CLASSLOADING("distributed-classloading", false),
     ;
 
     final String name;
@@ -71,5 +75,4 @@ enum XmlElements {
     public boolean isEqual(String name) {
         return this.name.equals(name);
     }
-
 }

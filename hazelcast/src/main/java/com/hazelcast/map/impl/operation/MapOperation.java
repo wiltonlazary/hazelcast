@@ -17,21 +17,24 @@
 package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.map.impl.MapContainer;
+import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.PartitionContainer;
 import com.hazelcast.map.impl.event.MapEventPublisher;
 import com.hazelcast.map.impl.mapstore.MapDataStore;
-import com.hazelcast.map.impl.nearcache.NearCacheProvider;
+import com.hazelcast.map.impl.nearcache.MapNearCacheManager;
+import com.hazelcast.internal.nearcache.impl.invalidation.Invalidator;
 import com.hazelcast.map.impl.recordstore.RecordStore;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.impl.AbstractNamedOperation;
 
 import java.util.List;
 
 import static com.hazelcast.util.CollectionUtil.isEmpty;
 
-public abstract class MapOperation extends AbstractNamedOperation {
+public abstract class MapOperation extends AbstractNamedOperation implements IdentifiedDataSerializable {
 
     protected transient MapService mapService;
     protected transient MapContainer mapContainer;
@@ -83,10 +86,6 @@ public abstract class MapOperation extends AbstractNamedOperation {
         return MapService.SERVICE_NAME;
     }
 
-    @Override
-    public void afterRun() throws Exception {
-    }
-
     protected boolean isPostProcessing(RecordStore recordStore) {
         MapDataStore mapDataStore = recordStore.getMapDataStore();
         return mapDataStore.isPostProcessingMapStore() || mapServiceContext.hasInterceptor(name);
@@ -101,33 +100,50 @@ public abstract class MapOperation extends AbstractNamedOperation {
     }
 
     protected final void invalidateNearCache(List<Data> keys) {
-        if (!mapContainer.isInvalidationEnabled() || isEmpty(keys)) {
+        if (!mapContainer.hasInvalidationListener() || isEmpty(keys)) {
             return;
         }
-        NearCacheProvider nearCacheProvider = mapServiceContext.getNearCacheProvider();
-        nearCacheProvider.getNearCacheInvalidator().invalidate(name, keys, getCallerUuid());
+
+        Invalidator invalidator = getNearCacheInvalidator();
+
+        for (Data key : keys) {
+            invalidator.invalidateKey(key, name, getCallerUuid());
+        }
     }
 
+    // TODO improve here it is possible that client cannot manage to attach listener
     protected final void invalidateNearCache(Data key) {
-        if (!mapContainer.isInvalidationEnabled() || key == null) {
+        if (!mapContainer.hasInvalidationListener() || key == null) {
             return;
         }
-        NearCacheProvider nearCacheProvider = mapServiceContext.getNearCacheProvider();
-        nearCacheProvider.getNearCacheInvalidator().invalidate(name, key, getCallerUuid());
+
+        Invalidator invalidator = getNearCacheInvalidator();
+        invalidator.invalidateKey(key, name, getCallerUuid());
     }
 
-    protected final void clearNearCache(boolean owner) {
-        if (!mapContainer.isInvalidationEnabled()) {
+    /**
+     * This method helps to add clearing near-cache event only from one-partition
+     * which matches partition-id of the map-name.
+     */
+    protected final void invalidateAllKeysInNearCaches() {
+        if (!mapContainer.hasInvalidationListener()
+                || getPartitionId() != getNodeEngine().getPartitionService().getPartitionId(name)) {
             return;
         }
-        NearCacheProvider nearCacheProvider = mapServiceContext.getNearCacheProvider();
-        nearCacheProvider.getNearCacheInvalidator().clear(name, owner, getCallerUuid());
+
+        Invalidator invalidator = getNearCacheInvalidator();
+        invalidator.invalidateAllKeys(name, getCallerUuid());
     }
 
-    protected void evict() {
+    private Invalidator getNearCacheInvalidator() {
+        MapNearCacheManager mapNearCacheManager = mapServiceContext.getMapNearCacheManager();
+        return mapNearCacheManager.getInvalidator();
+    }
+
+    protected void evict(Data excludedKey) {
         assert recordStore != null : "Record-store cannot be null";
 
-        recordStore.evictEntries();
+        recordStore.evictEntries(excludedKey);
     }
 
     private RecordStore getRecordStoreOrNull() {
@@ -142,4 +158,10 @@ public abstract class MapOperation extends AbstractNamedOperation {
             return partitionContainer.getExistingRecordStore(name);
         }
     }
+
+    @Override
+    public int getFactoryId() {
+        return MapDataSerializerHook.F_ID;
+    }
+
 }

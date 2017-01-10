@@ -20,6 +20,7 @@ import com.hazelcast.collection.impl.common.DataAwareItemEvent;
 import com.hazelcast.collection.impl.queue.operations.QueueReplicationOperation;
 import com.hazelcast.collection.impl.txnqueue.TransactionalQueueProxy;
 import com.hazelcast.collection.impl.txnqueue.operations.QueueTransactionRollbackOperation;
+import com.hazelcast.config.QueueConfig;
 import com.hazelcast.core.ItemEvent;
 import com.hazelcast.core.ItemEventType;
 import com.hazelcast.core.ItemListener;
@@ -29,9 +30,6 @@ import com.hazelcast.monitor.LocalQueueStats;
 import com.hazelcast.monitor.impl.LocalQueueStatsImpl;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.partition.IPartition;
-import com.hazelcast.spi.partition.IPartitionService;
-import com.hazelcast.spi.partition.MigrationEndpoint;
 import com.hazelcast.partition.strategy.StringPartitioningStrategy;
 import com.hazelcast.spi.EventPublishingService;
 import com.hazelcast.spi.EventRegistration;
@@ -43,10 +41,14 @@ import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PartitionReplicationEvent;
+import com.hazelcast.spi.QuorumAwareService;
 import com.hazelcast.spi.RemoteService;
 import com.hazelcast.spi.StatisticsAwareService;
 import com.hazelcast.spi.TaskScheduler;
 import com.hazelcast.spi.TransactionalService;
+import com.hazelcast.spi.partition.IPartition;
+import com.hazelcast.spi.partition.IPartitionService;
+import com.hazelcast.spi.partition.MigrationEndpoint;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.transaction.impl.Transaction;
 import com.hazelcast.util.ConcurrencyUtil;
@@ -71,11 +73,11 @@ import java.util.logging.Level;
  * such as {@link com.hazelcast.collection.impl.queue.QueueEvictionProcessor }
  */
 public class QueueService implements ManagedService, MigrationAwareService, TransactionalService,
-        RemoteService, EventPublishingService<QueueEvent, ItemListener>, StatisticsAwareService {
+        RemoteService, EventPublishingService<QueueEvent, ItemListener>, StatisticsAwareService, QuorumAwareService {
 
     public static final String SERVICE_NAME = "hz:impl:queueService";
 
-    private final EntryTaskScheduler queueEvictionScheduler;
+    private final EntryTaskScheduler<String, Void> queueEvictionScheduler;
     private final NodeEngine nodeEngine;
     private final ConcurrentMap<String, QueueContainer> containerMap
             = new ConcurrentHashMap<String, QueueContainer>();
@@ -134,6 +136,7 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
             container = existing;
         } else {
             container.init(fromBackup);
+            container.getStore().instrument(nodeEngine);
         }
         return container;
     }
@@ -262,6 +265,15 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
         return nodeEngine;
     }
 
+    /**
+     * Returns the local queue statistics for the given name and partition ID. If this node is the owner for the partition,
+     * returned stats contain {@link LocalQueueStats#getOwnedItemCount()}, otherwise it contains
+     * {@link LocalQueueStats#getBackupItemCount()}.
+     *
+     * @param name        the name of the queue for which the statistics are returned
+     * @param partitionId the partition ID for which the statistics are returned
+     * @return the statistics
+     */
     public LocalQueueStats createLocalQueueStats(String name, int partitionId) {
         LocalQueueStatsImpl stats = getLocalQueueStatsImpl(name);
         stats.setOwnedItemCount(0);
@@ -284,6 +296,14 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
         return stats;
     }
 
+    /**
+     * Returns the local queue statistics for the queue with the given {@code name}. If this node is the owner of the queue,
+     * returned stats contain {@link LocalQueueStats#getOwnedItemCount()}, otherwise it contains
+     * {@link LocalQueueStats#getBackupItemCount()}.
+     *
+     * @param name the name of the queue for which the statistics are returned
+     * @return the statistics
+     */
     public LocalQueueStats createLocalQueueStats(String name) {
         SerializationService serializationService = nodeEngine.getSerializationService();
         IPartitionService partitionService = nodeEngine.getPartitionService();
@@ -312,7 +332,7 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
                     .setPartitionId(partitionId)
                     .setService(this)
                     .setNodeEngine(nodeEngine);
-            operationService.executeOperation(operation);
+            operationService.execute(operation);
         }
     }
 
@@ -325,5 +345,11 @@ public class QueueService implements ManagedService, MigrationAwareService, Tran
             queueStats.put(name, queueStat);
         }
         return queueStats;
+    }
+
+    @Override
+    public String getQuorumName(String name) {
+        final QueueConfig queueConfig = nodeEngine.getConfig().findQueueConfig(name);
+        return queueConfig.getQuorumName();
     }
 }

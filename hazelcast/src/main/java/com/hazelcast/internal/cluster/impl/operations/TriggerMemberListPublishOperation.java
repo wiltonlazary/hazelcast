@@ -16,6 +16,7 @@
 
 package com.hazelcast.internal.cluster.impl.operations;
 
+import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 
 /**
@@ -32,4 +33,8 @@ public class TriggerMemberListPublishOperation extends AbstractClusterOperation 
         clusterService.sendMemberListToMember(getCallerAddress());
     }
 
+    @Override
+    public int getId() {
+        return ClusterDataSerializerHook.TRIGGER_MEMBER_LIST_PUBLISH;
+    }
 }

@@ -19,14 +19,18 @@ package com.hazelcast.internal.ascii;
 import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.EntryListenerConfig;
-import com.hazelcast.config.MapConfig;
+import com.hazelcast.config.JoinConfig;
+import com.hazelcast.config.WanReplicationConfig;
 import com.hazelcast.config.XmlConfigBuilder;
 import com.hazelcast.core.EntryAdapter;
 import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IQueue;
+import com.hazelcast.core.LifecycleEvent;
+import com.hazelcast.core.LifecycleListener;
 import com.hazelcast.instance.BuildInfoProvider;
+import com.hazelcast.internal.management.dto.WanReplicationConfigDTO;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastSerialClassRunner;
@@ -40,6 +44,7 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.SocketException;
 import java.util.concurrent.CountDownLatch;
@@ -50,44 +55,44 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-/**
- * User: sancar
- * Date: 3/11/13
- * Time: 3:33 PM
- */
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(SlowTest.class)
 public class RestTest extends HazelcastTestSupport {
 
-    final static Config config = new XmlConfigBuilder().build();
+    private final static Config config = new XmlConfigBuilder().build();
+    public static final String STATUS_FORBIDDEN = "{\"status\":\"forbidden\"}";
 
     @Before
-    public void setup() throws IOException {
+    public void setup() {
         config.setProperty(GroupProperty.REST_ENABLED.getName(), "true");
+        config.setProperty(GroupProperty.HTTP_HEALTHCHECK_ENABLED.getName(), "true");
+        final JoinConfig join = config.getNetworkConfig().getJoin();
+        join.getMulticastConfig().setEnabled(false);
+        join.getTcpIpConfig().setEnabled(true).addMember("127.0.0.1").setConnectionTimeoutSeconds(3000);
     }
 
     @After
-    public void tearDown() throws IOException {
+    public void tearDown() {
         Hazelcast.shutdownAll();
     }
 
     @Test
-    public void testTtl_issue1783() throws IOException, InterruptedException {
-        String name = "map";
-
+    public void testTtl_issue1783() throws Exception {
         final CountDownLatch latch = new CountDownLatch(1);
-        final MapConfig mapConfig = config.getMapConfig(name);
-        mapConfig.setTimeToLiveSeconds(3);
-        mapConfig.addEntryListenerConfig(new EntryListenerConfig()
-                .setImplementation(new EntryAdapter() {
-                    @Override
-                    public void entryEvicted(EntryEvent event) {
-                        latch.countDown();
-                    }
-                }));
+        EntryListenerConfig listenerConfig = new EntryListenerConfig().setImplementation(new EntryAdapter() {
+            @Override
+            public void entryEvicted(EntryEvent event) {
+                latch.countDown();
+            }
+        });
 
-        final HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
-        final HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        String name = "map";
+        config.getMapConfig(name)
+                .setTimeToLiveSeconds(3)
+                .addEntryListenerConfig(listenerConfig);
+
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
 
         communicator.put(name, "key", "value");
         String value = communicator.get(name, "key");
@@ -101,21 +106,20 @@ public class RestTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testRestSimple() throws IOException {
-        final HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
-        final HTTPCommunicator communicator = new HTTPCommunicator(instance);
-        final String name = "testRestSimple";
+    public void testRestSimple() throws Exception {
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        String name = "testRestSimple";
+
         for (int i = 0; i < 100; i++) {
             assertEquals(HttpURLConnection.HTTP_OK, communicator.put(name, String.valueOf(i), String.valueOf(i * 10)));
         }
-
         for (int i = 0; i < 100; i++) {
             String actual = communicator.get(name, String.valueOf(i));
             assertEquals(String.valueOf(i * 10), actual);
         }
 
         communicator.deleteAll(name);
-
         for (int i = 0; i < 100; i++) {
             String actual = communicator.get(name, String.valueOf(i));
             assertEquals("", actual);
@@ -124,7 +128,6 @@ public class RestTest extends HazelcastTestSupport {
         for (int i = 0; i < 100; i++) {
             assertEquals(HttpURLConnection.HTTP_OK, communicator.put(name, String.valueOf(i), String.valueOf(i * 10)));
         }
-
         for (int i = 0; i < 100; i++) {
             assertEquals(String.valueOf(i * 10), communicator.get(name, String.valueOf(i)));
         }
@@ -132,7 +135,6 @@ public class RestTest extends HazelcastTestSupport {
         for (int i = 0; i < 100; i++) {
             assertEquals(HttpURLConnection.HTTP_OK, communicator.delete(name, String.valueOf(i)));
         }
-
         for (int i = 0; i < 100; i++) {
             assertEquals("", communicator.get(name, String.valueOf(i)));
         }
@@ -140,30 +142,29 @@ public class RestTest extends HazelcastTestSupport {
         for (int i = 0; i < 100; i++) {
             assertEquals(HttpURLConnection.HTTP_OK, communicator.offer(name, String.valueOf(i)));
         }
-
         for (int i = 0; i < 100; i++) {
             assertEquals(String.valueOf(i), communicator.poll(name, 2));
         }
     }
 
     @Test
-    public void testQueueSizeEmpty() throws IOException {
-        final HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
-        final HTTPCommunicator communicator = new HTTPCommunicator(instance);
-        final String name = "testQueueSizeEmpty";
+    public void testQueueSizeEmpty() throws Exception {
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        String name = "testQueueSizeEmpty";
 
         IQueue queue = instance.getQueue(name);
         Assert.assertEquals(queue.size(), communicator.size(name));
     }
 
     @Test
-    public void testQueueSizeNonEmpty() throws IOException {
-        final HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
-        final HTTPCommunicator communicator = new HTTPCommunicator(instance);
-        final String name = "testQueueSizeNotEmpty";
-        final int num_items = 100;
+    public void testQueueSizeNonEmpty() throws Exception {
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        String name = "testQueueSizeNotEmpty";
+        int num_items = 100;
 
-        IQueue queue = instance.getQueue(name);
+        IQueue<Integer> queue = instance.getQueue(name);
 
         for (int i = 0; i < num_items; i++) {
             queue.add(i);
@@ -173,8 +174,9 @@ public class RestTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testDisabledRest() throws IOException {
-        Config config = new XmlConfigBuilder().build(); //REST should be disabled by default
+    public void testDisabledRest() throws Exception {
+        // REST should be disabled by default
+        Config config = new XmlConfigBuilder().build();
         HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
         HTTPCommunicator communicator = new HTTPCommunicator(instance);
         String mapName = "testMap";
@@ -188,7 +190,7 @@ public class RestTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testClusterShutdown() throws IOException {
+    public void testClusterShutdown() throws Exception {
         final HazelcastInstance instance1 = Hazelcast.newHazelcastInstance(config);
         final HazelcastInstance instance2 = Hazelcast.newHazelcastInstance(config);
         final HazelcastInstance instance3 = Hazelcast.newHazelcastInstance(config);
@@ -207,9 +209,9 @@ public class RestTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testGetClusterState() throws IOException {
-        final HazelcastInstance instance1 = Hazelcast.newHazelcastInstance(config);
-        final HazelcastInstance instance2 = Hazelcast.newHazelcastInstance(config);
+    public void testGetClusterState() throws Exception {
+        HazelcastInstance instance1 = Hazelcast.newHazelcastInstance(config);
+        HazelcastInstance instance2 = Hazelcast.newHazelcastInstance(config);
 
         HTTPCommunicator communicator1 = new HTTPCommunicator(instance1);
         HTTPCommunicator communicator2 = new HTTPCommunicator(instance2);
@@ -221,16 +223,16 @@ public class RestTest extends HazelcastTestSupport {
         instance1.getCluster().changeClusterState(ClusterState.PASSIVE);
         assertEquals("{\"status\":\"success\",\"state\":\"passive\"}",
                 communicator2.getClusterState("dev", "dev-pass"));
-
     }
 
     @Test
-    public void testChangeClusterState() throws IOException {
+    public void testChangeClusterState() throws Exception {
         final HazelcastInstance instance1 = Hazelcast.newHazelcastInstance(config);
         final HazelcastInstance instance2 = Hazelcast.newHazelcastInstance(config);
         HTTPCommunicator communicator = new HTTPCommunicator(instance1);
 
-        assertEquals(HttpURLConnection.HTTP_OK, communicator.changeClusterState("dev", "dev-pass", "frozen"));
+        assertEquals(STATUS_FORBIDDEN, communicator.changeClusterState("dev1", "dev-pass", "frozen").response);
+        assertEquals(HttpURLConnection.HTTP_OK, communicator.changeClusterState("dev", "dev-pass", "frozen").responseCode);
         assertTrueEventually(new AssertTask() {
             @Override
             public void run()
@@ -242,53 +244,162 @@ public class RestTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testListNodes() throws IOException {
-        final HazelcastInstance instance1 = Hazelcast.newHazelcastInstance(config);
-        HTTPCommunicator communicator = new HTTPCommunicator(instance1);
-        HazelcastTestSupport.waitInstanceForSafeState(instance1);
-        String result = String.format("{\"status\":\"success\" \"response\":\"[%s]\n%s\n%s\"}",
-                instance1.getCluster().getLocalMember().toString(),
+    public void testGetClusterVersion() throws IOException {
+        final HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        final HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        final String expected = "{\"status\":\"success\","
+                + "\"version\":\"" + instance.getCluster().getClusterVersion().toString() + "\"}";
+        assertEquals(expected, communicator.getClusterVersion());
+    }
+
+    @Test
+    public void testChangeClusterVersion() throws IOException {
+        final HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        final HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        assertEquals(HttpURLConnection.HTTP_OK, communicator.changeClusterVersion("dev", "dev-pass",
+                instance.getCluster().getClusterVersion().toString()).responseCode);
+        assertEquals(STATUS_FORBIDDEN, communicator.changeClusterVersion("dev1", "dev-pass", "1.2.3").response);
+    }
+
+    @Test
+    public void testHotBackup() throws IOException {
+        final HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        final HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        assertEquals(HttpURLConnection.HTTP_OK, communicator.hotBackup("dev", "dev-pass").responseCode);
+        assertEquals(STATUS_FORBIDDEN, communicator.hotBackup("dev1", "dev-pass").response);
+        assertEquals(HttpURLConnection.HTTP_OK, communicator.hotBackupInterrupt("dev", "dev-pass").responseCode);
+        assertEquals(STATUS_FORBIDDEN, communicator.hotBackupInterrupt("dev1", "dev-pass").response);
+    }
+
+    @Test
+    public void testForceAndPartialStart() throws IOException {
+        final HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        final HTTPCommunicator communicator = new HTTPCommunicator(instance);
+
+        assertEquals(HttpURLConnection.HTTP_OK, communicator.forceStart("dev", "dev-pass").responseCode);
+        assertEquals(STATUS_FORBIDDEN, communicator.forceStart("dev1", "dev-pass").response);
+        assertEquals(HttpURLConnection.HTTP_OK, communicator.partialStart("dev", "dev-pass").responseCode);
+        assertEquals(STATUS_FORBIDDEN, communicator.partialStart("dev1", "dev-pass").response);
+    }
+
+    @Test
+    public void testManagementCenterUrlChange() throws IOException {
+        final HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        final HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        assertEquals(HttpURLConnection.HTTP_NO_CONTENT,
+                communicator.changeManagementCenterUrl("dev", "dev-pass", "http://bla").responseCode);
+    }
+
+    @Test
+    public void testListNodes() throws Exception {
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        HazelcastTestSupport.waitInstanceForSafeState(instance);
+        String result = String.format("{\"status\":\"success\",\"response\":\"[%s]\n%s\n%s\"}",
+                instance.getCluster().getLocalMember().toString(),
                 BuildInfoProvider.getBuildInfo().getVersion(),
                 System.getProperty("java.version"));
         assertEquals(result, communicator.listClusterNodes("dev", "dev-pass"));
     }
 
     @Test
-    public void testListNodesWithWrongCredentials() throws IOException {
-        final HazelcastInstance instance1 = Hazelcast.newHazelcastInstance(config);
+    public void testListNodesWithWrongCredentials() throws Exception {
+        HazelcastInstance instance1 = Hazelcast.newHazelcastInstance(config);
         HTTPCommunicator communicator = new HTTPCommunicator(instance1);
         HazelcastTestSupport.waitInstanceForSafeState(instance1);
-        assertEquals("{\"status\":\"forbidden\" \"response\":\"null\"}", communicator.listClusterNodes("dev1", "dev-pass"));
+        assertEquals(STATUS_FORBIDDEN, communicator.listClusterNodes("dev1", "dev-pass"));
     }
 
     @Test
-    public void testKillNode() throws IOException {
-        final HazelcastInstance instance1 = Hazelcast.newHazelcastInstance(config);
-        HTTPCommunicator communicator = new HTTPCommunicator(instance1);
+    public void testShutdownNode() throws Exception {
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
 
-        assertEquals("{\"status\":\"success\"}", communicator.killMember("dev", "dev-pass"));
-        assertTrueEventually(new AssertTask() {
+        final CountDownLatch shutdownLatch = new CountDownLatch(1);
+        instance.getLifecycleService().addLifecycleListener(new LifecycleListener() {
             @Override
-            public void run()
-                    throws Exception {
-                assertFalse(instance1.getLifecycleService().isRunning());
+            public void stateChanged(LifecycleEvent event) {
+                if (event.getState() == LifecycleEvent.LifecycleState.SHUTDOWN) {
+                    shutdownLatch.countDown();
+                }
             }
         });
+
+        try {
+            assertEquals("{\"status\":\"success\"}", communicator.shutdownMember("dev", "dev-pass"));
+        } catch (ConnectException ignored) {
+            // if node shuts down before response is received, `java.net.ConnectException: Connection refused` is expected
+        }
+
+        assertOpenEventually(shutdownLatch);
+        assertFalse(instance.getLifecycleService().isRunning());
     }
 
     @Test
-    public void testKillNodeWithWrongCredentials() throws IOException {
-        final HazelcastInstance instance1 = Hazelcast.newHazelcastInstance(config);
-        HTTPCommunicator communicator = new HTTPCommunicator(instance1);
+    public void testShutdownNodeWithWrongCredentials() throws Exception {
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
 
-        assertEquals("{\"status\":\"forbidden\"}", communicator.killMember("dev1", "dev-pass"));
+        assertEquals(STATUS_FORBIDDEN, communicator.shutdownMember("dev1", "dev-pass"));
     }
 
     @Test
-    public void syncMapOverWAN() throws IOException {
-        final HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+    public void syncMapOverWAN() throws Exception {
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
         HTTPCommunicator communicator = new HTTPCommunicator(instance);
         String result = communicator.syncMapOverWAN("atob", "b", "default");
+
         assertEquals("{\"status\":\"fail\",\"message\":\"WAN sync for map is not supported.\"}", result);
+    }
+
+    @Test
+    public void syncAllMapsOverWAN() throws Exception {
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        String result = communicator.syncMapsOverWAN("atob", "b");
+
+        assertEquals("{\"status\":\"fail\",\"message\":\"WAN sync is not supported.\"}", result);
+    }
+
+    @Test
+    public void wanClearQueues() throws Exception {
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        String result = communicator.wanClearQueues("atob", "b");
+
+        assertEquals("{\"status\":\"fail\",\"message\":\"Clearing WAN replication queues is not supported.\"}", result);
+    }
+
+    @Test
+    public void addWanConfig() throws Exception {
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        WanReplicationConfig wanConfig = new WanReplicationConfig();
+        wanConfig.setName("test");
+        WanReplicationConfigDTO dto = new WanReplicationConfigDTO(wanConfig);
+        String result = communicator.addWanConfig(dto.toJson().toString());
+
+        assertEquals("{\"status\":\"fail\",\"message\":\"java.lang.UnsupportedOperationException: Adding new WAN config is not supported.\"}", result);
+    }
+
+    @Test
+    public void simpleHealthCheck() throws Exception {
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance(config);
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        String result = communicator.getClusterHealth();
+
+        assertEquals("Hazelcast::NodeState=ACTIVE\n" +
+                "Hazelcast::ClusterState=ACTIVE\n" +
+                "Hazelcast::ClusterSafe=TRUE\n" +
+                "Hazelcast::MigrationQueueSize=0\n" +
+                "Hazelcast::ClusterSize=1\n", result);
+    }
+
+    @Test(expected = SocketException.class)
+    public void fail_with_deactivatedHealthCheck() throws Exception {
+        // Healthcheck REST URL is deactivated by default - no passed config on purpose
+        HazelcastInstance instance = Hazelcast.newHazelcastInstance();
+        HTTPCommunicator communicator = new HTTPCommunicator(instance);
+        communicator.getClusterHealth();
     }
 }

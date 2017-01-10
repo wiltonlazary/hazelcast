@@ -26,6 +26,7 @@ import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.Notifier;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.MutatingOperation;
 
 import java.io.IOException;
 
@@ -33,7 +34,7 @@ import java.io.IOException;
  * Offer operation for the Transactional Queue.
  */
 
-public class TxnOfferOperation extends BaseTxnQueueOperation implements Notifier {
+public class TxnOfferOperation extends BaseTxnQueueOperation implements Notifier, MutatingOperation {
 
 
     private Data data;
@@ -48,7 +49,7 @@ public class TxnOfferOperation extends BaseTxnQueueOperation implements Notifier
 
     @Override
     public void run() throws Exception {
-        QueueContainer createContainer = getOrCreateContainer();
+        QueueContainer createContainer = getContainer();
         response = createContainer.txnCommitOffer(getItemId(), data, false);
     }
 
@@ -80,7 +81,7 @@ public class TxnOfferOperation extends BaseTxnQueueOperation implements Notifier
 
     @Override
     public WaitNotifyKey getNotifiedKey() {
-        return getOrCreateContainer().getPollWaitNotifyKey();
+        return getContainer().getPollWaitNotifyKey();
     }
 
     @Override

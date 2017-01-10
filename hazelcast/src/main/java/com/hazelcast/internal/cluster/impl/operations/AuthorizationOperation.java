@@ -17,13 +17,13 @@
 package com.hazelcast.internal.cluster.impl.operations;
 
 import com.hazelcast.config.GroupConfig;
+import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.AbstractOperation;
 
 import java.io.IOException;
 
-public class AuthorizationOperation extends AbstractOperation implements JoinOperation {
+public class AuthorizationOperation extends AbstractJoinOperation {
 
     private String groupName;
     private String groupPassword;
@@ -62,5 +62,10 @@ public class AuthorizationOperation extends AbstractOperation implements JoinOpe
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         out.writeUTF(groupName);
         out.writeUTF(groupPassword);
+    }
+
+    @Override
+    public int getId() {
+        return ClusterDataSerializerHook.AUTHORIZATION;
     }
 }
