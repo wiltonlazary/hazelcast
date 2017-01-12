@@ -56,19 +56,31 @@ public final class BuildInfoProvider {
      * @return the parsed BuildInfo
      */
     public static BuildInfo getBuildInfo() {
-        final InputStream inRuntimeProperties =
-                BuildInfoProvider.class.getClassLoader().getResourceAsStream("hazelcast-runtime.properties");
-        Properties runtimeProperties = new Properties();
-        try {
-            if (inRuntimeProperties != null) {
-                runtimeProperties.load(inRuntimeProperties);
-            }
-        } catch (Exception ignored) {
-            EmptyStatement.ignore(ignored);
-        } finally {
-            closeResource(inRuntimeProperties);
-        }
+        Properties properties = loadPropertiesFromResource("hazelcast-runtime.properties");
+        Properties enterpriseProperties = loadPropertiesFromResource("hazelcast-enterprise-runtime.properties");
+        Properties jetProperties = loadPropertiesFromResource("jet-runtime.properties");
 
+        BuildInfo buildInfo = readBuildInfoProperties(properties, null);
+        if (!enterpriseProperties.isEmpty()) {
+            buildInfo = readBuildInfoProperties(enterpriseProperties, buildInfo);
+        }
+        setJetProperties(jetProperties, buildInfo);
+        return buildInfo;
+    }
+
+    private static void setJetProperties(Properties properties, BuildInfo buildInfo) {
+        if (properties.isEmpty()) {
+            return;
+        }
+        String version = properties.getProperty("jet.version");
+        String build = properties.getProperty("jet.build");
+        String revision = properties.getProperty("jet.git.revision");
+
+        JetBuildInfo jetBuildInfo = new JetBuildInfo(version, build, revision);
+        buildInfo.setJetBuildInfo(jetBuildInfo);
+    }
+
+    private static BuildInfo readBuildInfoProperties(Properties runtimeProperties, BuildInfo upstreamBuildInfo) {
         String version = runtimeProperties.getProperty("hazelcast.version");
         String distribution = runtimeProperties.getProperty("hazelcast.distribution");
         String revision = runtimeProperties.getProperty("hazelcast.git.revision", "");
@@ -86,7 +98,6 @@ public final class BuildInfoProvider {
             build = String.valueOf(hazelcastBuild);
         }
         int buildNumber = Integer.parseInt(build);
-
         // override version with a system property
         String overridingVersion = System.getProperty(HAZELCAST_INTERNAL_OVERRIDE_VERSION);
         if (overridingVersion != null) {
@@ -96,7 +107,23 @@ public final class BuildInfoProvider {
 
         String sv = runtimeProperties.getProperty("hazelcast.serialization.version");
         byte serialVersion = Byte.parseByte(sv);
-        return new BuildInfo(version, build, revision, buildNumber, enterprise, serialVersion);
+        return new BuildInfo(version, build, revision, buildNumber, enterprise, serialVersion, upstreamBuildInfo);
+    }
+
+    private static Properties loadPropertiesFromResource(String resourceName) {
+        final InputStream properties =
+                BuildInfoProvider.class.getClassLoader().getResourceAsStream(resourceName);
+        Properties runtimeProperties = new Properties();
+        try {
+            if (properties != null) {
+                runtimeProperties.load(properties);
+            }
+        } catch (Exception ignored) {
+            EmptyStatement.ignore(ignored);
+        } finally {
+            closeResource(properties);
+        }
+        return runtimeProperties;
     }
 
 }

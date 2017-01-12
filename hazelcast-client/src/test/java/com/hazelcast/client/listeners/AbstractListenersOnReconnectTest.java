@@ -17,7 +17,6 @@
 package com.hazelcast.client.listeners;
 
 import com.hazelcast.client.config.ClientConfig;
-import com.hazelcast.client.impl.ClientEngineImpl;
 import com.hazelcast.client.impl.ClientTestUtil;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.client.spi.impl.listener.ClientEventRegistration;
@@ -25,6 +24,7 @@ import com.hazelcast.client.spi.impl.listener.ClientListenerServiceImpl;
 import com.hazelcast.client.spi.properties.ClientProperty;
 import com.hazelcast.client.test.ClientTestSupport;
 import com.hazelcast.client.test.TestHazelcastFactory;
+import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.core.LifecycleListener;
@@ -32,9 +32,9 @@ import com.hazelcast.core.Member;
 import com.hazelcast.core.MemberAttributeEvent;
 import com.hazelcast.core.MembershipEvent;
 import com.hazelcast.core.MembershipListener;
+import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
 import org.junit.After;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.Collection;
@@ -54,9 +54,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     private int clusterSize;
 
     private static final int EVENT_COUNT = 10;
-
-    private static final int ENDPOINT_REMOVE_DELAY_MILLISECONDS = ClientEngineImpl.ENDPOINT_REMOVE_DELAY_SECONDS * 1000;
-
     private TestHazelcastFactory factory = new TestHazelcastFactory();
 
     @After
@@ -66,7 +63,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
 
     //-------------------------- testListenersTerminateRandomNode --------------------- //
     @Test
-    @Ignore
     public void testListenersNonSmartRoutingTerminateRandomNode() {
         factory.newInstances(null, 3);
         ClientConfig clientConfig = getNonSmartClientConfig();
@@ -75,7 +71,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     }
 
     @Test
-    @Ignore
     public void testListenersSmartRoutingTerminateRandomNode() {
         factory.newInstances(null, 3);
         ClientConfig clientConfig = getSmartClientConfig();
@@ -114,18 +109,13 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     //-------------------------- testListenersWaitMemberDestroy --------------------- //
 
     @Test
-    @Ignore
     public void testListenersWaitMemberDestroySmartRouting() {
-        factory.newInstances(null, 3);
+        Config config = new Config();
+        int endpointDelaySeconds = 2;
+        config.setProperty(GroupProperty.CLIENT_ENDPOINT_REMOVE_DELAY_SECONDS.getName(), String.valueOf(endpointDelaySeconds));
+        factory.newInstances(config, 3);
+        client = factory.newHazelcastClient(getSmartClientConfig());
 
-        ClientConfig clientConfig = getSmartClientConfig();
-        clientConfig
-                .setProperty(ClientProperty.HEARTBEAT_TIMEOUT.getName(), String.valueOf(2 * ENDPOINT_REMOVE_DELAY_MILLISECONDS));
-        client = factory.newHazelcastClient(clientConfig);
-        testListenersWaitMemberDestroy();
-    }
-
-    private void testListenersWaitMemberDestroy() {
         setupListener();
 
         Collection<HazelcastInstance> allHazelcastInstances = factory.getAllHazelcastInstances();
@@ -159,7 +149,7 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
         assertOpenEventually(disconnectedLatch);
         assertOpenEventually(connectedLatch);
 
-        sleepAtLeastMillis(ENDPOINT_REMOVE_DELAY_MILLISECONDS + 2000);
+        sleepAtLeastMillis(endpointDelaySeconds * 1000 + 2000);
         clusterSize = clusterSize - 1;
         validateRegistrationsAndListenerFunctionality();
     }
@@ -167,7 +157,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     //-------------------------- testListenersTemporaryNetworkBlockage --------------------- //
 
     @Test
-    @Ignore
     public void testTemporaryBlockedNoDisconnectionSmartRouting() {
         factory.newHazelcastInstance();
 
@@ -178,7 +167,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     }
 
     @Test
-    @Ignore
     public void testTemporaryBlockedNoDisconnectionNonSmartRouting() {
         factory.newHazelcastInstance();
 
@@ -189,7 +177,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     }
 
     @Test
-    @Ignore
     public void testTemporaryBlockedNoDisconnectionMultipleServerSmartRouting() {
         factory.newInstances(null, 3);
 
@@ -200,7 +187,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     }
 
     @Test
-    @Ignore
     public void testTemporaryBlockedNoDisconnectionMultipleServerNonSmartRouting() {
         factory.newInstances(null, 3);
 
@@ -237,7 +223,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     //-------------------------- testListenersHeartbeatTimeoutToOwner --------------------- //
 
     @Test
-    @Ignore
     public void testClusterReconnectDueToHeartbeatSmartRouting() {
         factory.newHazelcastInstance();
 
@@ -248,7 +233,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     }
 
     @Test
-    @Ignore
     public void testClusterReconnectMultipleServersDueToHeartbeatSmartRouting() {
         factory.newInstances(null, 3);
 
@@ -259,7 +243,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     }
 
     @Test
-    @Ignore
     public void testClusterReconnectDueToHeartbeatNonSmartRouting() {
         factory.newHazelcastInstance();
 
@@ -270,7 +253,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     }
 
     @Test
-    @Ignore
     public void testClusterReconnectMultipleServerDueToHeartbeatNonSmartRouting() {
         factory.newInstances(null, 3);
 
@@ -314,7 +296,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     //-------------------------- testListenersTerminateOwnerNode --------------------- //
 
     @Test
-    @Ignore
     public void testListenersSmartRoutingMultipleServer() {
         factory.newInstances(null, 3);
 
@@ -324,7 +305,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     }
 
     @Test
-    @Ignore
     public void testListenersNonSmartRoutingMultipleServer() {
         factory.newInstances(null, 3);
 
@@ -334,7 +314,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     }
 
     @Test
-    @Ignore
     public void testListenersSmartRouting() {
         factory.newHazelcastInstance();
 
@@ -344,7 +323,6 @@ public abstract class AbstractListenersOnReconnectTest extends ClientTestSupport
     }
 
     @Test
-    @Ignore
     public void testListenersNonSmartRouting() {
         factory.newHazelcastInstance();
 
