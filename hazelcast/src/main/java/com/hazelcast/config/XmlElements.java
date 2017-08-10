@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ enum XmlElements {
     EXECUTOR_SERVICE("executor-service", true),
     DURABLE_EXECUTOR_SERVICE("durable-executor-service", true),
     SCHEDULED_EXECUTOR_SERVICE("scheduled-executor-service", true),
+    EVENT_JOURNAL("event-journal", true),
     QUEUE("queue", true),
     MAP("map", true),
     CACHE("cache", true),
@@ -52,7 +53,8 @@ enum XmlElements {
     QUORUM("quorum", true),
     LITE_MEMBER("lite-member", false),
     HOT_RESTART_PERSISTENCE("hot-restart-persistence", false),
-    DISTRIBUTED_CLASSLOADING("distributed-classloading", false),
+    USER_CODE_DEPLOYMENT("user-code-deployment", false),
+    CARDINALITY_ESTIMATOR("cardinality-estimator", false),
     ;
 
     final String name;

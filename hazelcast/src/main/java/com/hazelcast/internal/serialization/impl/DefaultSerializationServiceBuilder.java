@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ import com.hazelcast.nio.serialization.PortableFactory;
 import com.hazelcast.nio.serialization.Serializer;
 import com.hazelcast.nio.serialization.SerializerHook;
 import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.util.function.Supplier;
 
 import java.nio.ByteOrder;
 import java.util.HashMap;
@@ -46,38 +47,32 @@ import java.util.Set;
 import static java.nio.ByteOrder.BIG_ENDIAN;
 import static java.nio.ByteOrder.nativeOrder;
 
-public class DefaultSerializationServiceBuilder
-        implements SerializationServiceBuilder {
+public class DefaultSerializationServiceBuilder implements SerializationServiceBuilder {
 
     private static final int DEFAULT_OUT_BUFFER_SIZE = 4 * 1024;
-
-    protected ClassLoader classLoader;
-
-    protected SerializationConfig config;
-
-    protected byte version = -1;
-
-    protected int portableVersion = -1;
 
     protected final Map<Integer, DataSerializableFactory> dataSerializableFactories =
             new HashMap<Integer, DataSerializableFactory>();
 
     protected final Map<Integer, PortableFactory> portableFactories = new HashMap<Integer, PortableFactory>();
 
-    protected boolean checkClassDefErrors = true;
-
     protected final Set<ClassDefinition> classDefinitions = new HashSet<ClassDefinition>();
+
+    protected ClassLoader classLoader;
+    protected SerializationConfig config;
+
+    protected byte version = -1;
+    protected int portableVersion = -1;
+
+    protected boolean checkClassDefErrors = true;
 
     protected ManagedContext managedContext;
 
     protected boolean useNativeByteOrder;
-
     protected ByteOrder byteOrder = BIG_ENDIAN;
 
     protected boolean enableCompression;
-
     protected boolean enableSharedObject;
-
     protected boolean allowUnsafe;
 
     protected int initialOutputBufferSize = DEFAULT_OUT_BUFFER_SIZE;
@@ -86,12 +81,14 @@ public class DefaultSerializationServiceBuilder
 
     protected HazelcastInstance hazelcastInstance;
 
+    protected Supplier<RuntimeException> notActiveExceptionSupplier;
+
     @Override
     public SerializationServiceBuilder setVersion(byte version) {
         byte maxVersion = BuildInfoProvider.getBuildInfo().getSerializationVersion();
         if (version > maxVersion) {
             throw new IllegalArgumentException(
-                    "Configured serialization version is higher than the max supported version :" + maxVersion);
+                    "Configured serialization version is higher than the max supported version: " + maxVersion);
         }
         this.version = version;
         return this;
@@ -200,6 +197,12 @@ public class DefaultSerializationServiceBuilder
     }
 
     @Override
+    public SerializationServiceBuilder setNotActiveExceptionSupplier(Supplier<RuntimeException> notActiveExceptionSupplier) {
+        this.notActiveExceptionSupplier = notActiveExceptionSupplier;
+        return this;
+    }
+
+    @Override
     public SerializationServiceBuilder setInitialOutputBufferSize(int initialOutputBufferSize) {
         if (initialOutputBufferSize <= 0) {
             throw new IllegalArgumentException("Initial buffer size must be positive!");
@@ -218,7 +221,7 @@ public class DefaultSerializationServiceBuilder
         }
 
         InputOutputFactory inputOutputFactory = createInputOutputFactory();
-        InternalSerializationService ss = createSerializationService(inputOutputFactory);
+        InternalSerializationService ss = createSerializationService(inputOutputFactory, notActiveExceptionSupplier);
 
         registerSerializerHooks(ss);
 
@@ -252,7 +255,7 @@ public class DefaultSerializationServiceBuilder
             byte maxVersion = Byte.parseByte(defaultVal);
             if (versionCandidate > maxVersion) {
                 throw new IllegalArgumentException(
-                        "Configured serialization version is higher than the max supported version :" + maxVersion);
+                        "Configured serialization version is higher than the max supported version: " + maxVersion);
             }
             version = versionCandidate;
         }
@@ -261,18 +264,18 @@ public class DefaultSerializationServiceBuilder
         }
     }
 
-    protected InternalSerializationService createSerializationService(InputOutputFactory inputOutputFactory) {
+    protected InternalSerializationService createSerializationService(InputOutputFactory inputOutputFactory,
+                                                                      Supplier<RuntimeException> notActiveExceptionSupplier) {
         switch (version) {
             case 1:
                 SerializationServiceV1 serializationServiceV1 = new SerializationServiceV1(inputOutputFactory, version,
                         portableVersion, classLoader, dataSerializableFactories, portableFactories, managedContext,
                         partitioningStrategy, initialOutputBufferSize, new BufferPoolFactoryImpl(), enableCompression,
-                        enableSharedObject);
+                        enableSharedObject, notActiveExceptionSupplier);
                 serializationServiceV1.registerClassDefinitions(classDefinitions, checkClassDefErrors);
                 return serializationServiceV1;
 
-            //Future version note: add new versions here
-            //adding case's for each version and instantiate it properly
+            // future version note: add new versions here by adding cases for each version and instantiate it properly
             default:
                 throw new IllegalArgumentException("Serialization version is not supported!");
         }
@@ -312,7 +315,6 @@ public class DefaultSerializationServiceBuilder
 
     private void addConfigDataSerializableFactories(Map<Integer, DataSerializableFactory> dataSerializableFactories,
                                                     SerializationConfig config, ClassLoader cl) {
-
         registerDataSerializableFactories(dataSerializableFactories, config);
         buildDataSerializableFactories(dataSerializableFactories, config, cl);
 
@@ -341,7 +343,6 @@ public class DefaultSerializationServiceBuilder
 
     private void buildDataSerializableFactories(Map<Integer, DataSerializableFactory> dataSerializableFactories,
                                                 SerializationConfig config, ClassLoader cl) {
-
         for (Map.Entry<Integer, String> entry : config.getDataSerializableFactoryClasses().entrySet()) {
             int factoryId = entry.getKey();
             String factoryClassName = entry.getValue();
@@ -363,9 +364,8 @@ public class DefaultSerializationServiceBuilder
         }
     }
 
-    private void addConfigPortableFactories(final Map<Integer, PortableFactory> portableFactories, SerializationConfig config,
+    private void addConfigPortableFactories(Map<Integer, PortableFactory> portableFactories, SerializationConfig config,
                                             ClassLoader cl) {
-
         registerPortableFactories(portableFactories, config);
         buildPortableFactories(portableFactories, config, cl);
 
@@ -392,8 +392,7 @@ public class DefaultSerializationServiceBuilder
 
     private void buildPortableFactories(Map<Integer, PortableFactory> portableFactories, SerializationConfig config,
                                         ClassLoader cl) {
-
-        final Map<Integer, String> portableFactoryClasses = config.getPortableFactoryClasses();
+        Map<Integer, String> portableFactoryClasses = config.getPortableFactoryClasses();
         for (Map.Entry<Integer, String> entry : portableFactoryClasses.entrySet()) {
             int factoryId = entry.getKey();
             String factoryClassName = entry.getValue();

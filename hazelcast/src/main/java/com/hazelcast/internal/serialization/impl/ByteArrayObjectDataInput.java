@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,8 @@ import static com.hazelcast.nio.Bits.NULL_ARRAY_LENGTH;
 import static com.hazelcast.nio.Bits.SHORT_SIZE_IN_BYTES;
 
 class ByteArrayObjectDataInput extends VersionedObjectDataInput implements BufferObjectDataInput {
+
+    private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
     byte[] data;
 
@@ -393,7 +395,7 @@ class ByteArrayObjectDataInput extends VersionedObjectDataInput implements Buffe
             readFully(b);
             return b;
         }
-        return new byte[0];
+        return EMPTY_BYTE_ARRAY;
     }
 
     @Override

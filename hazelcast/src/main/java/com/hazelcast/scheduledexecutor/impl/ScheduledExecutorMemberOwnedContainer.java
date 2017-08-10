@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,8 +39,9 @@ public class ScheduledExecutorMemberOwnedContainer extends ScheduledExecutorCont
 
     private final AtomicBoolean memberPartitionLock = new AtomicBoolean();
 
-    ScheduledExecutorMemberOwnedContainer(String name, NodeEngine nodeEngine) {
-        super(name, -1, nodeEngine, MEMBER_DURABILITY, new ConcurrentHashMap<String, ScheduledTaskDescriptor>());
+    ScheduledExecutorMemberOwnedContainer(String name, int capacity, NodeEngine nodeEngine) {
+        super(name, -1, nodeEngine, MEMBER_DURABILITY, capacity,
+                new ConcurrentHashMap<String, ScheduledTaskDescriptor>());
     }
 
     @Override
@@ -49,6 +50,7 @@ public class ScheduledExecutorMemberOwnedContainer extends ScheduledExecutorCont
             acquireMemberPartitionLockIfNeeded();
 
             checkNotDuplicateTask(definition.getName());
+            checkNotAtCapacity();
             return createContextAndSchedule(definition);
 
         } finally {

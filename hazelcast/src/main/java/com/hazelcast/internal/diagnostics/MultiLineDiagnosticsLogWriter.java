@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -125,6 +125,12 @@ class MultiLineDiagnosticsLogWriter extends DiagnosticsLogWriter {
     public void writeKeyValueEntry(String key, boolean value) {
         writeKeyValueHead(key);
         write(value);
+    }
+
+    @Override
+    public void writeKeyValueEntryAsDateTime(String key, long epochMillis) {
+        writeKeyValueHead(key);
+        appendDateTime(epochMillis);
     }
 
     private void writeKeyValueHead(String key) {

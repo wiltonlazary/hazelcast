@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,11 @@ import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.SerializableByConvention;
 
 import java.io.IOException;
+
+import static com.hazelcast.nio.serialization.SerializableByConvention.Reason.PUBLIC_API;
 
 /**
  * The event that is fired when a partition lost its owner and all backups.
@@ -33,8 +36,8 @@ import java.io.IOException;
  * @see PartitionService
  * @see PartitionLostListener
  */
-public class PartitionLostEvent
-        implements DataSerializable, PartitionEvent {
+@SerializableByConvention(PUBLIC_API)
+public class PartitionLostEvent implements DataSerializable, PartitionEvent {
 
     private int partitionId;
 
@@ -52,9 +55,9 @@ public class PartitionLostEvent
     }
 
     /**
-     * Returns the lost partition id.
+     * Returns the lost partition ID.
      *
-     * @return the lost partition id.
+     * @return the lost partition ID.
      */
     @Override
     public int getPartitionId() {
@@ -82,16 +85,14 @@ public class PartitionLostEvent
     }
 
     @Override
-    public void writeData(ObjectDataOutput out)
-            throws IOException {
+    public void writeData(ObjectDataOutput out) throws IOException {
         out.writeInt(partitionId);
         out.writeInt(lostBackupCount);
         out.writeObject(eventSource);
     }
 
     @Override
-    public void readData(ObjectDataInput in)
-            throws IOException {
+    public void readData(ObjectDataInput in) throws IOException {
         partitionId = in.readInt();
         lostBackupCount = in.readInt();
         eventSource = in.readObject();

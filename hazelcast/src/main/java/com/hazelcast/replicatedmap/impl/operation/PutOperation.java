@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,6 @@ import java.util.concurrent.TimeUnit;
 public class PutOperation extends AbstractReplicatedMapOperation implements PartitionAwareOperation {
 
     private transient ReplicatedMapService service;
-    private transient ReplicatedRecordStore store;
     private transient Data oldValue;
 
     public PutOperation() {
@@ -56,11 +55,11 @@ public class PutOperation extends AbstractReplicatedMapOperation implements Part
     @Override
     public void run() throws Exception {
         service = getService();
-        store = service.getReplicatedRecordStore(name, true, getPartitionId());
+        ReplicatedRecordStore store = service.getReplicatedRecordStore(name, true, getPartitionId());
         Address thisAddress = getNodeEngine().getThisAddress();
         boolean isLocal = getCallerAddress().equals(thisAddress);
         Object putResult = store.put(key, value, ttl, TimeUnit.MILLISECONDS, isLocal);
-        this.oldValue = getNodeEngine().toData(putResult);
+        oldValue = getNodeEngine().toData(putResult);
         response = new VersionResponsePair(putResult, store.getVersion());
         if (!isLocal) {
             sendUpdateCallerOperation(false);

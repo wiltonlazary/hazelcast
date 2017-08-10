@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.hazelcast.core.PartitioningStrategy;
 import com.hazelcast.internal.eviction.EvictionListener;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.map.impl.proxy.MapProxyImpl;
+import com.hazelcast.map.impl.query.DefaultIndexProvider;
 import com.hazelcast.map.impl.querycache.QueryCacheConfigurator;
 import com.hazelcast.map.impl.querycache.QueryCacheContext;
 import com.hazelcast.map.impl.querycache.QueryCacheEventService;
@@ -57,6 +58,11 @@ abstract class AbstractInternalQueryCache<K, V> implements InternalQueryCache<K,
     protected final InternalSerializationService serializationService;
     protected final PartitioningStrategy partitioningStrategy;
 
+    /**
+     * Id of registered listener on publisher side.
+     */
+    protected String publisherListenerId;
+
     public AbstractInternalQueryCache(String cacheName, String userGivenCacheName, IMap delegate, QueryCacheContext context) {
         this.cacheName = cacheName;
         this.userGivenCacheName = userGivenCacheName;
@@ -64,11 +70,19 @@ abstract class AbstractInternalQueryCache<K, V> implements InternalQueryCache<K,
         this.delegate = delegate;
         this.context = context;
         this.serializationService = context.getSerializationService();
-        this.indexes = new Indexes(serializationService, Extractors.empty());
+        // We are not using injected index provider since we're not supporting off-heap indexes in CQC due
+        // to threading incompatibility. If we injected the IndexProvider from the MapServiceContext
+        // the EE side would create HD indexes which is undesired
+        this.indexes = new Indexes(serializationService, new DefaultIndexProvider(), Extractors.empty(), true);
         this.includeValue = isIncludeValue();
         this.partitioningStrategy = getPartitioningStrategy();
         this.recordStore = new DefaultQueryCacheRecordStore(serializationService, indexes, getQueryCacheConfig(),
                 getEvictionListener());
+    }
+
+    @Override
+    public void setPublisherListenerId(String publisherListenerId) {
+        this.publisherListenerId = publisherListenerId;
     }
 
     protected Predicate getPredicate() {

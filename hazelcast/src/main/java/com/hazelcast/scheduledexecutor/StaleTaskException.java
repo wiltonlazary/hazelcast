@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,13 @@
 package com.hazelcast.scheduledexecutor;
 
 import com.hazelcast.core.HazelcastException;
+import com.hazelcast.spi.exception.SilentException;
 
 /**
  * Exception thrown by the {@link IScheduledFuture} during any operation on a stale (=previously destroyed) task.
  */
 public class StaleTaskException
-        extends HazelcastException {
+        extends HazelcastException implements SilentException {
 
     public StaleTaskException(String msg) {
         super(msg);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.client.test;
 import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.client.config.ClientAwsConfig;
 import com.hazelcast.client.config.ClientConfig;
+import com.hazelcast.client.connection.AddressProvider;
 import com.hazelcast.client.connection.AddressTranslator;
 import com.hazelcast.client.connection.ClientConnectionManager;
 import com.hazelcast.client.connection.nio.ClientConnection;
@@ -30,17 +31,18 @@ import com.hazelcast.client.spi.impl.AwsAddressTranslator;
 import com.hazelcast.client.spi.impl.DefaultAddressTranslator;
 import com.hazelcast.client.spi.impl.discovery.DiscoveryAddressTranslator;
 import com.hazelcast.client.spi.properties.ClientProperty;
+import com.hazelcast.client.test.TwoWayBlockableExecutor.LockPair;
 import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.NodeState;
 import com.hazelcast.instance.TestUtil;
+import com.hazelcast.internal.networking.OutboundFrame;
+import com.hazelcast.internal.networking.nio.NioEventLoopGroup;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.nio.Address;
-import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.ConnectionType;
-import com.hazelcast.nio.OutboundFrame;
 import com.hazelcast.spi.discovery.integration.DiscoveryService;
 import com.hazelcast.spi.exception.TargetDisconnectedException;
 import com.hazelcast.spi.impl.NodeEngineImpl;
@@ -54,10 +56,11 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.logging.Level;
 
 class TestClientRegistry {
 
@@ -85,14 +88,14 @@ class TestClientRegistry {
 
         @Override
         public ClientConnectionManager createConnectionManager(ClientConfig config, HazelcastClientInstanceImpl client,
-                                                               DiscoveryService discoveryService) {
+                DiscoveryService discoveryService, Collection<AddressProvider> addressProviders) {
             final ClientAwsConfig awsConfig = config.getNetworkConfig().getAwsConfig();
             AddressTranslator addressTranslator;
             if (awsConfig != null && awsConfig.isEnabled()) {
                 try {
                     addressTranslator = new AwsAddressTranslator(awsConfig, client.getLoggingService());
                 } catch (NoClassDefFoundError e) {
-                    LOGGER.log(Level.WARNING, "hazelcast-aws.jar might be missing!");
+                    LOGGER.warning("hazelcast-aws.jar might be missing!");
                     throw e;
                 }
             } else if (discoveryService != null) {
@@ -101,7 +104,7 @@ class TestClientRegistry {
             } else {
                 addressTranslator = new DefaultAddressTranslator();
             }
-            return new MockClientConnectionManager(client, addressTranslator, host, ports);
+            return new MockClientConnectionManager(client, addressTranslator, addressProviders, host, ports);
         }
     }
 
@@ -109,26 +112,27 @@ class TestClientRegistry {
         private final String host;
         private final AtomicInteger ports;
         private final HazelcastClientInstanceImpl client;
-        private final ConcurrentHashMap<Address, TwoWayBlockableExecutor.LockPair> addressBlockMap = new ConcurrentHashMap<Address, TwoWayBlockableExecutor.LockPair>();
+        private final ConcurrentHashMap<Address, LockPair> addressBlockMap = new ConcurrentHashMap<Address, LockPair>();
 
-        MockClientConnectionManager(HazelcastClientInstanceImpl client, AddressTranslator addressTranslator,
+        MockClientConnectionManager(HazelcastClientInstanceImpl client, AddressTranslator addressTranslator, Collection<AddressProvider> addressProviders,
                                     String host, AtomicInteger ports) {
-            super(client, addressTranslator);
+            super(client, addressTranslator, addressProviders);
             this.client = client;
             this.host = host;
             this.ports = ports;
         }
 
         @Override
-        protected void initIOThreads(HazelcastClientInstanceImpl client) {
+        protected NioEventLoopGroup initEventLoopGroup(HazelcastClientInstanceImpl client) {
+            return null;
         }
 
         @Override
-        protected void startIOThreads() {
+        protected void startEventLoopGroup() {
         }
 
         @Override
-        protected void shutdownIOThreads() {
+        protected void stopEventLoopGroup() {
         }
 
         @Override
@@ -143,13 +147,7 @@ class TestClientRegistry {
                 }
                 Node node = TestUtil.getNode(instance);
                 Address localAddress = new Address(host, ports.incrementAndGet());
-                TwoWayBlockableExecutor.LockPair lockPair = ConcurrencyUtil.getOrPutIfAbsent(addressBlockMap, address,
-                        new ConstructorFunction<Address, TwoWayBlockableExecutor.LockPair>() {
-                    @Override
-                    public TwoWayBlockableExecutor.LockPair createNew(Address arg) {
-                        return new TwoWayBlockableExecutor.LockPair(new ReentrantReadWriteLock(), new ReentrantReadWriteLock());
-                    }
-                });
+                LockPair lockPair = getLockPair(address);
 
                 MockedClientConnection connection = new MockedClientConnection(client,
                         connectionIdGen.incrementAndGet(), node.nodeEngine, address, localAddress, lockPair);
@@ -160,13 +158,23 @@ class TestClientRegistry {
             }
         }
 
+        private LockPair getLockPair(Address address) {
+            return ConcurrencyUtil.getOrPutIfAbsent(addressBlockMap, address,
+                    new ConstructorFunction<Address, LockPair>() {
+                        @Override
+                        public LockPair createNew(Address arg) {
+                            return new LockPair(new ReentrantReadWriteLock(), new ReentrantReadWriteLock());
+                        }
+                    });
+        }
+
         /**
          * Blocks incoming messages to client from given address
          */
         void blockFrom(Address address) {
             LOGGER.info("Blocked messages from " + address);
-            TwoWayBlockableExecutor.LockPair executor = addressBlockMap.get(address);
-            executor.blockIncoming();
+            LockPair lockPair = getLockPair(address);
+            lockPair.blockIncoming();
         }
 
         /**
@@ -174,7 +182,7 @@ class TestClientRegistry {
          */
         void unblockFrom(Address address) {
             LOGGER.info("Unblocked messages from " + address);
-            TwoWayBlockableExecutor.LockPair lockPair = addressBlockMap.get(address);
+            LockPair lockPair = getLockPair(address);
             lockPair.unblockIncoming();
         }
 
@@ -183,7 +191,7 @@ class TestClientRegistry {
          */
         void blockTo(Address address) {
             LOGGER.info("Blocked messages to " + address);
-            TwoWayBlockableExecutor.LockPair lockPair = addressBlockMap.get(address);
+            LockPair lockPair = getLockPair(address);
             lockPair.blockOutgoing();
         }
 
@@ -192,7 +200,7 @@ class TestClientRegistry {
          */
         void unblockTo(Address address) {
             LOGGER.info("Unblocked messages to " + address);
-            TwoWayBlockableExecutor.LockPair lockPair = addressBlockMap.get(address);
+            LockPair lockPair = getLockPair(address);
             lockPair.unblockOutgoing();
         }
 
@@ -204,13 +212,13 @@ class TestClientRegistry {
         private final NodeEngineImpl serverNodeEngine;
         private final Address remoteAddress;
         private final Address localAddress;
-        private final Connection serverSideConnection;
+        private final MockedNodeConnection serverSideConnection;
         private final TwoWayBlockableExecutor executor;
 
         MockedClientConnection(HazelcastClientInstanceImpl client,
                                int connectionId, NodeEngineImpl serverNodeEngine,
                                Address address, Address localAddress,
-                               TwoWayBlockableExecutor.LockPair lockPair) throws IOException {
+                               LockPair lockPair) throws IOException {
 
             super(client, connectionId);
             this.serverNodeEngine = serverNodeEngine;
@@ -222,21 +230,17 @@ class TestClientRegistry {
         }
 
         @Override
-        public void start() throws IOException {
-            // no init for mock connections
-        }
-
-        void handleClientMessage(final ClientMessage clientMessage) {
+        public void handleClientMessage(final ClientMessage clientMessage) {
             executor.executeIncoming(new Runnable() {
                 @Override
                 public void run() {
                     lastReadTime = System.currentTimeMillis();
-                    getConnectionManager().handleClientMessage(clientMessage, MockedClientConnection.this);
+                    MockedClientConnection.super.handleClientMessage(clientMessage);
                 }
 
                 @Override
                 public String toString() {
-                    return "Runnable message " + clientMessage;
+                    return "Runnable message " + clientMessage + ", " + MockedClientConnection.this;
                 }
             });
         }
@@ -250,16 +254,14 @@ class TestClientRegistry {
             executor.executeOutgoing(new Runnable() {
                 @Override
                 public String toString() {
-                    return "Runnable message " + frame;
+                    return "Runnable message " + frame + ", " + MockedClientConnection.this;
                 }
 
                 @Override
                 public void run() {
                     ClientMessage newPacket = readFromPacket((ClientMessage) frame);
                     lastWriteTime = System.currentTimeMillis();
-                    node.clientEngine.handleClientMessage(newPacket, serverSideConnection);
-
-
+                    serverSideConnection.handleClientMessage(newPacket);
                 }
             });
             return true;
@@ -325,7 +327,7 @@ class TestClientRegistry {
 
                 @Override
                 public String toString() {
-                    return "Client Closed EOF";
+                    return "Client Closed EOF. " + MockedClientConnection.this;
                 }
             }));
             executor.shutdownIncoming();
@@ -336,7 +338,7 @@ class TestClientRegistry {
             executor.executeIncoming(new Runnable() {
                 @Override
                 public String toString() {
-                    return "Server Closed EOF";
+                    return "Server Closed EOF. " + MockedClientConnection.this;
                 }
 
                 @Override
@@ -346,12 +348,23 @@ class TestClientRegistry {
             });
             executor.shutdownOutgoing();
         }
+
+        @Override
+        public String toString() {
+            return "MockedClientConnection{"
+                    + "localAddress=" + localAddress
+                    + ", super=" + super.toString()
+                    + '}';
+        }
     }
 
     private class MockedNodeConnection extends MockConnection {
 
         private final MockedClientConnection responseConnection;
         private final int connectionId;
+        private volatile long lastReadTimeMillis;
+        private volatile long lastWriteTimeMillis;
+        private volatile AtomicBoolean alive = new AtomicBoolean(true);
 
         MockedNodeConnection(int connectionId, Address localEndpoint, Address remoteEndpoint, NodeEngineImpl nodeEngine,
                              MockedClientConnection responseConnection) {
@@ -359,10 +372,12 @@ class TestClientRegistry {
             this.responseConnection = responseConnection;
             this.connectionId = connectionId;
             register();
+            lastReadTimeMillis = System.currentTimeMillis();
+            lastWriteTimeMillis = System.currentTimeMillis();
         }
 
         private void register() {
-            Node node = nodeEngine.getNode();
+            Node node = remoteNodeEngine.getNode();
             node.getConnectionManager().registerConnection(getEndPoint(), this);
         }
 
@@ -370,11 +385,17 @@ class TestClientRegistry {
         public boolean write(OutboundFrame frame) {
             final ClientMessage packet = (ClientMessage) frame;
             if (isAlive()) {
+                lastWriteTimeMillis = System.currentTimeMillis();
                 ClientMessage newPacket = readFromPacket(packet);
                 responseConnection.handleClientMessage(newPacket);
                 return true;
             }
             return false;
+        }
+
+        void handleClientMessage(ClientMessage newPacket) {
+            lastReadTimeMillis = System.currentTimeMillis();
+            remoteNodeEngine.getNode().clientEngine.handleClientMessage(newPacket, this);
         }
 
         @Override
@@ -406,6 +427,11 @@ class TestClientRegistry {
 
         @Override
         public void close(String reason, Throwable cause) {
+            if (!alive.compareAndSet(true, false)) {
+                return;
+            }
+
+            Logger.getLogger(MockedNodeConnection.class).warning("Server connection closed: " + reason, cause);
             super.close(reason, cause);
             responseConnection.onServerClose(reason);
         }
@@ -416,6 +442,16 @@ class TestClientRegistry {
             Address remoteEndpoint = getEndPoint();
             result = 31 * result + (remoteEndpoint != null ? remoteEndpoint.hashCode() : 0);
             return result;
+        }
+
+        @Override
+        public long lastReadTimeMillis() {
+            return lastReadTimeMillis;
+        }
+
+        @Override
+        public long lastWriteTimeMillis() {
+            return lastWriteTimeMillis;
         }
 
         @Override

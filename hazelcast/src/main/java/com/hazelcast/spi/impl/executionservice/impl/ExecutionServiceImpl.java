@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import com.hazelcast.config.DurableExecutorConfig;
 import com.hazelcast.config.ExecutorConfig;
 import com.hazelcast.config.ScheduledExecutorConfig;
 import com.hazelcast.core.ICompletableFuture;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.logging.ILogger;
@@ -47,7 +46,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadFactory;
@@ -55,6 +53,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.util.EmptyStatement.ignore;
+import static com.hazelcast.util.ThreadUtil.createThreadPoolName;
 
 @SuppressWarnings("checkstyle:classfanoutcomplexity")
 public final class ExecutionServiceImpl implements InternalExecutionService {
@@ -67,10 +66,11 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
     private static final long AWAIT_TIME = 3;
     private static final int POOL_MULTIPLIER = 2;
     private static final int QUEUE_MULTIPLIER = 100000;
+    private static final int OFFLOADABLE_QUEUE_CAPACITY = 100000;
 
     private final NodeEngineImpl nodeEngine;
     private final ExecutorService cachedExecutorService;
-    private final ScheduledExecutorService scheduledExecutorService;
+    private final LoggingScheduledExecutor scheduledExecutorService;
     private final TaskScheduler globalTaskScheduler;
     private final ILogger logger;
     private final CompletableFutureTask completableFutureTask;
@@ -122,8 +122,10 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
         Node node = nodeEngine.getNode();
         this.logger = node.getLogger(ExecutionService.class.getName());
 
-        HazelcastThreadGroup threadGroup = node.getHazelcastThreadGroup();
-        ThreadFactory threadFactory = new PoolExecutorThreadFactory(threadGroup, "cached");
+        String hzName = nodeEngine.getHazelcastInstance().getName();
+        ClassLoader configClassLoader = node.getConfigClassLoader();
+        ThreadFactory threadFactory = new PoolExecutorThreadFactory(createThreadPoolName(hzName, "cached"),
+                configClassLoader);
         this.cachedExecutorService = new ThreadPoolExecutor(
                 CORE_POOL_SIZE, Integer.MAX_VALUE, KEEP_ALIVE_TIME, TimeUnit.SECONDS,
                 new SynchronousQueue<Runnable>(), threadFactory, new RejectedExecutionHandler() {
@@ -135,7 +137,8 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
         }
         );
 
-        ThreadFactory singleExecutorThreadFactory = new SingleExecutorThreadFactory(threadGroup, "scheduled");
+        ThreadFactory singleExecutorThreadFactory = new SingleExecutorThreadFactory(configClassLoader,
+                createThreadPoolName(hzName, "scheduled"));
         this.scheduledExecutorService = new LoggingScheduledExecutor(logger, 1, singleExecutorThreadFactory);
         enableRemoveOnCancelIfAvailable();
 
@@ -143,6 +146,7 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
         // default executors
         register(SYSTEM_EXECUTOR, coreSize, Integer.MAX_VALUE, ExecutorType.CACHED);
         register(SCHEDULED_EXECUTOR, coreSize * POOL_MULTIPLIER, coreSize * QUEUE_MULTIPLIER, ExecutorType.CACHED);
+        register(OFFLOADABLE_EXECUTOR, coreSize, OFFLOADABLE_QUEUE_CAPACITY, ExecutorType.CACHED);
         this.globalTaskScheduler = getTaskScheduler(SCHEDULED_EXECUTOR);
 
         // register CompletableFuture task
@@ -194,9 +198,11 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
             executor = new CachedExecutorServiceDelegate(nodeEngine, name, cachedExecutorService, poolSize, queueCapacity);
         } else if (type == ExecutorType.CONCRETE) {
             Node node = nodeEngine.getNode();
+            ClassLoader classLoader = nodeEngine.getConfigClassLoader();
+            String hzName = node.getNodeEngine().getHazelcastInstance().getName();
             String internalName = name.startsWith("hz:") ? name.substring(BEGIN_INDEX) : name;
-            HazelcastThreadGroup hazelcastThreadGroup = node.getHazelcastThreadGroup();
-            PoolExecutorThreadFactory threadFactory = new PoolExecutorThreadFactory(hazelcastThreadGroup, internalName);
+            String threadNamePrefix = createThreadPoolName(hzName, internalName);
+            PoolExecutorThreadFactory threadFactory = new PoolExecutorThreadFactory(threadNamePrefix, classLoader);
             NamedThreadPoolExecutor pool = new NamedThreadPoolExecutor(name, poolSize, poolSize,
                     KEEP_ALIVE_TIME, TimeUnit.SECONDS,
                     new LinkedBlockingQueue<Runnable>(queueCapacity),
@@ -289,7 +295,7 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
 
     @Override
     public ScheduledFuture<?> scheduleDurableWithRepetition(String name, Runnable command, long initialDelay,
-                                                     long period, TimeUnit unit) {
+                                                            long period, TimeUnit unit) {
         return getDurableTaskScheduler(name).scheduleWithRepetition(command, initialDelay, period, unit);
     }
 
@@ -305,6 +311,7 @@ public final class ExecutionServiceImpl implements InternalExecutionService {
 
     public void shutdown() {
         logger.finest("Stopping executors...");
+        scheduledExecutorService.notifyShutdownInitiated();
         for (ExecutorService executorService : executors.values()) {
             executorService.shutdown();
         }

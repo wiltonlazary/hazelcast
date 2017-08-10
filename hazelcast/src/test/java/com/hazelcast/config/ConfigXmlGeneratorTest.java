@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.config.ConfigCompatibilityChecker.EventJournalConfigChecker;
 import com.hazelcast.memory.MemorySize;
 import com.hazelcast.memory.MemoryUnit;
 import com.hazelcast.test.HazelcastParallelClassRunner;
@@ -26,12 +27,73 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import java.io.ByteArrayInputStream;
+import java.util.Collections;
+import java.util.HashMap;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class ConfigXmlGeneratorTest {
+
+    @Test
+    public void testIfSensitiveDataIsMasked() {
+        Config cfg = new Config();
+        SSLConfig sslConfig = new SSLConfig();
+        sslConfig.setProperty("keyStorePassword", "Hazelcast");
+        cfg.getNetworkConfig().setSSLConfig(sslConfig);
+
+        SymmetricEncryptionConfig symmetricEncryptionConfig = new SymmetricEncryptionConfig();
+        symmetricEncryptionConfig.setPassword("Hazelcast");
+        symmetricEncryptionConfig.setSalt("theSalt");
+
+        cfg.getNetworkConfig().setSymmetricEncryptionConfig(symmetricEncryptionConfig);
+        cfg.setLicenseKey("HazelcastLicenseKey");
+
+        Config newConfigViaXMLGenerator = getNewConfigViaXMLGenerator(cfg);
+        SSLConfig generatedSSLConfig = newConfigViaXMLGenerator.getNetworkConfig().getSSLConfig();
+
+        assertEquals(generatedSSLConfig.getProperty("keyStorePassword"), ConfigXmlGenerator.MASK_FOR_SESITIVE_DATA);
+
+        String secPassword = newConfigViaXMLGenerator.getNetworkConfig().getSymmetricEncryptionConfig().getPassword();
+        String theSalt = newConfigViaXMLGenerator.getNetworkConfig().getSymmetricEncryptionConfig().getSalt();
+        assertEquals(secPassword, ConfigXmlGenerator.MASK_FOR_SESITIVE_DATA);
+        assertEquals(theSalt, ConfigXmlGenerator.MASK_FOR_SESITIVE_DATA);
+        assertEquals(newConfigViaXMLGenerator.getLicenseKey(), ConfigXmlGenerator.MASK_FOR_SESITIVE_DATA);
+        assertEquals(newConfigViaXMLGenerator.getGroupConfig().getPassword(), ConfigXmlGenerator.MASK_FOR_SESITIVE_DATA);
+    }
+
+    @Test
+    public void testManagementCenterConfigGenerator() {
+        ManagementCenterConfig managementCenterConfig = new ManagementCenterConfig()
+                .setEnabled(true)
+                .setUpdateInterval(8)
+                .setUrl("http://foomybar.ber")
+                .setMutualAuthConfig(
+                        new MCMutualAuthConfig()
+                            .setEnabled(true)
+                            .setProperty("keyStore", "/tmp/foo_keystore")
+                            .setProperty("keyStorePassword", "myp@ss1")
+                            .setProperty("trustStore", "/tmp/foo_truststore")
+                            .setProperty("trustStorePassword", "myp@ss2")
+                );
+
+        Config config = new Config()
+                .setManagementCenterConfig(managementCenterConfig);
+
+        Config xmlConfig = getNewConfigViaXMLGenerator(config);
+
+        ManagementCenterConfig xmlManCenterConfig = xmlConfig.getManagementCenterConfig();
+        assertEquals(managementCenterConfig.isEnabled(), xmlManCenterConfig.isEnabled());
+        assertEquals(managementCenterConfig.getUpdateInterval(), xmlManCenterConfig.getUpdateInterval());
+        assertEquals(managementCenterConfig.getUrl(), xmlManCenterConfig.getUrl());
+        assertEquals(managementCenterConfig.getMutualAuthConfig().isEnabled(), xmlManCenterConfig.getMutualAuthConfig().isEnabled());
+        assertEquals(managementCenterConfig.getMutualAuthConfig().getFactoryClassName(), xmlManCenterConfig.getMutualAuthConfig().getFactoryClassName());
+        assertEquals(managementCenterConfig.getMutualAuthConfig().getProperty("keyStore"), xmlManCenterConfig.getMutualAuthConfig().getProperty("keyStore"));
+        assertEquals(managementCenterConfig.getMutualAuthConfig().getProperty("trustStore"), xmlManCenterConfig.getMutualAuthConfig().getProperty("trustStore"));
+    }
 
     @Test
     public void testReplicatedMapConfigGenerator() {
@@ -48,7 +110,7 @@ public class ConfigXmlGeneratorTest {
 
         ReplicatedMapConfig xmlReplicatedMapConfig = xmlConfig.getReplicatedMapConfig("replicated-map-name");
         assertEquals("replicated-map-name", xmlReplicatedMapConfig.getName());
-        assertEquals(false, xmlReplicatedMapConfig.isStatisticsEnabled());
+        assertFalse(xmlReplicatedMapConfig.isStatisticsEnabled());
         assertEquals(128, xmlReplicatedMapConfig.getConcurrencyLevel());
         assertEquals("com.hazelcast.entrylistener", xmlReplicatedMapConfig.getListenerConfigs().get(0).getClassName());
     }
@@ -100,9 +162,9 @@ public class ConfigXmlGeneratorTest {
         Config xmlConfig = getNewConfigViaXMLGenerator(config);
 
         NativeMemoryConfig xmlNativeMemoryConfig = xmlConfig.getNativeMemoryConfig();
-        assertEquals(true, xmlNativeMemoryConfig.isEnabled());
+        assertTrue(xmlNativeMemoryConfig.isEnabled());
         assertEquals(NativeMemoryConfig.MemoryAllocatorType.STANDARD, nativeMemoryConfig.getAllocatorType());
-        assertEquals(12.5, nativeMemoryConfig.getMetadataSpacePercentage(),0.0001);
+        assertEquals(12.5, nativeMemoryConfig.getMetadataSpacePercentage(), 0.0001);
         assertEquals(50, nativeMemoryConfig.getMinBlockSize());
         assertEquals(100, nativeMemoryConfig.getPageSize());
         assertEquals(new MemorySize(20, MemoryUnit.MEGABYTES).getUnit(), nativeMemoryConfig.getSize().getUnit());
@@ -135,7 +197,8 @@ public class ConfigXmlGeneratorTest {
                 .setInMemoryFormat(InMemoryFormat.NATIVE)
                 .setMaxSize(23)
                 .setEvictionPolicy("LRU")
-                .setMaxIdleSeconds(42);
+                .setMaxIdleSeconds(42)
+                .setCacheLocalEntries(true);
 
         MapConfig mapConfig = new MapConfig()
                 .setName("nearCacheTest")
@@ -153,6 +216,85 @@ public class ConfigXmlGeneratorTest {
         assertEquals("LRU", xmlNearCacheConfig.getEvictionPolicy());
         assertEquals(EvictionPolicy.LRU, xmlNearCacheConfig.getEvictionConfig().getEvictionPolicy());
         assertEquals(42, xmlNearCacheConfig.getMaxIdleSeconds());
+        assertTrue(xmlNearCacheConfig.isCacheLocalEntries());
+    }
+
+    @Test
+    public void testWanConfig() {
+        final HashMap<String, Comparable> props = new HashMap<String, Comparable>();
+        props.put("prop1", "val1");
+        props.put("prop2", "val2");
+        props.put("prop3", "val3");
+        final WanReplicationConfig wanConfig = new WanReplicationConfig()
+                .setName("testName")
+                .setWanConsumerConfig(new WanConsumerConfig().setClassName("dummyClass").setProperties(props));
+        final WanPublisherConfig publisherConfig = new WanPublisherConfig()
+                .setGroupName("dummyGroup")
+                .setClassName("dummyClass")
+                .setAwsConfig(getDummyAwsConfig())
+                .setDiscoveryConfig(getDummyDiscoveryConfig());
+        wanConfig.setWanPublisherConfigs(Collections.singletonList(publisherConfig));
+
+        final Config config = new Config().addWanReplicationConfig(wanConfig);
+        final Config xmlConfig = getNewConfigViaXMLGenerator(config);
+
+        ConfigCompatibilityChecker.checkWanConfigs(config.getWanReplicationConfigs(), xmlConfig.getWanReplicationConfigs());
+    }
+
+    @Test
+    public void testMapEventJournal() {
+        final String mapName = "mapName";
+        final EventJournalConfig journalConfig = new EventJournalConfig()
+                .setMapName(mapName)
+                .setEnabled(true)
+                .setCapacity(123)
+                .setTimeToLiveSeconds(321);
+        final Config config = new Config().addEventJournalConfig(journalConfig);
+        final Config xmlConfig = getNewConfigViaXMLGenerator(config);
+
+        assertTrue(new EventJournalConfigChecker().check(
+                journalConfig,
+                xmlConfig.getMapEventJournalConfig(mapName)));
+    }
+
+    @Test
+    public void testCacheEventJournal() {
+        final String cacheName = "cacheName";
+        final EventJournalConfig journalConfig = new EventJournalConfig()
+                .setCacheName(cacheName)
+                .setEnabled(true)
+                .setCapacity(123)
+                .setTimeToLiveSeconds(321);
+        final Config config = new Config().addEventJournalConfig(journalConfig);
+        final Config xmlConfig = getNewConfigViaXMLGenerator(config);
+
+        assertTrue(new EventJournalConfigChecker().check(
+                journalConfig,
+                xmlConfig.getCacheEventJournalConfig(cacheName)));
+    }
+
+    private DiscoveryConfig getDummyDiscoveryConfig() {
+        final DiscoveryStrategyConfig strategyConfig = new DiscoveryStrategyConfig("dummyClass");
+        strategyConfig.addProperty("prop1", "val1");
+        strategyConfig.addProperty("prop2", "val2");
+        final DiscoveryConfig c = new DiscoveryConfig();
+        c.setNodeFilterClass("dummyNodeFilter");
+        c.addDiscoveryStrategyConfig(strategyConfig);
+        c.addDiscoveryStrategyConfig(new DiscoveryStrategyConfig("dummyClass2"));
+        return c;
+    }
+
+    private AwsConfig getDummyAwsConfig() {
+        return new AwsConfig().setHostHeader("dummyHost")
+                              .setRegion("dummyRegion")
+                              .setEnabled(false)
+                              .setConnectionTimeoutSeconds(1)
+                              .setAccessKey("dummyKey")
+                              .setIamRole("dummyIam")
+                              .setSecretKey("dummySecretKey")
+                              .setSecurityGroupName("dummyGroupName")
+                              .setTagKey("dummyTagKey")
+                              .setTagValue("dummyTagValue");
     }
 
     private static Config getNewConfigViaXMLGenerator(Config config) {

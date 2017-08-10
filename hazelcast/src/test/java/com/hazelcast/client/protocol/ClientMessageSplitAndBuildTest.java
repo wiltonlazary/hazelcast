@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.client.protocol;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.ClientAuthenticationCodec;
-import com.hazelcast.client.impl.protocol.util.ClientMessageReadHandler;
+import com.hazelcast.client.impl.protocol.util.ClientMessageChannelInboundHandler;
 import com.hazelcast.client.impl.protocol.util.ClientMessageSplitter;
 import com.hazelcast.instance.BuildInfoProvider;
 import com.hazelcast.internal.util.counters.SwCounter;
@@ -51,14 +51,15 @@ public class ClientMessageSplitAndBuildTest {
                 BuildInfoProvider.getBuildInfo().getVersion());
         expectedClientMessage.addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
         List<ClientMessage> subFrames = ClientMessageSplitter.getSubFrames(FRAME_SIZE, expectedClientMessage);
-        ClientMessageReadHandler clientMessageReadHandler = new ClientMessageReadHandler(readCounter,
-                new ClientMessageReadHandler.MessageHandler() {
+        ClientMessageChannelInboundHandler clientMessageReadHandler = new ClientMessageChannelInboundHandler(
+                new ClientMessageChannelInboundHandler.MessageHandler() {
                     @Override
                     public void handleMessage(ClientMessage message) {
                         message.addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
                         assertEquals(expectedClientMessage, message);
                     }
                 });
+        clientMessageReadHandler.setNormalPacketsRead(readCounter);
         for (ClientMessage subFrame : subFrames) {
             clientMessageReadHandler.onRead(ByteBuffer.wrap(subFrame.buffer().byteArray(), 0, subFrame.getFrameLength()));
         }
@@ -80,7 +81,7 @@ public class ClientMessageSplitAndBuildTest {
     }
 
     @Test
-    public void splitAndBuild_multipleMessages() throws Exception{
+    public void splitAndBuild_multipleMessages() throws Exception {
         int FRAME_SIZE = 50;
         int NUMBER_OF_MESSAGES = 5;
 
@@ -98,16 +99,16 @@ public class ClientMessageSplitAndBuildTest {
             framedClientMessages.add(ClientMessageSplitter.getSubFrames(FRAME_SIZE, expectedClientMessage));
         }
 
-        ClientMessageReadHandler clientMessageReadHandler = new ClientMessageReadHandler(readCounter,
-                new ClientMessageReadHandler.MessageHandler() {
-            @Override
-            public void handleMessage(ClientMessage message) {
-                int correlationId = (int) message.getCorrelationId();
-                message.addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
-                assertEquals(expectedClientMessages.get(correlationId), message);
-            }
-        });
-
+        ClientMessageChannelInboundHandler clientMessageReadHandler = new ClientMessageChannelInboundHandler(
+                new ClientMessageChannelInboundHandler.MessageHandler() {
+                    @Override
+                    public void handleMessage(ClientMessage message) {
+                        int correlationId = (int) message.getCorrelationId();
+                        message.addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
+                        assertEquals(expectedClientMessages.get(correlationId), message);
+                    }
+                });
+        clientMessageReadHandler.setNormalPacketsRead(readCounter);
 
         int currentFrameIndex[] = new int[NUMBER_OF_MESSAGES];
         for (int nFinishedMessages = 0; nFinishedMessages < NUMBER_OF_MESSAGES; ) {
@@ -131,14 +132,15 @@ public class ClientMessageSplitAndBuildTest {
                 BuildInfoProvider.getBuildInfo().getVersion());
         expectedClientMessage.addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
         List<ClientMessage> subFrames = ClientMessageSplitter.getSubFrames(expectedClientMessage.getFrameLength() + 1, expectedClientMessage);
-        ClientMessageReadHandler clientMessageReadHandler = new ClientMessageReadHandler(readCounter,
-                new ClientMessageReadHandler.MessageHandler() {
-            @Override
-            public void handleMessage(ClientMessage message) {
-                message.addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
-                assertEquals(expectedClientMessage, message);
-            }
-        });
+        ClientMessageChannelInboundHandler clientMessageReadHandler = new ClientMessageChannelInboundHandler(
+                new ClientMessageChannelInboundHandler.MessageHandler() {
+                    @Override
+                    public void handleMessage(ClientMessage message) {
+                        message.addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
+                        assertEquals(expectedClientMessage, message);
+                    }
+                });
+        clientMessageReadHandler.setNormalPacketsRead(readCounter);
         for (ClientMessage subFrame : subFrames) {
             clientMessageReadHandler.onRead(ByteBuffer.wrap(subFrame.buffer().byteArray(), 0, subFrame.getFrameLength()));
         }

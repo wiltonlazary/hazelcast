@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,14 @@
 
 package com.hazelcast.collection.impl.txnqueue;
 
+import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.IQueue;
 import com.hazelcast.core.TransactionalQueue;
 import com.hazelcast.test.AssertTask;
-import com.hazelcast.test.HazelcastParallelClassRunner;
+import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.ParallelTest;
@@ -52,7 +53,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-@RunWith(HazelcastParallelClassRunner.class)
+@RunWith(HazelcastSerialClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class TransactionQueueTest extends HazelcastTestSupport {
 
@@ -83,6 +84,28 @@ public class TransactionQueueTest extends HazelcastTestSupport {
         int size = f.get();
         assertEquals(itemCount - 1, size);
     }
+
+    @Test
+    public void testOfferTake() throws ExecutionException, InterruptedException {
+        final TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(2);
+        final HazelcastInstance owner = factory.newHazelcastInstance();
+        final HazelcastInstance backup = factory.newHazelcastInstance();
+        final String name = generateKeyOwnedBy(owner);
+
+        for (int i = 0; i < 1000; i++) {
+            TransactionContext ctx = owner.newTransactionContext();
+            ctx.beginTransaction();
+            TransactionalQueue<Integer> queue = ctx.getQueue(name);
+            queue.offer(1);
+            queue.take();
+            ctx.commitTransaction();
+        }
+        assertEquals(0, owner.getQueue(name).size());
+
+        assertTransactionMapSize(owner, name, 0);
+        assertTransactionMapSize(backup, name, 0);
+    }
+
 
     @Test
     public void testPeekWithTimeout() {
@@ -509,6 +532,50 @@ public class TransactionQueueTest extends HazelcastTestSupport {
         Object item = queue.poll(30, SECONDS);
         assertNotNull(item);
         context.commitTransaction();
+    }
+
+    @Test
+    public void transactionShouldBeRolledBack_whenInitiatorTerminatesBeforeCommit() {
+        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
+        HazelcastInstance master = factory.newHazelcastInstance();
+        HazelcastInstance instance = factory.newHazelcastInstance();
+        warmUpPartitions(instance);
+
+        String name = generateKeyOwnedBy(master);
+        IQueue<Integer> queue = master.getQueue(name);
+        queue.offer(1);
+
+        waitAllForSafeState(master, instance);
+
+        TransactionOptions options =
+                new TransactionOptions().setTransactionType(TransactionOptions.TransactionType.TWO_PHASE);
+
+        TransactionContext context = master.newTransactionContext(options);
+        context.beginTransaction();
+        TransactionalQueue txQueue = context.getQueue(name);
+        txQueue.poll();
+
+        master.getLifecycleService().terminate();
+
+        final IQueue<Integer> queue2 = instance.getQueue(name);
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals(1, queue2.size());
+            }
+        });
+
+        assertTrueAllTheTime(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals(1, queue2.size());
+            }
+        }, 3);
+    }
+
+    private void assertTransactionMapSize(HazelcastInstance instance, String name, int size) {
+        final QueueService queueService = getNode(instance).nodeEngine.getService(QueueService.SERVICE_NAME);
+        assertEquals(size, queueService.getOrCreateContainer(name, true).txMapSize());
     }
 
     private <E> IQueue<E> getQueue(HazelcastInstance[] instances, String name) {

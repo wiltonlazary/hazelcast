@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,7 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
     private long acquireTime = -1L;
     private boolean transactional;
     private boolean blockReads;
+    private boolean local;
     private Map<String, WaitersInfo> waiters;
     private Set<ConditionKey> conditionKeys;
     private List<AwaitOperation> expiredAwaitOps;
@@ -80,7 +81,8 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
         return (this.threadId == threadId && owner != null && owner.equals(this.owner));
     }
 
-    boolean lock(String owner, long threadId, long referenceId, long leaseTime, boolean transactional, boolean blockReads) {
+    boolean lock(String owner, long threadId, long referenceId, long leaseTime, boolean transactional,
+                 boolean blockReads, boolean local) {
         if (lockCount == 0) {
             this.owner = owner;
             this.threadId = threadId;
@@ -90,9 +92,10 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
             setExpirationTime(leaseTime);
             this.transactional = transactional;
             this.blockReads = blockReads;
+            this.local = local;
             return true;
         } else if (isLockedBy(owner, threadId)) {
-            if (!transactional && this.referenceId == referenceId) {
+            if (!transactional && !local && this.referenceId == referenceId) {
                 return true;
             }
             this.referenceId = referenceId;
@@ -100,6 +103,7 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
             setExpirationTime(leaseTime);
             this.transactional = transactional;
             this.blockReads = blockReads;
+            this.local = local;
             return true;
         }
         return false;
@@ -150,7 +154,7 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
             return false;
         }
 
-        if (!this.transactional && this.referenceId == referenceId) {
+        if (!this.transactional && !this.local && this.referenceId == referenceId) {
             return true;
         }
 
@@ -293,6 +297,7 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
         version = 0;
         transactional = false;
         blockReads = false;
+        local = false;
     }
 
     void cancelEviction() {
@@ -314,6 +319,17 @@ final class LockResourceImpl implements IdentifiedDataSerializable, LockResource
     @Override
     public boolean isTransactional() {
         return transactional;
+    }
+
+    /**
+     * Local locks are local to the partition and replicaIndex where they have been acquired.
+     * That is the reason they are removed on any partition migration on the destination.
+     *
+     * @returns true if the lock is local, false otherwise
+     */
+    @Override
+    public boolean isLocal() {
+        return local;
     }
 
     @Override

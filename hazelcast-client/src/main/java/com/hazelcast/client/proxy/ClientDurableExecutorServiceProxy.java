@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,7 +45,6 @@ import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -68,14 +67,13 @@ public final class ClientDurableExecutorServiceProxy extends ClientProxy impleme
 
     private int partitionCount;
 
-    public ClientDurableExecutorServiceProxy(String serviceName, String name) {
-        super(serviceName, name);
+    public ClientDurableExecutorServiceProxy(String serviceName, String name, ClientContext context) {
+        super(serviceName, name, context);
     }
 
     @Override
     protected void onInitialize() {
-        ClientContext context = getContext();
-        ClientPartitionService partitionService = context.getPartitionService();
+        ClientPartitionService partitionService = getContext().getPartitionService();
         partitionCount = partitionService.getPartitionCount();
     }
 
@@ -208,23 +206,23 @@ public final class ClientDurableExecutorServiceProxy extends ClientProxy impleme
     private <T> DurableExecutorServiceFuture<T> submitToPartition(Callable<T> task, int partitionId, T result) {
         checkNotNull(task, "task should not be null");
 
-        SerializationService serService = getSerializationService();
-        ClientMessage request = DurableExecutorSubmitToPartitionCodec.encodeRequest(name, serService.toData(task));
+        ClientMessage request = DurableExecutorSubmitToPartitionCodec.encodeRequest(name, toData(task));
         int sequence;
         try {
             ClientMessage response = invokeOnPartition(request, partitionId);
             sequence = DurableExecutorSubmitToPartitionCodec.decodeResponse(response).response;
         } catch (Throwable t) {
-            return new ClientDurableExecutorServiceCompletedFuture<T>(t, getAsyncExecutor());
+            return new ClientDurableExecutorServiceCompletedFuture<T>(t, getUserExecutor());
         }
         ClientMessage clientMessage = DurableExecutorRetrieveResultCodec.encodeRequest(name, sequence);
         ClientInvocationFuture future = new ClientInvocation(getClient(), clientMessage, partitionId).invoke();
         long taskId = Bits.combineToLong(partitionId, sequence);
-        return new ClientDurableExecutorServiceDelegatingFuture<T>(future, serService, RETRIEVE_RESPONSE_DECODER, result, taskId);
+        return new ClientDurableExecutorServiceDelegatingFuture<T>(future, getSerializationService(), RETRIEVE_RESPONSE_DECODER,
+                result, taskId);
     }
 
-    private ExecutorService getAsyncExecutor() {
-        return getContext().getExecutionService().getAsyncExecutor();
+    private Executor getUserExecutor() {
+        return getContext().getExecutionService().getUserExecutor();
     }
 
     private <T> RunnableAdapter<T> createRunnableAdapter(Runnable command) {
@@ -279,7 +277,7 @@ public final class ClientDurableExecutorServiceProxy extends ClientProxy impleme
 
         @Override
         public long getTaskId() {
-            throw new IllegalStateException("Task failed to execute!!!");
+            throw new IllegalStateException("Task failed to execute!");
         }
 
         @Override

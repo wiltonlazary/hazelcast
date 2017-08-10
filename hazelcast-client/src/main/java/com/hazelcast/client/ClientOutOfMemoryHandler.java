@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.client;
 
-import com.hazelcast.client.connection.ClientConnectionManager;
+import com.hazelcast.client.connection.nio.ClientConnectionManagerImpl;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.instance.DefaultOutOfMemoryHandler;
@@ -48,12 +48,11 @@ public class ClientOutOfMemoryHandler extends DefaultOutOfMemoryHandler {
 
         public static void cleanResources(HazelcastClientInstanceImpl client) {
             closeSockets(client);
-            tryStopThreads(client);
             tryShutdown(client);
         }
 
         private static void closeSockets(HazelcastClientInstanceImpl client) {
-            final ClientConnectionManager connectionManager = client.getConnectionManager();
+            ClientConnectionManagerImpl connectionManager = (ClientConnectionManagerImpl) client.getConnectionManager();
             if (connectionManager != null) {
                 try {
                     connectionManager.shutdown();
@@ -73,17 +72,5 @@ public class ClientOutOfMemoryHandler extends DefaultOutOfMemoryHandler {
                 EmptyStatement.ignore(ignored);
             }
         }
-
-        public static void tryStopThreads(HazelcastClientInstanceImpl client) {
-            if (client == null) {
-                return;
-            }
-            try {
-                client.getThreadGroup().interrupt();
-            } catch (Throwable ignored) {
-                EmptyStatement.ignore(ignored);
-            }
-        }
-
     }
 }

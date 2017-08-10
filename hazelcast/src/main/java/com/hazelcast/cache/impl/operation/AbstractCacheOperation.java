@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,9 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.ExceptionAction;
+import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.PartitionAwareOperation;
+import com.hazelcast.spi.ServiceNamespaceAware;
 import com.hazelcast.spi.impl.AbstractNamedOperation;
 
 import java.io.IOException;
@@ -37,9 +39,9 @@ import java.io.IOException;
  * Base Cache Operation. Cache operations are named operations. Key based operations are subclasses of this base
  * class providing a cacheRecordStore access and partial backup support.
  */
-abstract class AbstractCacheOperation
+public abstract class AbstractCacheOperation
         extends AbstractNamedOperation
-        implements PartitionAwareOperation, IdentifiedDataSerializable {
+        implements PartitionAwareOperation, ServiceNamespaceAware, IdentifiedDataSerializable {
 
     protected Data key;
     protected Object response;
@@ -104,6 +106,16 @@ abstract class AbstractCacheOperation
             return;
         }
         super.logError(e);
+    }
+
+    @Override
+    public ObjectNamespace getServiceNamespace() {
+        ICacheRecordStore recordStore = cache;
+        if (recordStore == null) {
+            ICacheService service = getService();
+            recordStore = service.getOrCreateRecordStore(name, getPartitionId());
+        }
+        return recordStore.getObjectNamespace();
     }
 
     @Override

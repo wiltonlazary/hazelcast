@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,10 @@ import com.hazelcast.nio.serialization.DataSerializableFactory;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.replicatedmap.impl.record.RecordMigrationInfo;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedMapEntryView;
+import com.hazelcast.replicatedmap.merge.HigherHitsMapMergePolicy;
+import com.hazelcast.replicatedmap.merge.LatestUpdateMapMergePolicy;
+import com.hazelcast.replicatedmap.merge.PassThroughMergePolicy;
+import com.hazelcast.replicatedmap.merge.PutIfAbsentMapMergePolicy;
 import com.hazelcast.util.ConstructorFunction;
 
 import static com.hazelcast.internal.serialization.impl.FactoryIdHelper.REPLICATED_MAP_DS_FACTORY;
@@ -31,8 +35,6 @@ import static com.hazelcast.internal.serialization.impl.FactoryIdHelper.REPLICAT
 /**
  * This class contains all the ID hooks for IdentifiedDataSerializable classes used inside the replicated map.
  */
-//Deactivated all checkstyle rules because those classes will never comply
-//CHECKSTYLE:OFF
 public class ReplicatedMapDataSerializerHook implements DataSerializerHook {
 
     public static final int F_ID = FactoryIdHelper.getFactoryId(REPLICATED_MAP_DS_FACTORY, REPLICATED_MAP_DS_FACTORY_ID);
@@ -62,8 +64,12 @@ public class ReplicatedMapDataSerializerHook implements DataSerializerHook {
     public static final int CLEAR_OP_FACTORY = 23;
     public static final int PUT_ALL_OP_FACTORY = 24;
     public static final int RECORD_MIGRATION_INFO = 25;
+    public static final int HIGHER_HITS_MERGE_POLICY = 26;
+    public static final int LATEST_UPDATE_MERGE_POLICY = 27;
+    public static final int PASS_THROUGH_MERGE_POLICY = 28;
+    public static final int PUT_IF_ABSENT_MERGE_POLICY = 29;
 
-    private static final int LEN = RECORD_MIGRATION_INFO + 1;
+    private static final int LEN = PUT_IF_ABSENT_MERGE_POLICY + 1;
 
     private static final DataSerializableFactory FACTORY = createFactoryInternal();
 
@@ -229,8 +235,31 @@ public class ReplicatedMapDataSerializerHook implements DataSerializerHook {
                 return new RecordMigrationInfo();
             }
         };
+        constructors[HIGHER_HITS_MERGE_POLICY] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return HigherHitsMapMergePolicy.INSTANCE;
+            }
+        };
+        constructors[LATEST_UPDATE_MERGE_POLICY] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return LatestUpdateMapMergePolicy.INSTANCE;
+            }
+        };
+        constructors[PASS_THROUGH_MERGE_POLICY] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return PassThroughMergePolicy.INSTANCE;
+            }
+        };
+        constructors[PUT_IF_ABSENT_MERGE_POLICY] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            @Override
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return PutIfAbsentMapMergePolicy.INSTANCE;
+            }
+        };
 
         return new ArrayDataSerializableFactory(constructors);
     }
-
 }

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map.impl.query;
 
 import com.hazelcast.config.CacheDeserializedValues;
@@ -16,11 +32,11 @@ import com.hazelcast.query.Predicate;
 import com.hazelcast.query.PredicateBuilder;
 import com.hazelcast.query.Predicates;
 import com.hazelcast.query.QueryException;
-import com.hazelcast.query.SampleObjects;
-import com.hazelcast.query.SampleObjects.Employee;
-import com.hazelcast.query.SampleObjects.State;
-import com.hazelcast.query.SampleObjects.Value;
-import com.hazelcast.query.SampleObjects.ValueType;
+import com.hazelcast.query.SampleTestObjects;
+import com.hazelcast.query.SampleTestObjects.Employee;
+import com.hazelcast.query.SampleTestObjects.State;
+import com.hazelcast.query.SampleTestObjects.Value;
+import com.hazelcast.query.SampleTestObjects.ValueType;
 import com.hazelcast.query.SqlPredicate;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
@@ -61,7 +77,7 @@ public class QueryBasicTest extends HazelcastTestSupport {
         Config config = getConfig();
         HazelcastProperties properties = new HazelcastProperties(config);
         boolean parallelEvaluation = properties.getBoolean(GroupProperty.QUERY_PREDICATE_PARALLEL_EVALUATION);
-        assertEquals(false, parallelEvaluation);
+        assertFalse(parallelEvaluation);
     }
 
     @Test(timeout = 1000 * 60)
@@ -127,7 +143,7 @@ public class QueryBasicTest extends HazelcastTestSupport {
     @Test(timeout = 1000 * 60)
     public void testInPredicate() {
         HazelcastInstance instance = createHazelcastInstance(getConfig());
-        IMap<String, SampleObjects.ValueType> map = instance.getMap("testIteratorContract");
+        IMap<String, SampleTestObjects.ValueType> map = instance.getMap("testIteratorContract");
         map.put("1", new ValueType("one"));
         map.put("2", new ValueType("two"));
         map.put("3", new ValueType("three"));
@@ -137,7 +153,7 @@ public class QueryBasicTest extends HazelcastTestSupport {
         map.put("7", new ValueType("seven"));
         Predicate predicate = new SqlPredicate("typeName in ('one','two')");
         for (int i = 0; i < 10; i++) {
-            Collection<SampleObjects.ValueType> values = map.values(predicate);
+            Collection<SampleTestObjects.ValueType> values = map.values(predicate);
             assertEquals(2, values.size());
         }
     }
@@ -156,13 +172,13 @@ public class QueryBasicTest extends HazelcastTestSupport {
 
         Collection<Object> values = map.values(linkedListPredicate);
         assertEquals(1, values.size());
-        assertTrue(values.contains(linkedList));
+        assertContains(values, linkedList);
     }
 
     @Test(timeout = 1000 * 60)
     public void testIteratorContract() {
         HazelcastInstance instance = createHazelcastInstance(getConfig());
-        IMap<String, SampleObjects.ValueType> map = instance.getMap("testIteratorContract");
+        IMap<String, SampleTestObjects.ValueType> map = instance.getMap("testIteratorContract");
         map.put("1", new ValueType("one"));
         map.put("2", new ValueType("two"));
         map.put("3", new ValueType("three"));
@@ -200,7 +216,7 @@ public class QueryBasicTest extends HazelcastTestSupport {
             map.put("0", v);
             fail();
         } catch (Throwable e) {
-            assertTrue(e.getMessage().contains("There is no suitable accessor for 'qwe'"));
+            assertContains(e.getMessage(), "There is no suitable accessor for 'qwe'");
         }
     }
 
@@ -556,31 +572,31 @@ public class QueryBasicTest extends HazelcastTestSupport {
             map.values(new SqlPredicate("invalid_sql"));
             fail("Should fail because of invalid SQL!");
         } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("There is no suitable accessor for 'invalid_sql'"));
+            assertContains(e.getMessage(), "There is no suitable accessor for 'invalid_sql'");
         }
         try {
             map.values(new SqlPredicate("invalid sql"));
             fail("Should fail because of invalid SQL!");
         } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("Invalid SQL: [invalid sql]"));
+            assertContains(e.getMessage(), "Invalid SQL: [invalid sql]");
         }
         try {
             map.values(new SqlPredicate("invalid and sql"));
             fail("Should fail because of invalid SQL!");
         } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("There is no suitable accessor for 'invalid'"));
+            assertContains(e.getMessage(), "There is no suitable accessor for 'invalid'");
         }
         try {
             map.values(new SqlPredicate("invalid sql and"));
             fail("Should fail because of invalid SQL!");
         } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("There is no suitable accessor for 'invalid'"));
+            assertContains(e.getMessage(), "There is no suitable accessor for 'invalid'");
         }
         try {
             map.values(new SqlPredicate(""));
             fail("Should fail because of invalid SQL!");
         } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("Invalid SQL: []"));
+            assertContains(e.getMessage(), "Invalid SQL: []");
         }
         assertEquals(2, map.values(new SqlPredicate("age=1 and name like 'e%'")).size());
     }

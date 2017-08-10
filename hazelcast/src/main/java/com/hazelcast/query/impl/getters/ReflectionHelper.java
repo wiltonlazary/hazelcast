@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import java.util.UUID;
 
 import static com.hazelcast.query.QueryConstants.THIS_ATTRIBUTE_NAME;
 import static com.hazelcast.query.impl.getters.NullGetter.NULL_GETTER;
+import static com.hazelcast.query.impl.getters.NullMultiValueGetter.NULL_MULTIVALUE_GETTER;
 import static com.hazelcast.query.impl.getters.SuffixModifierUtils.getModifierSuffix;
 import static com.hazelcast.query.impl.getters.SuffixModifierUtils.removeModifierSuffix;
 
@@ -125,7 +126,7 @@ public final class ReflectionHelper {
                             final Method method = clazz.getMethod(methodName);
                             method.setAccessible(true);
                             localGetter = GetterFactory.newMethodGetter(obj, parent, method, modifier);
-                            if (localGetter == NULL_GETTER) {
+                            if (localGetter == NULL_GETTER || localGetter == NULL_MULTIVALUE_GETTER) {
                                 return localGetter;
                             }
                             clazz = method.getReturnType();
@@ -138,7 +139,7 @@ public final class ReflectionHelper {
                         try {
                             final Field field = clazz.getField(baseName);
                             localGetter = GetterFactory.newFieldGetter(obj, parent, field, modifier);
-                            if (localGetter == NULL_GETTER) {
+                            if (localGetter == NULL_GETTER || localGetter == NULL_MULTIVALUE_GETTER) {
                                 return localGetter;
                             }
                             clazz = field.getType();
@@ -153,8 +154,8 @@ public final class ReflectionHelper {
                                 final Field field = c.getDeclaredField(baseName);
                                 field.setAccessible(true);
                                 localGetter = GetterFactory.newFieldGetter(obj, parent, field, modifier);
-                                if (localGetter == NULL_GETTER) {
-                                    return NULL_GETTER;
+                                if (localGetter == NULL_GETTER || localGetter == NULL_MULTIVALUE_GETTER) {
+                                    return localGetter;
                                 }
                                 clazz = field.getType();
                                 break;

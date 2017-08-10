@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.instance;
 
 import com.hazelcast.core.HazelcastInstance;
@@ -14,8 +30,8 @@ import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.util.UuidUtil;
-import com.hazelcast.version.ClusterVersion;
 import com.hazelcast.version.MemberVersion;
+import com.hazelcast.version.Version;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -28,10 +44,8 @@ import java.net.UnknownHostException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.hazelcast.instance.BuildInfoProvider.BUILD_INFO;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -58,27 +72,27 @@ public class DefaultNodeExtensionTest extends HazelcastTestSupport {
     @Test
     public void test_nodeVersionCompatibleWith_ownClusterVersion() {
         MemberVersion currentVersion = getNode(hazelcastInstance).getVersion();
-        assertTrue(nodeExtension.isNodeVersionCompatibleWith(currentVersion.asClusterVersion()));
+        assertTrue(nodeExtension.isNodeVersionCompatibleWith(currentVersion.asVersion()));
     }
 
     @Test
     public void test_nodeVersionNotCompatibleWith_otherMinorVersion() {
         MemberVersion currentVersion = getNode(hazelcastInstance).getVersion();
-        ClusterVersion minorMinusOne = new ClusterVersion(currentVersion.getMajor(), currentVersion.getMinor() - 1);
+        Version minorMinusOne = Version.of(currentVersion.getMajor(), currentVersion.getMinor() - 1);
         assertFalse(nodeExtension.isNodeVersionCompatibleWith(minorMinusOne));
     }
 
     @Test
     public void test_nodeVersionNotCompatibleWith_otherMajorVersion() {
         MemberVersion currentVersion = getNode(hazelcastInstance).getVersion();
-        ClusterVersion majorPlusOne = new ClusterVersion(currentVersion.getMajor() + 1, currentVersion.getMinor());
+        Version majorPlusOne = Version.of(currentVersion.getMajor() + 1, currentVersion.getMinor());
         assertFalse(nodeExtension.isNodeVersionCompatibleWith(majorPlusOne));
     }
 
     @Test
     public void test_joinRequestAllowed_whenSameVersion()
             throws UnknownHostException {
-        JoinRequest joinRequest = new JoinRequest(Packet.VERSION, BUILD_INFO.getBuildNumber(), node.getVersion(),
+        JoinRequest joinRequest = new JoinRequest(Packet.VERSION, BuildInfoProvider.getBuildInfo().getBuildNumber(), node.getVersion(),
                 new Address("127.0.0.1", 9999), UuidUtil.newUnsecureUuidString(), false, null, null, null, null);
         nodeExtension.validateJoinRequest(joinRequest);
     }
@@ -88,7 +102,7 @@ public class DefaultNodeExtensionTest extends HazelcastTestSupport {
             throws UnknownHostException {
         MemberVersion otherPatchVersion = MemberVersion
                 .of(node.getVersion().getMajor(), node.getVersion().getMinor(), node.getVersion().getPatch() + 1);
-        JoinRequest joinRequest = new JoinRequest(Packet.VERSION, BUILD_INFO.getBuildNumber(), otherPatchVersion,
+        JoinRequest joinRequest = new JoinRequest(Packet.VERSION, BuildInfoProvider.getBuildInfo().getBuildNumber(), otherPatchVersion,
                 new Address("127.0.0.1", 9999), UuidUtil.newUnsecureUuidString(), false, null, null, null, null);
         nodeExtension.validateJoinRequest(joinRequest);
     }
@@ -98,7 +112,7 @@ public class DefaultNodeExtensionTest extends HazelcastTestSupport {
             throws UnknownHostException {
         MemberVersion otherPatchVersion = MemberVersion
                 .of(node.getVersion().getMajor(), node.getVersion().getMinor() + 1, node.getVersion().getPatch());
-        JoinRequest joinRequest = new JoinRequest(Packet.VERSION, BUILD_INFO.getBuildNumber(), otherPatchVersion,
+        JoinRequest joinRequest = new JoinRequest(Packet.VERSION, BuildInfoProvider.getBuildInfo().getBuildNumber(), otherPatchVersion,
                 new Address("127.0.0.1", 9999), UuidUtil.newUnsecureUuidString(), false, null, null, null, null);
         expected.expect(VersionMismatchException.class);
         nodeExtension.validateJoinRequest(joinRequest);
@@ -109,7 +123,7 @@ public class DefaultNodeExtensionTest extends HazelcastTestSupport {
             throws UnknownHostException {
         MemberVersion otherPatchVersion = MemberVersion
                 .of(node.getVersion().getMajor() + 1, node.getVersion().getMinor(), node.getVersion().getPatch());
-        JoinRequest joinRequest = new JoinRequest(Packet.VERSION, BUILD_INFO.getBuildNumber(), otherPatchVersion,
+        JoinRequest joinRequest = new JoinRequest(Packet.VERSION, BuildInfoProvider.getBuildInfo().getBuildNumber(), otherPatchVersion,
                 new Address("127.0.0.1", 9999), UuidUtil.newUnsecureUuidString(), false, null, null, null, null);
         expected.expect(VersionMismatchException.class);
         nodeExtension.validateJoinRequest(joinRequest);
@@ -121,7 +135,7 @@ public class DefaultNodeExtensionTest extends HazelcastTestSupport {
         final CountDownLatch latch = new CountDownLatch(1);
         ClusterVersionListener listener = new ClusterVersionListener() {
             @Override
-            public void onClusterVersionChange(ClusterVersion newVersion) {
+            public void onClusterVersionChange(Version newVersion) {
                 latch.countDown();
             }
         };
@@ -149,14 +163,14 @@ public class DefaultNodeExtensionTest extends HazelcastTestSupport {
         final AtomicBoolean failed = new AtomicBoolean(false);
         ClusterVersionListener listener = new ClusterVersionListener() {
             @Override
-            public void onClusterVersionChange(ClusterVersion newVersion) {
-                if (!newVersion.equals(node.getVersion().asClusterVersion())) {
+            public void onClusterVersionChange(Version newVersion) {
+                if (!newVersion.equals(node.getVersion().asVersion())) {
                     failed.set(true);
                 }
                 latch.countDown();
             }
         };
-        nullifyClusterVersionAndVerifyListener(latch, failed, listener);
+        makeClusterVersionUnknownAndVerifyListener(latch, failed, listener);
     }
 
     @Test
@@ -168,30 +182,30 @@ public class DefaultNodeExtensionTest extends HazelcastTestSupport {
         final AtomicBoolean failed = new AtomicBoolean(false);
         ClusterVersionListener listener = new ClusterVersionListener() {
             @Override
-            public void onClusterVersionChange(ClusterVersion newVersion) {
-                if (!newVersion.equals(ClusterVersion.of("2.1.7"))) {
+            public void onClusterVersionChange(Version newVersion) {
+                if (!newVersion.equals(Version.of("2.1.7"))) {
                     failed.set(true);
                 }
                 latch.countDown();
             }
         };
-        nullifyClusterVersionAndVerifyListener(latch, failed, listener);
+        makeClusterVersionUnknownAndVerifyListener(latch, failed, listener);
         System.clearProperty(GroupProperty.INIT_CLUSTER_VERSION.getName());
     }
 
-    private void nullifyClusterVersionAndVerifyListener(CountDownLatch latch, AtomicBoolean failed,
-                                                        ClusterVersionListener listener)
+    private void makeClusterVersionUnknownAndVerifyListener(CountDownLatch latch, AtomicBoolean failed,
+                                                            ClusterVersionListener listener)
             throws NoSuchFieldException, IllegalAccessException {
         // directly set clusterVersion field's value to null
         Field setClusterVersionMethod = ClusterStateManager.class.getDeclaredField("clusterVersion");
         setClusterVersionMethod.setAccessible(true);
-        setClusterVersionMethod.set(node.getClusterService().getClusterStateManager(), null);
+        setClusterVersionMethod.set(node.getClusterService().getClusterStateManager(), Version.UNKNOWN);
         // register listener and assert it's successful
         assertTrue(nodeExtension.registerListener(listener));
         // listener was executed
         assertOpenEventually(latch);
         // clusterVersion field's value was actually null
-        assertNull(node.getClusterService().getClusterStateManager().getClusterVersion());
+        assertTrue(node.getClusterService().getClusterStateManager().getClusterVersion().isUnknown());
         // listener received node's codebase version as new cluster version
         assertFalse(failed.get());
     }
@@ -206,7 +220,7 @@ public class DefaultNodeExtensionTest extends HazelcastTestSupport {
         }
 
         @Override
-        public void onClusterVersionChange(ClusterVersion newVersion) {
+        public void onClusterVersionChange(Version newVersion) {
 
         }
 
@@ -214,5 +228,4 @@ public class DefaultNodeExtensionTest extends HazelcastTestSupport {
             return instance;
         }
     }
-
 }

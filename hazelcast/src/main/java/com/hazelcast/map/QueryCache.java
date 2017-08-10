@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -173,7 +173,8 @@ public interface QueryCache<K, V> {
     String getName();
 
     /**
-     * This method can be used to recover from a possible event loss situation.
+     * This method can be used to recover from a possible event loss situation. You can detect event loss
+     * via {@link com.hazelcast.map.listener.EventLostListener}
      * <p/>
      * This method tries to make consistent the data in this {@code QueryCache} with the data in the underlying {@code IMap}
      * by replaying the events after last consistently received ones. As a result of this replaying logic, same event may

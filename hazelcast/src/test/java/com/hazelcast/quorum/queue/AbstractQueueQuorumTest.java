@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.quorum.queue;
 
 import com.hazelcast.config.QueueConfig;
@@ -9,29 +25,30 @@ import com.hazelcast.quorum.QuorumType;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import org.junit.Test;
 
+import static com.hazelcast.quorum.PartitionedCluster.QUORUM_ID;
 import static com.hazelcast.test.HazelcastTestSupport.randomString;
 
 public abstract class AbstractQueueQuorumTest {
 
+    protected static final String QUEUE_NAME_PREFIX = "quorum";
+
     protected static final int QUEUE_DATA_COUNT = 50;
+    protected static final String QUEUE_NAME = QUEUE_NAME_PREFIX + randomString();
+
     protected static PartitionedCluster cluster;
     protected static IQueue<Object> q1;
     protected static IQueue<Object> q2;
     protected static IQueue<Object> q3;
     protected static IQueue<Object> q4;
     protected static IQueue<Object> q5;
-    private static final String QUEUE_NAME_PREFIX = "quorum";
-    protected static final String QUEUE_NAME = QUEUE_NAME_PREFIX + randomString();
-    private static final String QUORUM_ID = "threeNodeQuorumRule";
 
-
-    protected static void initializeFiveMemberCluster(QuorumType type, int quorumSize) throws InterruptedException {
-        final QuorumConfig quorumConfig = new QuorumConfig()
+    protected static void initializeFiveMemberCluster(QuorumType type, int quorumSize) {
+        QuorumConfig quorumConfig = new QuorumConfig()
                 .setName(QUORUM_ID)
                 .setType(type)
                 .setEnabled(true)
                 .setSize(quorumSize);
-        final QueueConfig qConfig = new QueueConfig(QUEUE_NAME_PREFIX + "*")
+        QueueConfig qConfig = new QueueConfig(QUEUE_NAME_PREFIX + "*")
                 .setBackupCount(4)
                 .setQuorumName(QUORUM_ID);
         cluster = new PartitionedCluster(new TestHazelcastInstanceFactory());

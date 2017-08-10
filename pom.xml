@@ -1,5 +1,5 @@
 <!--
-  ~ Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@
     <groupId>com.hazelcast</groupId>
     <artifactId>hazelcast-root</artifactId>
     <packaging>pom</packaging>
-    <version>3.8-SNAPSHOT</version>
+    <version>3.9-SNAPSHOT</version>
     <name>Hazelcast Root</name>
     <description>Hazelcast In-Memory DataGrid</description>
     <url>http://www.hazelcast.com/</url>
@@ -38,7 +38,7 @@
 
     <properties>
         <main.basedir>${project.basedir}</main.basedir>
-        <client.protocol.version>1.4.0-8</client.protocol.version>
+        <client.protocol.version>1.5.0-4</client.protocol.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <jdk.version>1.6</jdk.version>
@@ -71,18 +71,22 @@
         <maven.findbugs.plugin.version>3.0.1</maven.findbugs.plugin.version>
         <maven.sonar.plugin.version>2.6</maven.sonar.plugin.version>
         <maven.jacoco.plugin.version>0.7.4.201502262128</maven.jacoco.plugin.version>
-        <maven.failsafe.plugin.version>2.17</maven.failsafe.plugin.version>
+        <maven.failsafe.plugin.version>2.19</maven.failsafe.plugin.version>
         <maven.cobertura.plugin.version>2.6</maven.cobertura.plugin.version>
 
-        <log4j.version>1.2.12</log4j.version>
-        <log4j2.version>2.0.1</log4j2.version>
-        <slf4j.api.version>1.6.0</slf4j.api.version>
+        <log4j.version>1.2.17</log4j.version>
+
+        <!--- This is the last log4j2 version working with Java 6 -->
+        <log4j2.version>2.3</log4j2.version>
+        <slf4j.api.version>1.6.6</slf4j.api.version>
 
         <junit.version>4.12</junit.version>
         <hamcrest.version>1.3</hamcrest.version>
         <mockito.version>1.10.19</mockito.version>
         <powermock.version>1.6.3</powermock.version>
         <jmh.version>1.12</jmh.version>
+        <bytebuddy.version>1.6.12</bytebuddy.version>
+        <felix.utils.version>1.10.0</felix.utils.version>
 
         <findbugs.version>1.3.2</findbugs.version>
 
@@ -166,7 +170,6 @@
                     <include>**/*.xsd</include>
                     <include>**/*.handlers</include>
                     <include>**/*.schemas</include>
-                    <include>**/*.txt</include>
                 </includes>
             </resource>
             <resource>
@@ -236,6 +239,7 @@
                 <version>${maven.surefire.plugin.version}</version>
                 <configuration combine.self="override">
                     <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                    <useFile>false</useFile>
                     <runOrder>failedfirst</runOrder>
 
                     <!-- 1C means 1 process per cpu core -->
@@ -247,10 +251,9 @@
                     <parallel>methods</parallel -->
                     <!-- JaCoCo will use the argLine set here. Test profiles override it. -->
                     <argLine>
-                        -Xms128m -Xmx1G -XX:MaxPermSize=128M
+                        -Xms128m -Xmx2G -XX:MaxPermSize=1024M
                         -Dhazelcast.phone.home.enabled=false
                         -Dhazelcast.mancenter.enabled=false
-                        -Dhazelcast.logging.type=none
                         -Dhazelcast.test.use.network=false
                     </argLine>
                     <includes>
@@ -258,19 +261,59 @@
                     </includes>
                     <excludes>
                         <exclude>**/jsr/**.java</exclude>
+                        <exclude>**/**IT.java</exclude>
                         <exclude>**/client/**Request.*</exclude>
                     </excludes>
                     <groups>com.hazelcast.test.annotation.QuickTest</groups>
                     <excludedGroups>
-                        com.hazelcast.test.annotation.SlowTest,com.hazelcast.test.annotation.NightlyTest
+                        com.hazelcast.test.annotation.SlowTest,
+                        com.hazelcast.test.annotation.NightlyTest
                     </excludedGroups>
                 </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.github.jerrinot.maven-surefire</groupId>
+                        <artifactId>maven-surefire-common</artifactId>
+                        <version>${maven.surefire.plugin.version}-buffered</version>
+                    </dependency>
+                </dependencies>
             </plugin>
 
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>sonar-maven-plugin</artifactId>
                 <version>${maven.sonar.plugin.version}</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>${maven.failsafe.plugin.version}</version>
+                <configuration combine.self="override">
+                    <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                    <argLine>
+                        -Xms129m -Xmx1G -XX:MaxPermSize=129M
+                        -Dhazelcast.phone.home.enabled=false
+                        -Dhazelcast.mancenter.enabled=false
+                        -Dhazelcast.logging.type=none
+                        -Dhazelcast.test.use.network=true
+                    </argLine>
+                    <useManifestOnlyJar>false</useManifestOnlyJar>
+                    <useSystemClassLoader>true</useSystemClassLoader>
+                    <groups>com.hazelcast.test.annotation.QuickTest</groups>
+                    <excludedGroups>
+                        com.hazelcast.test.annotation.SlowTest,
+                        com.hazelcast.test.annotation.NightlyTest
+                    </excludedGroups>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
@@ -293,11 +336,12 @@
                                 </goals>
                                 <configuration combine.self="override">
                                     <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                                    <useFile>false</useFile>
                                     <!-- 1C means 1 process per cpu core -->
                                     <forkCount>1C</forkCount>
                                     <reuseForks>true</reuseForks>
                                     <argLine>
-                                        -Xms128m -Xmx1G -XX:MaxPermSize=128M
+                                        -Xms128m -Xmx1G -XX:MaxPermSize=128M -ea
                                         -Dhazelcast.phone.home.enabled=false
                                         -Dhazelcast.mancenter.enabled=false
                                         -Dhazelcast.logging.type=none
@@ -309,12 +353,15 @@
                                     </includes>
                                     <excludes>
                                         <exclude>**/jsr/**.java</exclude>
+                                        <exclude>**/**IT.java</exclude>
                                     </excludes>
-                                    <groups>com.hazelcast.test.annotation.ParallelTest AND
-                                        com.hazelcast.test.annotation.QuickTest
+                                    <groups>
+                                        com.hazelcast.test.annotation.QuickTest AND
+                                        com.hazelcast.test.annotation.ParallelTest
                                     </groups>
                                     <excludedGroups>
-                                        com.hazelcast.test.annotation.SlowTest,com.hazelcast.test.annotation.NightlyTest
+                                        com.hazelcast.test.annotation.SlowTest,
+                                        com.hazelcast.test.annotation.NightlyTest
                                     </excludedGroups>
                                     <systemPropertyVariables>
                                         <multipleJVM>true</multipleJVM>
@@ -329,7 +376,7 @@
                                 </goals>
                                 <configuration combine.self="override">
                                     <redirectTestOutputToFile>true</redirectTestOutputToFile>
-
+                                    <useFile>false</useFile>
                                     <argLine>
                                         -Xms128m -Xmx1G -XX:MaxPermSize=128M
                                         -Dhazelcast.phone.home.enabled=false
@@ -342,14 +389,24 @@
                                     </includes>
                                     <excludes>
                                         <exclude>**/jsr/**.java</exclude>
+                                        <exclude>**/**IT.java</exclude>
                                     </excludes>
                                     <groups>com.hazelcast.test.annotation.QuickTest</groups>
                                     <excludedGroups>
-                                        com.hazelcast.test.annotation.SlowTest,com.hazelcast.test.annotation.NightlyTest,com.hazelcast.test.annotation.ParallelTest
+                                        com.hazelcast.test.annotation.SlowTest,
+                                        com.hazelcast.test.annotation.NightlyTest,
+                                        com.hazelcast.test.annotation.ParallelTest
                                     </excludedGroups>
                                 </configuration>
                             </execution>
                         </executions>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.github.jerrinot.maven-surefire</groupId>
+                                <artifactId>maven-surefire-common</artifactId>
+                                <version>${maven.surefire.plugin.version}-buffered</version>
+                            </dependency>
+                        </dependencies>
                     </plugin>
                 </plugins>
             </build>
@@ -365,6 +422,7 @@
                         <version>${maven.surefire.plugin.version}</version>
                         <configuration combine.self="override">
                             <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <useFile>false</useFile>
                             <argLine>
                                 -Xms128m -Xmx1G -XX:MaxPermSize=128M
                                 -Dhazelcast.phone.home.enabled=false
@@ -376,12 +434,21 @@
                             </includes>
                             <excludes>
                                 <exclude>**/jsr/**.java</exclude>
+                                <exclude>**/**IT.java</exclude>
                             </excludes>
                             <groups>com.hazelcast.test.annotation.QuickTest</groups>
                             <excludedGroups>
-                                com.hazelcast.test.annotation.SlowTest,com.hazelcast.test.annotation.NightlyTest
+                                com.hazelcast.test.annotation.SlowTest,
+                                com.hazelcast.test.annotation.NightlyTest
                             </excludedGroups>
                         </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.github.jerrinot.maven-surefire</groupId>
+                                <artifactId>maven-surefire-common</artifactId>
+                                <version>${maven.surefire.plugin.version}-buffered</version>
+                            </dependency>
+                        </dependencies>
                     </plugin>
                 </plugins>
             </build>
@@ -417,6 +484,7 @@
                         <version>${maven.surefire.plugin.version}</version>
                         <configuration combine.self="override">
                             <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <useFile>false</useFile>
                             <testFailureIgnore>true</testFailureIgnore>
                             <argLine>
                                 -Xms128m -Xmx1G -XX:MaxPermSize=128M
@@ -430,11 +498,19 @@
                                 -Djavax.cache.Cache.Entry=${CacheEntryImpl}
                                 -Dorg.jsr107.tck.management.agentId=${org.jsr107.tck.management.agentId}
                                 -Djavax.cache.annotation.CacheInvocationContext=${javax.cache.annotation.CacheInvocationContext}
+                                -Dlog4j.skipJansi=true
                             </argLine>
                             <includes>
                                 <include>**/YourTestFileHear.java</include>
                             </includes>
                         </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.github.jerrinot.maven-surefire</groupId>
+                                <artifactId>maven-surefire-common</artifactId>
+                                <version>${maven.surefire.plugin.version}-buffered</version>
+                            </dependency>
+                        </dependencies>
                     </plugin>
                 </plugins>
             </build>
@@ -464,6 +540,7 @@
                     -Djavax.cache.Cache.Entry=${CacheEntryImpl}
                     -Dorg.jsr107.tck.management.agentId=${org.jsr107.tck.management.agentId}
                     -Djavax.cache.annotation.CacheInvocationContext=${javax.cache.annotation.CacheInvocationContext}
+                    -Dlog4j.skipJansi=true
                 </argLine>
             </properties>
             <build>
@@ -498,16 +575,26 @@
                         <version>${maven.surefire.plugin.version}</version>
                         <configuration combine.self="override">
                             <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <useFile>false</useFile>
                             <testFailureIgnore>true</testFailureIgnore>
                             <includes>
                                 <include>**/*.java</include>
                             </includes>
-                            <groups>com.hazelcast.test.annotation.QuickTest,com.hazelcast.test.annotation.SlowTest
+                            <groups>
+                                com.hazelcast.test.annotation.QuickTest,
+                                com.hazelcast.test.annotation.SlowTest
                             </groups>
                             <excludedGroups>
                                 com.hazelcast.test.annotation.NightlyTest
                             </excludedGroups>
                         </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.github.jerrinot.maven-surefire</groupId>
+                                <artifactId>maven-surefire-common</artifactId>
+                                <version>${maven.surefire.plugin.version}-buffered</version>
+                            </dependency>
+                        </dependencies>
                     </plugin>
                 </plugins>
             </build>
@@ -573,6 +660,7 @@
                         <version>${maven.surefire.plugin.version}</version>
                         <configuration combine.self="override">
                             <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <useFile>false</useFile>
                             <testFailureIgnore>true</testFailureIgnore>
                             <argLine>
                                 -Xms128m -Xmx1G -XX:MaxPermSize=128M
@@ -586,6 +674,7 @@
                                 -Djavax.cache.Cache.Entry=${CacheEntryImpl}
                                 -Dorg.jsr107.tck.management.agentId=${org.jsr107.tck.management.agentId}
                                 -Djavax.cache.annotation.CacheInvocationContext=${javax.cache.annotation.CacheInvocationContext}
+                                -Dlog4j.skipJansi=true
                             </argLine>
 
                             <includes>
@@ -594,7 +683,9 @@
                                 <include>**/LockTest*.java</include>
                             </includes>
 
-                            <groups>com.hazelcast.test.annotation.QuickTest,com.hazelcast.test.annotation.SlowTest
+                            <groups>
+                                com.hazelcast.test.annotation.QuickTest,
+                                com.hazelcast.test.annotation.SlowTest
                             </groups>
                             <excludedGroups>
                                 com.hazelcast.test.annotation.NightlyTest
@@ -621,7 +712,9 @@
                                 <include>**/AtomicReferenceTest*.java</include>
                             </includes>
                             <groups>
-                                com.hazelcast.test.annotation.QuickTest,com.hazelcast.test.annotation.SlowTest,com.hazelcast.test.annotation.NightlyTest
+                                com.hazelcast.test.annotation.QuickTest,
+                                com.hazelcast.test.annotation.SlowTest,
+                                com.hazelcast.test.annotation.NightlyTest
                             </groups>
 
                         </configuration>
@@ -632,6 +725,13 @@
                                 </goals>
                             </execution>
                         </executions>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.github.jerrinot.maven-surefire</groupId>
+                                <artifactId>maven-surefire-common</artifactId>
+                                <version>${maven.surefire.plugin.version}-buffered</version>
+                            </dependency>
+                        </dependencies>
                     </plugin>
                 </plugins>
             </build>
@@ -828,8 +928,9 @@
                         <configuration combine.self="override">
                             <parallel>none</parallel>
                             <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <useFile>false</useFile>
                             <argLine>
-                                -Xms128m -Xmx1G -XX:MaxPermSize=128M
+                                -Xms128m -Xmx1G -XX:MaxPermSize=1024M
                                 -Dhazelcast.phone.home.enabled=false
                                 -Dhazelcast.mancenter.enabled=false
                                 -Dhazelcast.logging.type=none
@@ -840,10 +941,49 @@
                                 -Djavax.cache.Cache.Entry=${CacheEntryImpl}
                                 -Dorg.jsr107.tck.management.agentId=${org.jsr107.tck.management.agentId}
                                 -Djavax.cache.annotation.CacheInvocationContext=${javax.cache.annotation.CacheInvocationContext}
+                                -Dlog4j.skipJansi=true
                             </argLine>
-                            <groups>com.hazelcast.test.annotation.NightlyTest,com.hazelcast.test.annotation.SlowTest
+                            <groups>
+                                com.hazelcast.test.annotation.NightlyTest,
+                                com.hazelcast.test.annotation.SlowTest
                             </groups>
                         </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.github.jerrinot.maven-surefire</groupId>
+                                <artifactId>maven-surefire-common</artifactId>
+                                <version>${maven.surefire.plugin.version}-buffered</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <version>${maven.failsafe.plugin.version}</version>
+                        <configuration combine.self="override">
+                            <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <argLine>
+                                -Xms129m -Xmx1G -XX:MaxPermSize=129M
+                                -Dhazelcast.phone.home.enabled=false
+                                -Dhazelcast.mancenter.enabled=false
+                                -Dhazelcast.logging.type=none
+                                -Dhazelcast.test.use.network=true
+                            </argLine>
+                            <useManifestOnlyJar>false</useManifestOnlyJar>
+                            <useSystemClassLoader>true</useSystemClassLoader>
+                            <groups>
+                                com.hazelcast.test.annotation.NightlyTest,
+                                com.hazelcast.test.annotation.SlowTest
+                            </groups>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
                     </plugin>
                 </plugins>
             </build>
@@ -859,9 +999,10 @@
                         <version>${maven.surefire.plugin.version}</version>
                         <configuration combine.self="override">
                             <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <useFile>false</useFile>
                             <parallel>none</parallel>
                             <argLine>
-                                -Xms512m -Xmx2G -XX:MaxPermSize=128M
+                                -Xms512m -Xmx2G -XX:MaxPermSize=1024M
                                 -Dhazelcast.phone.home.enabled=false
                                 -Dhazelcast.mancenter.enabled=false
                                 -Dhazelcast.logging.type=none
@@ -872,17 +1013,58 @@
                                 -Djavax.cache.Cache.Entry=${CacheEntryImpl}
                                 -Dorg.jsr107.tck.management.agentId=${org.jsr107.tck.management.agentId}
                                 -Djavax.cache.annotation.CacheInvocationContext=${javax.cache.annotation.CacheInvocationContext}
+                                -Dlog4j.skipJansi=true
                             </argLine>
                             <includes>
                                 <include>**/**.java</include>
                             </includes>
                             <excludes>
                                 <exclude>**/jsr/**.java</exclude>
+                                <exclude>**/**IT.java</exclude>
                             </excludes>
                             <groups>
-                                com.hazelcast.test.annotation.QuickTest,com.hazelcast.test.annotation.SlowTest,com.hazelcast.test.annotation.NightlyTest
+                                com.hazelcast.test.annotation.QuickTest,
+                                com.hazelcast.test.annotation.SlowTest,
+                                com.hazelcast.test.annotation.NightlyTest
                             </groups>
                         </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.github.jerrinot.maven-surefire</groupId>
+                                <artifactId>maven-surefire-common</artifactId>
+                                <version>${maven.surefire.plugin.version}-buffered</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <version>${maven.failsafe.plugin.version}</version>
+                        <configuration combine.self="override">
+                            <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <argLine>
+                                -Xms129m -Xmx1G -XX:MaxPermSize=129M
+                                -Dhazelcast.phone.home.enabled=false
+                                -Dhazelcast.mancenter.enabled=false
+                                -Dhazelcast.logging.type=none
+                                -Dhazelcast.test.use.network=true
+                            </argLine>
+                            <useManifestOnlyJar>false</useManifestOnlyJar>
+                            <useSystemClassLoader>true</useSystemClassLoader>
+                            <groups>
+                                com.hazelcast.test.annotation.QuickTest,
+                                com.hazelcast.test.annotation.SlowTest,
+                                com.hazelcast.test.annotation.NightlyTest
+                            </groups>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
                     </plugin>
                 </plugins>
             </build>
@@ -901,6 +1083,7 @@
                         <version>${maven.surefire.plugin.version}</version>
                         <configuration combine.self="override">
                             <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <useFile>false</useFile>
                             <argLine>
                                 -Xms128m -Xmx1G
                                 -Dhazelcast.phone.home.enabled=false
@@ -912,10 +1095,69 @@
                             </includes>
                             <excludes>
                                 <exclude>**/jsr/**.java</exclude>
+                                <exclude>**/**IT.java</exclude>
                             </excludes>
                             <groups>com.hazelcast.test.annotation.QuickTest</groups>
                             <excludedGroups>
-                                com.hazelcast.test.annotation.SlowTest,com.hazelcast.test.annotation.NightlyTest
+                                com.hazelcast.test.annotation.SlowTest,
+                                com.hazelcast.test.annotation.NightlyTest
+                            </excludedGroups>
+                        </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.github.jerrinot.maven-surefire</groupId>
+                                <artifactId>maven-surefire-common</artifactId>
+                                <version>${maven.surefire.plugin.version}-buffered</version>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <!-- same as default build (excludes Nightly & Slow tests), outputs serialized objects to a blob -->
+            <!-- for compatibility testing -->
+            <id>generate-compatibility-samples</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>${maven.surefire.plugin.version}</version>
+                        <configuration combine.self="override">
+                            <properties>
+                                <property>
+                                    <name>listener</name>
+                                    <value>com.hazelcast.test.compatibility.SamplingRunListener</value>
+                                </property>
+                            </properties>
+                            <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                            <runOrder>failedfirst</runOrder>
+                            <argLine>
+                                -Xms128m -Xmx1G -XX:MaxPermSize=128M
+                                -Dhazelcast.phone.home.enabled=false
+                                -Dhazelcast.mancenter.enabled=false
+                                -Dhazelcast.test.use.network=false
+                                -Dhazelcast.test.sample.serialized.objects=${target.dir}/serialized-objects-${project.version}-
+                            </argLine>
+                            <includes>
+                                <include>**/**.java</include>
+                            </includes>
+                            <excludes>
+                                <exclude>**/jsr/**.java</exclude>
+                                <exclude>**/client/**Request.*</exclude>
+                                <!-- code triggered by UserCodeDeploymentSmokeTest and OperationRunnerImplTest -->
+                                <!-- casts to SerializationServiceV1 and fails when Node is configured with the -->
+                                <!-- wrapper ClassRecordingSerializationService -->
+                                <exclude>**/UserCodeDeploymentSmokeTest.java</exclude>
+                                <exclude>**/OperationRunnerImplTest.java</exclude>
+                                <exclude>**/**IT.java</exclude>
+                            </excludes>
+                            <groups>com.hazelcast.test.annotation.QuickTest</groups>
+                            <excludedGroups>
+                                com.hazelcast.test.annotation.SlowTest,
+                                com.hazelcast.test.annotation.NightlyTest
                             </excludedGroups>
                         </configuration>
                     </plugin>
@@ -943,7 +1185,24 @@
             <name>Maven2 Snapshot Repository</name>
             <url>https://oss.sonatype.org/content/repositories/snapshots</url>
         </repository>
+        <repository>
+            <id>backup-repo</id>
+            <url>http://repo2.maven.org/maven2/</url>
+        </repository>
+        <repository>
+            <id>release-repository</id>
+            <name>release repository</name>
+            <url>https://oss.sonatype.org/content/repositories/releases</url>
+        </repository>
     </repositories>
+
+    <pluginRepositories>
+        <!-- JitPack repository is needed to fetch patch surefire-common plugin -->
+        <pluginRepository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </pluginRepository>
+    </pluginRepositories>
 
     <dependencies>
         <dependency>
@@ -997,9 +1256,9 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>log4j</groupId>
-            <artifactId>log4j</artifactId>
-            <version>${log4j.version}</version>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>${log4j2.version}</version>
             <scope>test</scope>
             <optional>true</optional>
         </dependency>
@@ -1008,6 +1267,20 @@
             <artifactId>annotations</artifactId>
             <version>3.0.0</version>
             <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy</artifactId>
+            <version>${bytebuddy.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy-agent</artifactId>
+            <version>${bytebuddy.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
+
 </project>

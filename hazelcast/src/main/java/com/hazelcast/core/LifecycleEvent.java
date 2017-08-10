@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,8 +40,24 @@ public final class LifecycleEvent {
         STARTED,
         SHUTTING_DOWN,
         SHUTDOWN,
+        /**
+         * Fired on each cluster members just before starting a merge process into another cluster.
+         * This is typically used when a split-brain situation is healed.
+         *
+         */
         MERGING,
+
+        /**
+         * Indicates merge process was successful and data have been merged.
+         *
+         */
         MERGED,
+
+        /**
+         * Indicates merge process failed for some reason.
+         *
+         */
+        MERGE_FAILED,
         CLIENT_CONNECTED,
         CLIENT_DISCONNECTED
     }

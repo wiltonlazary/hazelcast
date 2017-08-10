@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,10 @@ import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.client.LoadBalancer;
 import com.hazelcast.client.config.ClientAwsConfig;
 import com.hazelcast.client.config.ClientConfig;
+import com.hazelcast.client.config.ClientConnectionStrategyConfig;
+import com.hazelcast.client.config.ClientConnectionStrategyConfig.ReconnectMode;
 import com.hazelcast.client.config.ClientNetworkConfig;
+import com.hazelcast.client.config.ClientUserCodeDeploymentConfig;
 import com.hazelcast.client.config.ProxyFactoryConfig;
 import com.hazelcast.client.impl.HazelcastClientProxy;
 import com.hazelcast.client.util.RoundRobinLB;
@@ -29,6 +32,7 @@ import com.hazelcast.config.EvictionConfig;
 import com.hazelcast.config.EvictionPolicy;
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.NearCacheConfig;
+import com.hazelcast.config.NearCachePreloaderConfig;
 import com.hazelcast.config.QueryCacheConfig;
 import com.hazelcast.config.SerializationConfig;
 import com.hazelcast.config.SerializerConfig;
@@ -63,6 +67,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
+import static com.hazelcast.config.NearCacheConfig.LocalUpdatePolicy.CACHE_ON_UPDATE;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -93,6 +98,12 @@ public class TestClientApplicationContext {
 
     @Resource(name = "client7-empty-serialization-config")
     private HazelcastClientProxy client7;
+
+    @Resource(name = "client8")
+    private HazelcastClientProxy client8;
+
+    @Resource(name = "user-code-deployment-test")
+    private HazelcastClientProxy userCodeDeploymentTestClient;
 
     @Resource(name = "instance")
     private HazelcastInstance instance;
@@ -164,70 +175,69 @@ public class TestClientApplicationContext {
         client.getMap("default").put("Q", "q");
         client2.getMap("default").put("X", "x");
 
-        final IMap<Object, Object> map = instance.getMap("default");
+        IMap<Object, Object> map = instance.getMap("default");
         assertEquals("q", map.get("Q"));
         assertEquals("x", map.get("X"));
 
         ClientConfig config3 = client3.getClientConfig();
-        final SerializationConfig serConf = config3.getSerializationConfig();
+        SerializationConfig serConf = config3.getSerializationConfig();
 
         assertEquals(ByteOrder.BIG_ENDIAN, serConf.getByteOrder());
-        assertEquals(false, serConf.isAllowUnsafe());
-        assertEquals(false, serConf.isCheckClassDefErrors());
-        assertEquals(false, serConf.isEnableCompression());
-        assertEquals(false, serConf.isEnableSharedObject());
-        assertEquals(false, serConf.isUseNativeByteOrder());
+        assertFalse(serConf.isAllowUnsafe());
+        assertFalse(serConf.isCheckClassDefErrors());
+        assertFalse(serConf.isEnableCompression());
+        assertFalse(serConf.isEnableSharedObject());
+        assertFalse(serConf.isUseNativeByteOrder());
         assertEquals(10, serConf.getPortableVersion());
 
-        final Map<Integer, String> map1 = serConf.getDataSerializableFactoryClasses();
+        Map<Integer, String> map1 = serConf.getDataSerializableFactoryClasses();
         assertNotNull(map1);
         assertTrue(map1.containsKey(1));
         assertEquals("com.hazelcast.spring.serialization.DummyDataSerializableFactory", map1.get(1));
 
-        final Map<Integer, String> portableFactoryClasses = serConf.getPortableFactoryClasses();
+        Map<Integer, String> portableFactoryClasses = serConf.getPortableFactoryClasses();
         assertNotNull(portableFactoryClasses);
         assertTrue(portableFactoryClasses.containsKey(2));
         assertEquals("com.hazelcast.spring.serialization.DummyPortableFactory", portableFactoryClasses.get(2));
 
-        final Collection<SerializerConfig> serializerConfigs = serConf.getSerializerConfigs();
-
+        Collection<SerializerConfig> serializerConfigs = serConf.getSerializerConfigs();
         assertNotNull(serializerConfigs);
 
-        final SerializerConfig serializerConfig = serializerConfigs.iterator().next();
+        SerializerConfig serializerConfig = serializerConfigs.iterator().next();
         assertNotNull(serializerConfig);
         assertEquals("com.hazelcast.nio.serialization.CustomSerializationTest$FooXmlSerializer", serializerConfig.getClassName());
         assertEquals("com.hazelcast.nio.serialization.CustomSerializationTest$Foo", serializerConfig.getTypeClassName());
 
-        final List<ProxyFactoryConfig> proxyFactoryConfigs = config3.getProxyFactoryConfigs();
+        List<ProxyFactoryConfig> proxyFactoryConfigs = config3.getProxyFactoryConfigs();
         assertNotNull(proxyFactoryConfigs);
-        final ProxyFactoryConfig proxyFactoryConfig = proxyFactoryConfigs.get(0);
+        ProxyFactoryConfig proxyFactoryConfig = proxyFactoryConfigs.get(0);
         assertNotNull(proxyFactoryConfig);
         assertEquals("com.hazelcast.spring.DummyProxyFactory", proxyFactoryConfig.getClassName());
         assertEquals("MyService", proxyFactoryConfig.getService());
 
-        final LoadBalancer loadBalancer = config3.getLoadBalancer();
+        LoadBalancer loadBalancer = config3.getLoadBalancer();
         assertNotNull(loadBalancer);
-
         assertTrue(loadBalancer instanceof RoundRobinLB);
 
-        final NearCacheConfig nearCacheConfig = config3.getNearCacheConfig("default");
-
+        NearCacheConfig nearCacheConfig = config3.getNearCacheConfig("default");
         assertNotNull(nearCacheConfig);
 
         assertEquals(1, nearCacheConfig.getTimeToLiveSeconds());
         assertEquals(70, nearCacheConfig.getMaxIdleSeconds());
         assertEquals(EvictionPolicy.LRU, nearCacheConfig.getEvictionConfig().getEvictionPolicy());
         assertEquals(4000, nearCacheConfig.getEvictionConfig().getSize());
-        assertEquals(true, nearCacheConfig.isInvalidateOnChange());
+        assertTrue(nearCacheConfig.isInvalidateOnChange());
+        assertFalse(nearCacheConfig.isSerializeKeys());
+        assertEquals(CACHE_ON_UPDATE, nearCacheConfig.getLocalUpdatePolicy());
     }
 
     @Test
     public void testAwsClientConfig() {
         assertNotNull(client4);
         ClientConfig config = client4.getClientConfig();
-        final ClientNetworkConfig networkConfig = config.getNetworkConfig();
+        ClientNetworkConfig networkConfig = config.getNetworkConfig();
 
-        final ClientAwsConfig awsConfig = networkConfig.getAwsConfig();
+        ClientAwsConfig awsConfig = networkConfig.getAwsConfig();
         assertFalse(awsConfig.isEnabled());
         assertTrue(awsConfig.isInsideAws());
         assertEquals("sample-access-key", awsConfig.getAccessKey());
@@ -241,10 +251,9 @@ public class TestClientApplicationContext {
     @Test
     public void testUnlimitedConnectionAttempt() {
         assertNotNull(client5);
-        ClientConfig config = client5.getClientConfig();
-        final ClientNetworkConfig networkConfig = config.getNetworkConfig();
 
-        assertEquals(0, networkConfig.getConnectionAttemptLimit());
+        ClientConfig config = client5.getClientConfig();
+        assertEquals(0, config.getNetworkConfig().getConnectionAttemptLimit());
     }
 
     @Test
@@ -279,15 +288,54 @@ public class TestClientApplicationContext {
     @Test
     public void testDefaultSerializationConfig() {
         ClientConfig config7 = client7.getClientConfig();
-        final SerializationConfig serConf = config7.getSerializationConfig();
+        SerializationConfig serConf = config7.getSerializationConfig();
 
         assertEquals(ByteOrder.BIG_ENDIAN, serConf.getByteOrder());
-        assertEquals(false, serConf.isAllowUnsafe());
-        assertEquals(true, serConf.isCheckClassDefErrors());
-        assertEquals(false, serConf.isEnableCompression());
-        assertEquals(true, serConf.isEnableSharedObject());
-        assertEquals(false, serConf.isUseNativeByteOrder());
+        assertFalse(serConf.isAllowUnsafe());
+        assertTrue(serConf.isCheckClassDefErrors());
+        assertFalse(serConf.isEnableCompression());
+        assertTrue(serConf.isEnableSharedObject());
+        assertFalse(serConf.isUseNativeByteOrder());
         assertEquals(0, serConf.getPortableVersion());
+    }
+
+    @Test
+    public void testClientNearCacheEvictionPolicies() {
+        ClientConfig config = client3.getClientConfig();
+        assertEquals(EvictionPolicy.LFU, getNearCacheEvictionPolicy("lfuNearCacheEviction", config));
+        assertEquals(EvictionPolicy.LRU, getNearCacheEvictionPolicy("lruNearCacheEviction", config));
+        assertEquals(EvictionPolicy.NONE, getNearCacheEvictionPolicy("noneNearCacheEviction", config));
+        assertEquals(EvictionPolicy.RANDOM, getNearCacheEvictionPolicy("randomNearCacheEviction", config));
+    }
+
+    @Test
+    public void testNearCachePreloader() {
+        NearCachePreloaderConfig preloaderConfig = client3.getClientConfig()
+                .getNearCacheConfig("preloader")
+                .getPreloaderConfig();
+
+        assertTrue(preloaderConfig.isEnabled());
+        assertEquals("/tmp/preloader", preloaderConfig.getDirectory());
+        assertEquals(23, preloaderConfig.getStoreInitialDelaySeconds());
+        assertEquals(42, preloaderConfig.getStoreIntervalSeconds());
+    }
+
+    @Test
+    public void testUserCodeDeploymentConfig() {
+        ClientConfig config = userCodeDeploymentTestClient.getClientConfig();
+        ClientUserCodeDeploymentConfig userCodeDeploymentConfig = config.getUserCodeDeploymentConfig();
+        List<String> classNames = userCodeDeploymentConfig.getClassNames();
+        assertFalse(userCodeDeploymentConfig.isEnabled());
+        assertEquals(2, classNames.size());
+        assertTrue(classNames.contains("SampleClassName1"));
+        assertTrue(classNames.contains("SampleClassName2"));
+        List<String> jarPaths = userCodeDeploymentConfig.getJarPaths();
+        assertEquals(1, jarPaths.size());
+        assertTrue(jarPaths.contains("/User/jar/path/test.jar"));
+    }
+
+    private EvictionPolicy getNearCacheEvictionPolicy(String mapName, ClientConfig clientConfig) {
+        return clientConfig.getNearCacheConfig(mapName).getEvictionConfig().getEvictionPolicy();
     }
 
     @Test
@@ -316,7 +364,14 @@ public class TestClientApplicationContext {
         assertEquals(111, queryCacheConfig.getEvictionConfig().getSize());
     }
 
-    private QueryCacheConfig getQueryCacheConfig(ClientConfig config) {
+    @Test
+    public void testClientConnectionStrategyConfig() {
+        ClientConnectionStrategyConfig connectionStrategyConfig = client8.getClientConfig().getConnectionStrategyConfig();
+        assertTrue(connectionStrategyConfig.isAsyncStart());
+        assertEquals(ReconnectMode.ASYNC, connectionStrategyConfig.getReconnectMode());
+    }
+
+    private static QueryCacheConfig getQueryCacheConfig(ClientConfig config) {
         Map<String, Map<String, QueryCacheConfig>> queryCacheConfigs = config.getQueryCacheConfigs();
         Collection<Map<String, QueryCacheConfig>> values = queryCacheConfigs.values();
         for (Map<String, QueryCacheConfig> value : values) {

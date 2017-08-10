@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map.impl;
 
 import com.hazelcast.config.Config;
@@ -20,8 +36,8 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Random;
 
+import static com.hazelcast.nio.IOUtil.deleteQuietly;
 import static com.hazelcast.test.TestStringUtils.fileAsText;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -32,8 +48,6 @@ public class StoreLatencyPlugin_MapIntegrationTest extends HazelcastTestSupport 
 
     @Before
     public void setup() throws Exception {
-        setLoggingLog4j();
-
         Config config = new Config()
                 .setProperty("hazelcast.diagnostics.enabled", "true")
                 .setProperty("hazelcast.diagnostics.storeLatency.period.seconds", "1");
@@ -45,9 +59,9 @@ public class StoreLatencyPlugin_MapIntegrationTest extends HazelcastTestSupport 
     }
 
     @After
-    public void after(){
+    public void after() {
         File file = getNodeEngineImpl(hz).getDiagnostics().currentFile();
-        file.delete();
+        deleteQuietly(file);
     }
 
     @Test
@@ -61,7 +75,7 @@ public class StoreLatencyPlugin_MapIntegrationTest extends HazelcastTestSupport 
             public void run() throws Exception {
                 File file = getNodeEngineImpl(hz).getDiagnostics().currentFile();
                 String content = fileAsText(file);
-                assertTrue(content.contains("mappy"));
+                assertContains(content, "mappy");
             }
         });
     }

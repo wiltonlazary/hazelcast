@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 
 package com.hazelcast.aggregation;
-
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
 
 import java.io.Serializable;
 
@@ -36,7 +34,6 @@ import java.io.Serializable;
  * @param <R> result type
  * @since 3.8
  */
-@BinaryInterface
 public abstract class Aggregator<I, R> implements Serializable {
 
     /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import com.hazelcast.client.impl.client.SecureRequest;
 import com.hazelcast.client.impl.protocol.ClientExceptionFactory;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
+import com.hazelcast.instance.BuildInfo;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.logging.ILogger;
@@ -35,7 +36,6 @@ import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.util.ExceptionUtil;
 
 import java.security.Permission;
-import java.util.logging.Level;
 
 /**
  * Base Message task.
@@ -44,7 +44,7 @@ public abstract class AbstractMessageTask<P> implements MessageTask, SecureReque
 
     protected final ClientMessage clientMessage;
 
-    protected volatile Connection connection;
+    protected final Connection connection;
     protected final ClientEndpoint endpoint;
     protected final NodeEngineImpl nodeEngine;
     protected final InternalSerializationService serializationService;
@@ -134,7 +134,7 @@ public abstract class AbstractMessageTask<P> implements MessageTask, SecureReque
             exception = new HazelcastInstanceNotActiveException();
         }
         sendClientMessage(exception);
-        endpointManager.removeEndpoint(endpoint, "Authentication failed. " + exception.getMessage());
+        connection.close("Authentication failed. " + exception.getMessage(), null);
     }
 
     private void handleMissingEndpoint() {
@@ -148,11 +148,11 @@ public abstract class AbstractMessageTask<P> implements MessageTask, SecureReque
     }
 
     private void logProcessingFailure(Throwable throwable) {
-        if (logger.isLoggable(Level.FINEST)) {
+        if (logger.isFinestEnabled()) {
             if (parameters == null) {
-                logger.log(Level.FINEST, throwable.getMessage(), throwable);
+                logger.finest(throwable.getMessage(), throwable);
             } else {
-                logger.log(Level.FINEST, "While executing request: " + parameters + " -> " + throwable.getMessage(), throwable);
+                logger.finest("While executing request: " + parameters + " -> " + throwable.getMessage(), throwable);
             }
         }
     }
@@ -203,28 +203,11 @@ public abstract class AbstractMessageTask<P> implements MessageTask, SecureReque
         resultClientMessage.setCorrelationId(clientMessage.getCorrelationId());
         resultClientMessage.addFlag(ClientMessage.BEGIN_AND_END_FLAGS);
         resultClientMessage.setVersion(ClientMessage.VERSION);
-        final Connection endpointConnection = findSendConnection();
         //TODO framing not implemented yet, should be split into frames before writing to connection
-        endpointConnection.write(resultClientMessage);
-    }
-
-    protected Connection findSendConnection() {
-        if (connection.isAlive()) {
-            return connection;
-        }
-
-        String clientUuid = endpoint.getUuid();
-        // The connection may have changed for listener tasks, hence try find a connection to the client
-        if (null != clientUuid) {
-            Connection conn = endpointManager.findLiveConnectionFor(clientUuid);
-            if (null != conn) {
-                // update the connection for this task so that the new messages will use this new live connection
-                connection = conn;
-                return conn;
-            }
-        }
-
-        return connection;
+        // PETER: There is no point in chopping it up in frames and in 1 go write all these frames because it still will
+        // not allow any interleaving with operations. It will only slow down the system. Framing should be done inside
+        // the io system; not outside.
+        connection.write(resultClientMessage);
     }
 
     protected void sendClientMessage(Object key, ClientMessage resultClientMessage) {
@@ -254,4 +237,8 @@ public abstract class AbstractMessageTask<P> implements MessageTask, SecureReque
 
     @Override
     public abstract Object[] getParameters();
+
+    protected final BuildInfo getMemberBuildInfo() {
+        return node.getBuildInfo();
+    }
 }

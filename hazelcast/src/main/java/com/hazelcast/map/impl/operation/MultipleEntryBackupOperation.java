@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,9 @@ import com.hazelcast.spi.BackupOperation;
 
 import java.io.IOException;
 import java.util.LinkedHashSet;
-import java.util.Map;
 import java.util.Set;
+
+import static com.hazelcast.map.impl.operation.EntryOperator.operator;
 
 public class MultipleEntryBackupOperation extends AbstractMultipleEntryBackupOperation implements BackupOperation {
 
@@ -42,29 +43,9 @@ public class MultipleEntryBackupOperation extends AbstractMultipleEntryBackupOpe
 
     @Override
     public void run() throws Exception {
+        EntryOperator operator = operator(this, backupProcessor, getPredicate(), true);
         for (Data key : keys) {
-            if (!isKeyProcessable(key)) {
-                continue;
-            }
-
-            Object value = recordStore.get(key, true);
-
-            Map.Entry entry = createMapEntry(key, value);
-            if (!isEntryProcessable(entry)) {
-                continue;
-            }
-
-            processBackup(entry);
-
-            if (noOp(entry, value)) {
-                continue;
-            }
-            if (entryRemovedBackup(entry, key)) {
-                continue;
-            }
-            entryAddedOrUpdatedBackup(entry, key);
-
-            evict(key);
+            operator.operateOnKey(key).doPostOperateOps();
         }
     }
 

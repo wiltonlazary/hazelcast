@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,6 +46,10 @@ public class MemberLeftException extends ExecutionException implements Retryable
         this.member = member;
     }
 
+    public MemberLeftException(Throwable cause) {
+        super(cause);
+    }
+
     /**
      * Returns the member that left the cluster
      * @return the member that left the cluster
@@ -77,6 +81,6 @@ public class MemberLeftException extends ExecutionException implements Retryable
         boolean liteMember = in.readBoolean();
         MemberVersion version = (MemberVersion) in.readObject();
 
-        member = new MemberImpl(new Address(host, port), version, false, uuid, null, null, liteMember);
+        member = new MemberImpl(new Address(host, port), version, false, uuid, null, liteMember);
     }
 }

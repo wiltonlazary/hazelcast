@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,10 +23,8 @@ import com.hazelcast.config.Config;
 import com.hazelcast.core.Cluster;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
-import com.hazelcast.core.Member;
 import com.hazelcast.instance.DefaultNodeExtension;
 import com.hazelcast.instance.HazelcastInstanceFactory;
-import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.NodeExtension;
 import com.hazelcast.internal.partition.InternalPartition;
@@ -52,8 +50,10 @@ import com.hazelcast.transaction.impl.TransactionManagerServiceImpl;
 import com.hazelcast.util.Clock;
 import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.ExceptionUtil;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
+import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -61,10 +61,8 @@ import org.mockito.stubbing.Answer;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 import java.util.Random;
-import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -83,7 +81,10 @@ import static org.mockito.Mockito.when;
 @Category({QuickTest.class, ParallelTest.class})
 public class AdvancedClusterStateTest extends HazelcastTestSupport {
 
-    @Test(expected = IllegalStateException.class)
+    @Rule
+    public ExpectedException exception = ExpectedException.none();
+
+    @Test
     public void changeClusterState_shouldFail_whenMemberAdded_duringTx() throws Exception {
         final TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
         HazelcastInstance[] instances = new HazelcastInstance[3];
@@ -92,32 +93,66 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         }
 
         HazelcastInstance hz = instances[instances.length - 1];
-        ClusterServiceImpl clusterService = (ClusterServiceImpl) getClusterService(hz);
-        Collection<Member> initialMembers = new ArrayList<Member>(clusterService.getMembers());
-        initialMembers.remove(clusterService.getLocalMember());
+        TransactionManagerServiceImpl transactionManagerService = spyTransactionManagerService(hz);
 
-        changeClusterState(hz, ClusterState.PASSIVE, initialMembers );
+        TransactionOptions options = TransactionOptions.getDefault();
+        when(transactionManagerService.newAllowedDuringPassiveStateTransaction(options)).thenAnswer(new Answer<Transaction>() {
+            boolean started;
+            @Override
+            public Transaction answer(InvocationOnMock invocation) throws Throwable {
+                Transaction tx = (Transaction) invocation.callRealMethod();
+                return new DelegatingTransaction(tx) {
+                    @Override
+                    public void add(TransactionLogRecord record) {
+                        super.add(record);
+                        if (!started) {
+                            started = true;
+                            factory.newHazelcastInstance();
+                        }
+                    }
+                };
+            }
+        });
+
+        exception.expect(IllegalStateException.class);
+        hz.getCluster().changeClusterState(ClusterState.PASSIVE, options);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void changeClusterState_shouldFail_whenMemberRemoved_duringTx() throws Exception {
         final TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
-        HazelcastInstance[] instances = new HazelcastInstance[3];
+        final HazelcastInstance[] instances = new HazelcastInstance[3];
         for (int i = 0; i < 3; i++) {
             instances[i] = factory.newHazelcastInstance();
         }
 
         HazelcastInstance hz = instances[instances.length - 1];
-        ClusterServiceImpl clusterService = (ClusterServiceImpl) getClusterService(hz);
-        Collection<Member> initialMembers = new ArrayList<Member>(clusterService.getMembers());
+        TransactionManagerServiceImpl transactionManagerService = spyTransactionManagerService(hz);
 
-        MemberImpl fakeMember = new MemberImpl((MemberImpl) clusterService.getLocalMember());
-        initialMembers.add(fakeMember);
+        TransactionOptions options = TransactionOptions.getDefault();
+        when(transactionManagerService.newAllowedDuringPassiveStateTransaction(options)).thenAnswer(new Answer<Transaction>() {
+            boolean shutdown;
+            @Override
+            public Transaction answer(InvocationOnMock invocation) throws Throwable {
+                Transaction tx = (Transaction) invocation.callRealMethod();
+                return new DelegatingTransaction(tx) {
+                    @Override
+                    public void add(TransactionLogRecord record) {
+                        super.add(record);
+                        if (!shutdown) {
+                            shutdown = true;
+                            terminateInstance(instances[0]);
+                        }
+                    }
+                };
+            }
+        });
 
-        changeClusterState(hz, ClusterState.PASSIVE, initialMembers );
+        exception.expect(TargetNotMemberException.class);
+        hz.getCluster().changeClusterState(ClusterState.PASSIVE, options);
     }
 
-    @Test(expected = TransactionException.class)
+    @Test
     public void changeClusterState_shouldFail_whenStateIsAlreadyLocked() throws Exception {
         final TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(3);
         HazelcastInstance[] instances = factory.newInstances();
@@ -127,8 +162,9 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         lockClusterState(hz);
 
         final HazelcastInstance hz2 = instances[instances.length - 2];
+
+        exception.expect(TransactionException.class);
         hz2.getCluster().changeClusterState(ClusterState.PASSIVE);
-        fail("Cluster state change should fail, because state is already locked!");
     }
 
     private void lockClusterState(HazelcastInstance hz) {
@@ -161,12 +197,7 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         } catch (HazelcastInstanceNotActiveException ignored) {
         }
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertClusterState(ClusterState.ACTIVE, instances[0], instances[1]);
-            }
-        });
+        assertClusterStateEventually(ClusterState.ACTIVE, instances[0], instances[1]);
     }
 
     @Test
@@ -191,13 +222,7 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         } catch (HazelcastInstanceNotActiveException ignored) {
         }
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run()
-                    throws Exception {
-                assertClusterState(ClusterState.FROZEN, instances[0], instances[1]);
-            }
-        });
+        assertClusterStateEventually(ClusterState.FROZEN, instances[0], instances[1]);
     }
 
     @Test
@@ -222,12 +247,7 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         } catch (HazelcastInstanceNotActiveException ignored) {
         }
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertClusterState(ClusterState.ACTIVE, instances[0], instances[1]);
-            }
-        });
+        assertClusterStateEventually(ClusterState.ACTIVE, instances[0], instances[1]);
     }
 
     @Test
@@ -252,12 +272,7 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         } catch (HazelcastInstanceNotActiveException ignored) {
         }
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertClusterState(ClusterState.ACTIVE, instances[0], instances[1]);
-            }
-        });
+        assertClusterStateEventually(ClusterState.ACTIVE, instances[0], instances[1]);
     }
 
     @Test
@@ -280,19 +295,11 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
 
         hz.getCluster().changeClusterState(ClusterState.FROZEN, options);
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run()
-                    throws Exception {
-                assertClusterState(ClusterState.FROZEN, instances[2], instances[1]);
-            }
-        });
+        assertClusterStateEventually(ClusterState.FROZEN, instances[2], instances[1]);
 
         instances[0] = factory.newHazelcastInstance(address);
 
-        assertClusterSizeEventually(3, instances[0]);
-        assertClusterSizeEventually(3, instances[1]);
-        assertClusterSizeEventually(3, instances[2]);
+        assertClusterSizeEventually(3, instances);
         assertClusterState(ClusterState.FROZEN, instances);
     }
 
@@ -320,18 +327,11 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         } catch (TargetNotMemberException ignored) {
         }
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertClusterState(ClusterState.ACTIVE, instances[2], instances[1]);
-            }
-        });
+        assertClusterStateEventually(ClusterState.ACTIVE, instances[2], instances[1]);
 
         instances[0] = factory.newHazelcastInstance(address);
 
-        assertClusterSizeEventually(3, instances[0]);
-        assertClusterSizeEventually(3, instances[1]);
-        assertClusterSizeEventually(3, instances[2]);
+        assertClusterSizeEventually(3, instances);
         assertClusterState(ClusterState.ACTIVE, instances);
     }
 
@@ -407,23 +407,24 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         }, 3);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
+    public void partitionAssignment_shouldFail_whenTriggered_inNoMigrationState() {
+        partitionAssignment_shouldFail_whenMigrationNotAllowed(ClusterState.NO_MIGRATION);
+    }
+
+    @Test
     public void partitionAssignment_shouldFail_whenTriggered_inFrozenState() {
-        Config config = new Config();
-        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(3);
-        HazelcastInstance[] instances = factory.newInstances(config);
-        HazelcastInstance hz1 = instances[0];
-        HazelcastInstance hz2 = instances[1];
-        HazelcastInstance hz3 = instances[2];
-
-        hz2.getCluster().changeClusterState(ClusterState.FROZEN);
-
-        InternalPartitionService partitionService = getPartitionService(hz1);
-        partitionService.getPartitionOwnerOrWait(1);
+        partitionAssignment_shouldFail_whenMigrationNotAllowed(ClusterState.FROZEN);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void partitionAssignment_shouldFail_whenTriggered_inPassiveState() {
+        partitionAssignment_shouldFail_whenMigrationNotAllowed(ClusterState.PASSIVE);
+    }
+
+    private void partitionAssignment_shouldFail_whenMigrationNotAllowed(ClusterState state) {
+        assertFalse(state.isMigrationAllowed());
+
         Config config = new Config();
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(3);
         HazelcastInstance[] instances = factory.newInstances(config);
@@ -431,39 +432,31 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         HazelcastInstance hz2 = instances[1];
         HazelcastInstance hz3 = instances[2];
 
-        hz2.getCluster().changeClusterState(ClusterState.PASSIVE);
+        hz2.getCluster().changeClusterState(state);
 
         InternalPartitionService partitionService = getPartitionService(hz1);
+        exception.expect(IllegalStateException.class);
         partitionService.getPartitionOwnerOrWait(1);
     }
 
-    @Test(expected = IllegalStateException.class)
-    public void partitionInvocation_shouldFail_whenPartitionsNotAssigned_inFrozenState() throws InterruptedException {
-        Config config = new Config();
-        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(3);
-        HazelcastInstance[] instances = factory.newInstances(config);
-        HazelcastInstance hz1 = instances[0];
-        HazelcastInstance hz2 = instances[1];
-        HazelcastInstance hz3 = instances[2];
-
-        hz2.getCluster().changeClusterState(ClusterState.FROZEN);
-
-        InternalOperationService operationService = getNode(hz3).getNodeEngine().getOperationService();
-        Operation op = new AddAndGetOperation(randomName(), 1);
-        Future<Long> future = operationService
-                .invokeOnPartition(AtomicLongService.SERVICE_NAME, op, 1);
-
-        try {
-            future.get();
-            fail("Partition invocation must fail, because partitions cannot be assigned!");
-        } catch (ExecutionException e) {
-            // IllegalStateException should be cause of ExecutionException.
-            throw ExceptionUtil.rethrow(e);
-        }
+    @Test
+    public void partitionInvocation_shouldFail_whenPartitionsNotAssigned_inNoMigrationState() throws InterruptedException {
+        partitionInvocation_shouldFail_whenPartitionsNotAssigned_whenMigrationNotAllowed(ClusterState.NO_MIGRATION);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
+    public void partitionInvocation_shouldFail_whenPartitionsNotAssigned_inFrozenState() throws InterruptedException {
+        partitionInvocation_shouldFail_whenPartitionsNotAssigned_whenMigrationNotAllowed(ClusterState.FROZEN);
+    }
+
+    @Test
     public void partitionInvocation_shouldFail_whenPartitionsNotAssigned_inPassiveState() throws InterruptedException {
+        partitionInvocation_shouldFail_whenPartitionsNotAssigned_whenMigrationNotAllowed(ClusterState.PASSIVE);
+    }
+
+    private void partitionInvocation_shouldFail_whenPartitionsNotAssigned_whenMigrationNotAllowed(ClusterState state)
+            throws InterruptedException {
+
         Config config = new Config();
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(3);
         HazelcastInstance[] instances = factory.newInstances(config);
@@ -471,16 +464,16 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         HazelcastInstance hz2 = instances[1];
         HazelcastInstance hz3 = instances[2];
 
-        hz2.getCluster().changeClusterState(ClusterState.PASSIVE);
+        hz2.getCluster().changeClusterState(state);
 
         InternalOperationService operationService = getNode(hz3).getNodeEngine().getOperationService();
         Operation op = new AddAndGetOperation(randomName(), 1);
         Future<Long> future = operationService
                 .invokeOnPartition(AtomicLongService.SERVICE_NAME, op, 1);
 
+        exception.expect(IllegalStateException.class);
         try {
             future.get();
-            fail("Partition invocation must fail, because partitions cannot be assigned!");
         } catch (ExecutionException e) {
             // IllegalStateException should be cause of ExecutionException.
             throw ExceptionUtil.rethrow(e);
@@ -558,33 +551,27 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
 
     @Test
     public void nodesCanShutDown_whenClusterState_frozen() {
-        final TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(3);
-        final HazelcastInstance[] instances = factory.newInstances(new Config());
-
-        HazelcastInstance hz = instances[instances.length - 1];
-        hz.getMap(randomMapName()).put(1, 1); // for updating partition version
-
-        changeClusterStateEventually(hz, ClusterState.FROZEN);
-
-        List<HazelcastInstance> instanceList = new ArrayList<HazelcastInstance>(Arrays.asList(instances));
-        while (!instanceList.isEmpty()) {
-            HazelcastInstance instanceToShutdown = instanceList.remove(0);
-            instanceToShutdown.shutdown();
-            for (HazelcastInstance instance : instanceList) {
-                assertClusterSizeEventually(instanceList.size(), instance);
-            }
-        }
+        nodesCanShutDown_whenClusterState_changesTo(ClusterState.FROZEN);
     }
 
     @Test
     public void nodesCanShutDown_whenClusterState_passive() {
+        nodesCanShutDown_whenClusterState_changesTo(ClusterState.PASSIVE);
+    }
+
+    @Test
+    public void nodesCanShutDown_whenClusterState_noMigration() {
+        nodesCanShutDown_whenClusterState_changesTo(ClusterState.NO_MIGRATION);
+    }
+
+    private void nodesCanShutDown_whenClusterState_changesTo(ClusterState state) {
         final TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(3);
         HazelcastInstance[] instances = factory.newInstances();
 
         HazelcastInstance hz = instances[instances.length - 1];
         hz.getMap(randomMapName()).put(1, 1); // for updating partition version
 
-        changeClusterStateEventually(hz, ClusterState.PASSIVE);
+        changeClusterStateEventually(hz, state);
 
         List<HazelcastInstance> instanceList = new ArrayList<HazelcastInstance>(Arrays.asList(instances));
         while (!instanceList.isEmpty()) {
@@ -635,16 +622,9 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         future.get();
     }
 
-    private void changeClusterState(HazelcastInstance instance, ClusterState newState, Collection<Member> members) {
-        int partitionStateVersion = getNode(instance).getPartitionService().getPartitionStateVersion();
-        ClusterServiceImpl clusterService = (ClusterServiceImpl) getClusterService(instance);
-        clusterService.getClusterStateManager().changeClusterState(ClusterStateChange.from(newState), members,
-                partitionStateVersion, false);
-    }
-
     private void changeClusterState(HazelcastInstance instance, ClusterState newState, int partitionStateVersion) {
         ClusterServiceImpl clusterService = (ClusterServiceImpl) getClusterService(instance);
-        Set<Member> members = clusterService.getMembers();
+        MemberMap members = clusterService.getMembershipManager().getMemberMap();
         clusterService.getClusterStateManager().changeClusterState(ClusterStateChange.from(newState), members,
                 partitionStateVersion, false);
     }
@@ -661,18 +641,11 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         return spiedTransactionManagerService;
     }
 
-    private static void assertClusterState(ClusterState expectedState, HazelcastInstance... instances) {
-        for (HazelcastInstance instance : instances) {
-            assertEquals("Instance " + instance.getCluster().getLocalMember(),
-                    expectedState, instance.getCluster().getClusterState());
-        }
-    }
-
     private static abstract class TransactionAnswer implements Answer<Transaction> {
         @Override
         public Transaction answer(InvocationOnMock invocation) throws Throwable {
             Transaction tx = (Transaction) invocation.callRealMethod();
-            Transaction delegatingTransaction = new DelegatingTransaction(tx) {
+            return new DelegatingTransaction(tx) {
                 @Override
                 public void prepare() throws TransactionException {
                     beforePrepare();
@@ -680,7 +653,6 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
                     afterPrepare();
                 }
             };
-            return delegatingTransaction;
         }
 
         protected void beforePrepare() {
@@ -696,7 +668,7 @@ public class AdvancedClusterStateTest extends HazelcastTestSupport {
         private final CountDownLatch latch;
         private final Random random;
 
-        public IterativeStateChangeThread(HazelcastInstance instance, int iteration, CountDownLatch latch, Random random) {
+        IterativeStateChangeThread(HazelcastInstance instance, int iteration, CountDownLatch latch, Random random) {
             this.instance = instance;
             this.iteration = iteration;
             this.latch = latch;

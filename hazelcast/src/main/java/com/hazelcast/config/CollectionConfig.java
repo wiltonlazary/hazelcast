@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,16 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.readNullableList;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeNullableList;
 import static com.hazelcast.util.Preconditions.checkAsyncBackupCount;
 import static com.hazelcast.util.Preconditions.checkBackupCount;
 
@@ -27,7 +34,8 @@ import static com.hazelcast.util.Preconditions.checkBackupCount;
  *
  * @param <T> Type of Collection such as List, Set
  */
-public abstract class CollectionConfig<T extends CollectionConfig> {
+public abstract class CollectionConfig<T extends CollectionConfig>
+        implements IdentifiedDataSerializable {
 
     /**
      * Default maximum size for the Configuration.
@@ -67,7 +75,7 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Gets the name of this collection.
      *
-     * @return The name of this collection.
+     * @return the name of this collection
      */
     public String getName() {
         return name;
@@ -76,8 +84,8 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Sets the name of this collection.
      *
-     * @param  name The name of this collection.
-     * @return The updated collection configuration.
+     * @param name the name of this collection
+     * @return the updated collection configuration
      */
     public T setName(String name) {
         this.name = name;
@@ -87,7 +95,7 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Gets the list of ItemListenerConfigs.
      *
-     * @return The list of ItemListenerConfigs.
+     * @return the list of ItemListenerConfigs
      */
     public List<ItemListenerConfig> getItemListenerConfigs() {
         if (listenerConfigs == null) {
@@ -99,8 +107,8 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Sets the list of ItemListenerConfigs.
      *
-     * @param  listenerConfigs The list of ItemListenerConfigs to set.
-     * @return This collection configuration.
+     * @param listenerConfigs the list of ItemListenerConfigs to set
+     * @return this collection configuration
      */
     public T setItemListenerConfigs(List<ItemListenerConfig> listenerConfigs) {
         this.listenerConfigs = listenerConfigs;
@@ -110,7 +118,7 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Gets the total number of synchronous and asynchronous backups for this collection.
      *
-     * @return The total number of synchronous and asynchronous backups for this collection.
+     * @return the total number of synchronous and asynchronous backups for this collection
      */
     public int getTotalBackupCount() {
         return backupCount + asyncBackupCount;
@@ -119,7 +127,7 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Gets the number of synchronous backups for this collection.
      *
-     * @return the number of synchronous backups for this collection.
+     * @return the number of synchronous backups for this collection
      */
     public int getBackupCount() {
         return backupCount;
@@ -128,11 +136,11 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Sets the number of synchronous backups for this collection.
      *
-     * @param backupCount the number of synchronous backups to set for this collection.
+     * @param backupCount the number of synchronous backups to set for this collection
      * @return the current CollectionConfig
      * @throws IllegalArgumentException if backupCount smaller than 0,
-     *             or larger than the maximum number of backup
-     *             or the sum of the backups and async backups is larger than the maximum number of backups
+     *                                  or larger than the maximum number of backup
+     *                                  or the sum of the backups and async backups is larger than the maximum number of backups
      * @see #setAsyncBackupCount(int)
      */
     public T setBackupCount(int backupCount) {
@@ -143,7 +151,7 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Gets the number of asynchronous backups.
      *
-     * @return The number of asynchronous backups.
+     * @return the number of asynchronous backups
      */
     public int getAsyncBackupCount() {
         return asyncBackupCount;
@@ -155,8 +163,8 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
      * @param asyncBackupCount the number of asynchronous synchronous backups to set
      * @return the updated CollectionConfig
      * @throws IllegalArgumentException if asyncBackupCount is smaller than 0,
-     *             or larger than the maximum number of backups,
-     *             or the sum of the backups and async backups is larger than the maximum number of backups.
+     *                                  or larger than the maximum number of backups,
+     *                                  or the sum of the backups and async backups is larger than the maximum number of backups.
      * @see #setBackupCount(int)
      * @see #getAsyncBackupCount()
      */
@@ -168,7 +176,7 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Gets the maximum size for the Configuration.
      *
-     * @return The maximum size for the Configuration.
+     * @return the maximum size for the Configuration
      */
     public int getMaxSize() {
         return maxSize == 0 ? Integer.MAX_VALUE : maxSize;
@@ -177,7 +185,7 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Sets the maximum size for the collection.
      *
-     * @return the current CollectionConfig.
+     * @return the current CollectionConfig
      */
     public T setMaxSize(int maxSize) {
         this.maxSize = maxSize;
@@ -187,7 +195,7 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Checks if collection statistics are enabled.
      *
-     * @return True if collection statistics are enabled, false otherwise.
+     * @return {@code true} if collection statistics are enabled, {@code false} otherwise
      */
     public boolean isStatisticsEnabled() {
         return statisticsEnabled;
@@ -196,8 +204,8 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Sets collection statistics to enabled or disabled.
      *
-     * @param statisticsEnabled True to enable collection statistics, false to disable.
-     * @return The current collection config instance.
+     * @param statisticsEnabled {@code true} to enable collection statistics, {@code false} to disable
+     * @return the current collection config instance
      */
     public T setStatisticsEnabled(boolean statisticsEnabled) {
         this.statisticsEnabled = statisticsEnabled;
@@ -207,9 +215,74 @@ public abstract class CollectionConfig<T extends CollectionConfig> {
     /**
      * Adds an item listener to this collection (listens for when items are added or removed).
      *
-     * @param itemListenerConfig The item listener to add to this collection.
+     * @param itemListenerConfig the item listener to add to this collection
      */
     public void addItemListenerConfig(ItemListenerConfig itemListenerConfig) {
         getItemListenerConfigs().add(itemListenerConfig);
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ConfigDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(name);
+        writeNullableList(listenerConfigs, out);
+        out.writeInt(backupCount);
+        out.writeInt(asyncBackupCount);
+        out.writeInt(maxSize);
+        out.writeBoolean(statisticsEnabled);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        name = in.readUTF();
+        listenerConfigs = readNullableList(in);
+        backupCount = in.readInt();
+        asyncBackupCount = in.readInt();
+        maxSize = in.readInt();
+        statisticsEnabled = in.readBoolean();
+    }
+
+    @Override
+    @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        CollectionConfig<?> that = (CollectionConfig<?>) o;
+        if (backupCount != that.backupCount) {
+            return false;
+        }
+        if (asyncBackupCount != that.asyncBackupCount) {
+            return false;
+        }
+        if (getMaxSize() != that.getMaxSize()) {
+            return false;
+        }
+        if (statisticsEnabled != that.statisticsEnabled) {
+            return false;
+        }
+        if (name != null ? !name.equals(that.name) : that.name != null) {
+            return false;
+        }
+        return getItemListenerConfigs().equals(that.getItemListenerConfigs());
+    }
+
+    @Override
+    public int hashCode() {
+        int result = name != null ? name.hashCode() : 0;
+        result = 31 * result + getItemListenerConfigs().hashCode();
+        result = 31 * result + backupCount;
+        result = 31 * result + asyncBackupCount;
+        result = 31 * result + getMaxSize();
+        result = 31 * result + (statisticsEnabled ? 1 : 0);
+        return result;
     }
 }

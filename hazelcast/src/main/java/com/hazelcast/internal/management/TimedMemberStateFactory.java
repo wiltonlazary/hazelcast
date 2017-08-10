@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,11 @@ import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.GroupConfig;
+import com.hazelcast.config.SSLConfig;
 import com.hazelcast.core.Client;
 import com.hazelcast.core.Member;
 import com.hazelcast.executor.impl.DistributedExecutorService;
+import com.hazelcast.hotrestart.HotRestartService;
 import com.hazelcast.instance.HazelcastInstanceImpl;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
@@ -61,6 +63,7 @@ import com.hazelcast.spi.impl.servicemanager.ServiceInfo;
 import com.hazelcast.spi.partition.IPartition;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.topic.impl.TopicService;
+import com.hazelcast.topic.impl.reliable.ReliableTopicService;
 import com.hazelcast.wan.WanReplicationService;
 
 import java.util.ArrayList;
@@ -79,7 +82,7 @@ public class TimedMemberStateFactory {
     private static final int INITIAL_PARTITION_SAFETY_CHECK_DELAY = 15;
     private static final int PARTITION_SAFETY_CHECK_PERIOD = 60;
 
-    private final HazelcastInstanceImpl instance;
+    protected final HazelcastInstanceImpl instance;
     private final int maxVisibleInstanceCount;
     private final boolean cacheServiceEnabled;
 
@@ -115,7 +118,7 @@ public class TimedMemberStateFactory {
         createMemberState(timedMemberState, memberState, services);
         timedMemberState.setMaster(instance.node.isMaster());
         timedMemberState.setMemberList(new ArrayList<String>());
-        if (timedMemberState.getMaster()) {
+        if (timedMemberState.isMaster()) {
             Set<Member> memberSet = instance.getCluster().getMembers();
             for (Member member : memberSet) {
                 MemberImpl memberImpl = (MemberImpl) member;
@@ -126,6 +129,9 @@ public class TimedMemberStateFactory {
         timedMemberState.setMemberState(memberState);
         GroupConfig groupConfig = instance.getConfig().getGroupConfig();
         timedMemberState.setClusterName(groupConfig.getName());
+        SSLConfig sslConfig = instance.getConfig().getNetworkConfig().getSSLConfig();
+        timedMemberState.setSslEnabled(sslConfig != null && sslConfig.isEnabled());
+        timedMemberState.setLite(instance.node.isLiteMember());
 
         return timedMemberState;
     }
@@ -172,23 +178,25 @@ public class TimedMemberStateFactory {
 
         createNodeState(memberState);
         createHotRestartState(memberState);
-        createClusterHotRestarStatus(memberState);
+        createClusterHotRestartStatus(memberState);
         createWanSyncState(memberState);
     }
 
     private void createHotRestartState(MemberStateImpl memberState) {
-        final HotRestartStateImpl state = new HotRestartStateImpl(
-                instance.node.getNodeExtension().getHotRestartService().getBackupTaskStatus());
+        final HotRestartService hotRestartService = instance.node.getNodeExtension().getHotRestartService();
+        boolean hotBackupEnabled = hotRestartService.isHotBackupEnabled();
+        final HotRestartStateImpl state = new HotRestartStateImpl(hotRestartService.getBackupTaskStatus(), hotBackupEnabled);
+
         memberState.setHotRestartState(state);
     }
 
-    private void createClusterHotRestarStatus(MemberStateImpl memberState) {
+    private void createClusterHotRestartStatus(MemberStateImpl memberState) {
         final ClusterHotRestartStatusDTO state =
                 instance.node.getNodeExtension().getInternalHotRestartService().getCurrentClusterHotRestartStatus();
         memberState.setClusterHotRestartStatus(state);
     }
 
-    private void createNodeState(MemberStateImpl memberState) {
+    protected void createNodeState(MemberStateImpl memberState) {
         Node node = instance.node;
         ClusterService cluster = instance.node.clusterService;
         NodeStateImpl nodeState = new NodeStateImpl(cluster.getClusterState(), node.getState(),
@@ -219,6 +227,9 @@ public class TimedMemberStateFactory {
                     count = handleQueue(memberState, count, config, ((QueueService) service).getStats(), longInstanceNames);
                 } else if (service instanceof TopicService) {
                     count = handleTopic(memberState, count, config, ((TopicService) service).getStats(), longInstanceNames);
+                } else if (service instanceof ReliableTopicService) {
+                    count = handleReliableTopic(memberState, count, config,
+                            ((ReliableTopicService) service).getStats(), longInstanceNames);
                 } else if (service instanceof DistributedExecutorService) {
                     count = handleExecutorService(memberState, count, config,
                             ((DistributedExecutorService) service).getStats(), longInstanceNames);
@@ -295,6 +306,22 @@ public class TimedMemberStateFactory {
                 LocalReplicatedMapStats stats = entry.getValue();
                 memberState.putLocalReplicatedMapStats(name, stats);
                 longInstanceNames.add("r:" + name);
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    private int handleReliableTopic(MemberStateImpl memberState, int count, Config config, Map<String, LocalTopicStats> topics,
+                            Set<String> longInstanceNames) {
+        for (Map.Entry<String, LocalTopicStats> entry : topics.entrySet()) {
+            String name = entry.getKey();
+            if (count >= maxVisibleInstanceCount) {
+                break;
+            } else if (config.findReliableTopicConfig(name).isStatisticsEnabled()) {
+                LocalTopicStats stats = entry.getValue();
+                memberState.putLocalReliableTopicStats(name, stats);
+                longInstanceNames.add("rt:" + name);
                 ++count;
             }
         }

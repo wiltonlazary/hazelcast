@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,10 @@ import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.core.MigrationListener;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
+import com.hazelcast.internal.cluster.ClusterStateListener;
+import com.hazelcast.internal.cluster.ClusterVersionListener;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
-import com.hazelcast.internal.cluster.impl.operations.TriggerMemberListPublishOperation;
+import com.hazelcast.internal.cluster.impl.operations.TriggerMemberListPublishOp;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.partition.InternalPartition;
@@ -32,6 +34,7 @@ import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.internal.partition.MigrationInfo;
 import com.hazelcast.internal.partition.MigrationInfo.MigrationStatus;
 import com.hazelcast.internal.partition.PartitionListener;
+import com.hazelcast.internal.partition.PartitionReplicaVersionManager;
 import com.hazelcast.internal.partition.PartitionRuntimeState;
 import com.hazelcast.internal.partition.PartitionServiceProxy;
 import com.hazelcast.internal.partition.PartitionTableView;
@@ -64,6 +67,7 @@ import com.hazelcast.util.ExceptionUtil;
 import com.hazelcast.util.FutureUtil.ExceptionHandler;
 import com.hazelcast.util.HashUtil;
 import com.hazelcast.util.scheduler.ScheduledEntry;
+import com.hazelcast.version.Version;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -97,7 +101,8 @@ import static java.lang.Math.min;
  */
 @SuppressWarnings({"checkstyle:methodcount", "checkstyle:classfanoutcomplexity", "checkstyle:classdataabstractioncoupling"})
 public class InternalPartitionServiceImpl implements InternalPartitionService, ManagedService,
-        EventPublishingService<PartitionEvent, PartitionEventListener<PartitionEvent>>, PartitionAwareService {
+        EventPublishingService<PartitionEvent, PartitionEventListener<PartitionEvent>>,
+        PartitionAwareService, ClusterStateListener, ClusterVersionListener {
 
     private static final int PARTITION_OWNERSHIP_WAIT_MILLIS = 10;
     private static final String EXCEPTION_MSG_PARTITION_STATE_SYNC_TIMEOUT = "Partition state sync invocation timed out";
@@ -124,13 +129,14 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
 
     private final ExceptionHandler partitionStateSyncTimeoutHandler;
 
-    // used to limit partition assignment requests sent to master
+    /** Determines if a {@link AssignPartitions} is being sent to the master, used to limit partition assignment requests. */
     private final AtomicBoolean triggerMasterFlag = new AtomicBoolean(false);
 
     private final AtomicReference<CountDownLatch> shutdownLatchRef = new AtomicReference<CountDownLatch>();
 
     private volatile Address lastMaster;
 
+    /** Whether the master should fetch the partition tables from other nodes, can happen when node becomes new master. */
     private volatile boolean shouldFetchPartitionTables;
 
     public InternalPartitionServiceImpl(Node node) {
@@ -174,6 +180,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
                 partitionTableSendInterval, partitionTableSendInterval, TimeUnit.SECONDS);
 
         migrationManager.start();
+        replicaManager.setClusterVersion(node.getClusterService().getClusterVersion());
         replicaManager.scheduleReplicaVersionSync(executionService);
     }
 
@@ -200,7 +207,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
             }
 
             ClusterState clusterState = node.getClusterService().getClusterState();
-            if (clusterState != ClusterState.ACTIVE) {
+            if (!clusterState.isMigrationAllowed()) {
                 throw new IllegalStateException("Partitions can't be assigned since cluster-state: " + clusterState);
             }
             if (isClusterFormedByOnlyLiteMembers()) {
@@ -243,17 +250,19 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         }
     }
 
+    /** Sends a {@link AssignPartitions} to the master to assign partitions. */
     private void triggerMasterToAssignPartitions() {
         if (partitionStateManager.isInitialized()) {
             return;
         }
 
-        if (!node.joined()) {
+        ClusterServiceImpl clusterService = node.getClusterService();
+        if (!clusterService.isJoined()) {
             return;
         }
 
-        ClusterState clusterState = node.getClusterService().getClusterState();
-        if (clusterState != ClusterState.ACTIVE) {
+        ClusterState clusterState = clusterService.getClusterState();
+        if (!clusterState.isMigrationAllowed()) {
             logger.warning("Partitions can't be assigned since cluster-state= " + clusterState);
             return;
         }
@@ -263,7 +272,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         }
 
         try {
-            final Address masterAddress = node.getMasterAddress();
+            final Address masterAddress = clusterService.getMasterAddress();
             if (masterAddress != null && !masterAddress.equals(node.getThisAddress())) {
                 Future f = nodeEngine.getOperationService().createInvocationBuilder(SERVICE_NAME, new AssignPartitions(),
                         masterAddress).setTryCount(1).invoke();
@@ -281,6 +290,15 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         return clusterService.getMembers(DATA_MEMBER_SELECTOR).isEmpty();
     }
 
+    /**
+     * Sets the initial partition table and state version. If any partition has a replica, the partition state manager is
+     * set to initialized, otherwise {@link #partitionStateManager#isInitialized()} stays uninitialized but the current state
+     * will be updated nevertheless.
+     * This method acquires the partition service lock.
+     *
+     * @param partitionTable the initial partition table
+     * @throws IllegalStateException if the partition manager has already been initialized
+     */
     public void setInitialState(PartitionTableView partitionTable) {
         lock.lock();
         try {
@@ -306,7 +324,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         lock.lock();
         try {
             ClusterState clusterState = node.getClusterService().getClusterState();
-            if (clusterState == ClusterState.FROZEN || clusterState == ClusterState.PASSIVE) {
+            if (!clusterState.isMigrationAllowed() && clusterState != ClusterState.IN_TRANSITION) {
                 logger.fine(address + " can join since cluster state is " + clusterState);
                 return true;
             }
@@ -337,15 +355,13 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         logger.fine("Adding " + member);
         lock.lock();
         try {
-            if (!member.localMember()) {
-                partitionStateManager.updateMemberGroupsSize();
-            }
-            lastMaster = node.getMasterAddress();
+            partitionStateManager.updateMemberGroupsSize();
+            lastMaster = node.getClusterService().getMasterAddress();
 
             if (node.isMaster()) {
                 if (partitionStateManager.isInitialized()) {
                     final ClusterState clusterState = nodeEngine.getClusterService().getClusterState();
-                    if (clusterState == ClusterState.ACTIVE) {
+                    if (clusterState.isMigrationAllowed()) {
                         migrationManager.triggerControlTask();
                     }
                 }
@@ -372,7 +388,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
                 shouldFetchPartitionTables = true;
             }
 
-            lastMaster = node.getMasterAddress();
+            lastMaster = node.getClusterService().getMasterAddress();
 
             migrationManager.pauseMigration();
 
@@ -386,6 +402,33 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         } finally {
             lock.unlock();
         }
+    }
+
+    @Override
+    public void onClusterStateChange(ClusterState newState) {
+        if (!newState.isMigrationAllowed()) {
+            return;
+        }
+        if (!partitionStateManager.isInitialized()) {
+            return;
+        }
+        if (!node.isMaster()) {
+            return;
+        }
+
+        lock.lock();
+        try {
+            if (partitionStateManager.isInitialized()) {
+                migrationManager.triggerControlTask();
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void onClusterVersionChange(Version newVersion) {
+        // required for 3.8 -> 3.9 upgrade
+        replicaManager.setClusterVersion(newVersion);
     }
 
     public void cancelReplicaSyncRequestsTo(Address deadAddress) {
@@ -405,6 +448,10 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         return null;
     }
 
+    /**
+     * Returns a copy of the partition table or {@code null} if not initialized. This method will acquire the partition service
+     * lock.
+     */
     public PartitionRuntimeState createPartitionStateInternal() {
         lock.lock();
         try {
@@ -453,9 +500,12 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
     }
 
     /**
-     * Creates a transient PartitionRuntimeState to commit promotions.
-     * Results of promotions are applied to partition table.
-     * Version of created partition table is incremented by number of promotions.
+     * Creates a transient {@link PartitionRuntimeState} to commit promotions by applying the {@code migrationInfos}.
+     * The partition table version is incremented by number of promotions.
+     * This method will acquire the partition service lock.
+     *
+     * @param migrationInfos the promotions to be executed on the destination
+     * @return the partition table with the executed migrations or {@code null} if the partitions are not initialized (assigned)
      */
     PartitionRuntimeState createPromotionCommitPartitionState(Collection<MigrationInfo> migrationInfos) {
         lock.lock();
@@ -481,6 +531,10 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         }
     }
 
+    /**
+     * Called on the master node to publish the current partition state to all cluster nodes. It will not publish the partition
+     * state if the partitions have not yet been initialized, there is ongoing repartitioning or a node is joining the cluster.
+     */
     @SuppressWarnings("checkstyle:npathcomplexity")
     void publishPartitionRuntimeState() {
         if (!partitionStateManager.isInitialized()) {
@@ -492,7 +546,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
             return;
         }
 
-        if (!isReplicaSyncAllowed()) {
+        if (!isMigrationAllowed()) {
             // migration is disabled because of a member leave, wait till enabled!
             return;
         }
@@ -520,6 +574,13 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         }
     }
 
+    /**
+     * Called on the master node to send the partition tables to other cluster members. It will not publish the partition
+     * state if the partitions have not yet been initialized.
+     * Waits for {@value PTABLE_SYNC_TIMEOUT_SECONDS} for the members to respond to the partition state operation.
+     *
+     * @return {@code true} if all cluster members have synced their partition tables, {@code false} otherwise.
+     */
     @SuppressWarnings("checkstyle:npathcomplexity")
     boolean syncPartitionRuntimeState() {
         if (!partitionStateManager.isInitialized()) {
@@ -563,13 +624,14 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         return true;
     }
 
+    /** Sends a {@link PartitionStateOperation} to cluster members and returns the futures. */
     private List<Future<Boolean>> firePartitionStateOperation(Collection<MemberImpl> members,
                                                      PartitionRuntimeState partitionState,
                                                      OperationService operationService) {
         final ClusterServiceImpl clusterService = node.clusterService;
         List<Future<Boolean>> calls = new ArrayList<Future<Boolean>>(members.size());
         for (MemberImpl member : members) {
-            if (!(member.localMember() || clusterService.isMemberRemovedWhileClusterIsNotActive(member.getAddress()))) {
+            if (!(member.localMember() || clusterService.isMemberRemovedInNotJoinableState(member.getAddress()))) {
                 try {
                     Address address = member.getAddress();
                     PartitionStateOperation operation = new PartitionStateOperation(partitionState, true);
@@ -583,6 +645,12 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         return calls;
     }
 
+    /**
+     * Sets the {@code partitionState} if the node is started and the state is sent by the master known by this node.
+     *
+     * @param partitionState the new partition state
+     * @return {@code true} if the partition state was applied
+     */
     public boolean processPartitionRuntimeState(final PartitionRuntimeState partitionState) {
         final Address sender = partitionState.getEndpoint();
         if (!node.getNodeExtension().isStartCompleted()) {
@@ -590,7 +658,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
             return false;
         }
 
-        final Address master = node.getMasterAddress();
+        final Address master = node.getClusterService().getMasterAddress();
         if (node.isMaster() && !node.getThisAddress().equals(sender)) {
             logger.warning("This is the master node and received a PartitionRuntimeState from "
                     + sender + ". Ignoring incoming state! ");
@@ -613,8 +681,27 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         return applyNewState(partitionState, sender);
     }
 
+    /**
+     * Applies the {@code partitionState} sent by the {@code sender} if the new state is newer than the current one
+     * and finalizes the migrations.
+     * This method does not validate the sender. It is caller method's responsibility.
+     * This method will acquire the partition service lock.
+     *
+     * @param partitionState the new partition state
+     * @param sender         the sender of the new partition state
+     * @return {@code true} if the partition state version is higher than the current one and was applied or
+     * if the partition state version is same as the current one
+     */
     private boolean applyNewState(PartitionRuntimeState partitionState, Address sender) {
-        lock.lock();
+        try {
+            if (!lock.tryLock(PTABLE_SYNC_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                return false;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+
         try {
             final int newVersion = partitionState.getVersion();
             final int currentVersion = partitionStateManager.getVersion();
@@ -639,8 +726,17 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         }
     }
 
+    /**
+     * Updates all partitions and version, updates (adds and retains) the completed migrations and finalizes the active
+     * migration if it is equal to any completed.
+     *
+     * @see MigrationManager#scheduleActiveMigrationFinalization(MigrationInfo)
+     */
     private void updatePartitionsAndFinalizeMigrations(PartitionRuntimeState partitionState) {
         final Address[][] partitionTable = partitionState.getPartitionTable();
+        updateAllPartitions(partitionTable);
+        partitionStateManager.setVersion(partitionState.getVersion());
+
         Collection<MigrationInfo> completedMigrations = partitionState.getCompletedMigrations();
         for (MigrationInfo completedMigration : completedMigrations) {
 
@@ -649,22 +745,10 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
                     : "Invalid migration: " + completedMigration;
 
             if (migrationManager.addCompletedMigration(completedMigration)) {
-                int partitionId = completedMigration.getPartitionId();
-                Address[] replicas = partitionTable[partitionId];
-                // mdogan:
-                // Each partition should be updated right after migration is finalized
-                // at the moment, it doesn't cause any harm to existing services,
-                // because we have a `migrating` flag in partition which is cleared during migration finalization.
-                // But from API point of view, we should provide explicit guarantees.
-                // For the time being, leaving this stuff as is to not to change behaviour.
-
-                partitionStateManager.updateReplicaAddresses(partitionId, replicas);
                 migrationManager.scheduleActiveMigrationFinalization(completedMigration);
             }
         }
 
-        updateAllPartitions(partitionTable);
-        partitionStateManager.setVersion(partitionState.getVersion());
         if (!partitionStateManager.setInitialized()) {
             node.getNodeExtension().onPartitionStateChange();
         }
@@ -672,6 +756,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         migrationManager.retainCompletedMigrations(completedMigrations);
     }
 
+    /** Sets the replica addresses for all partitions. */
     private void updateAllPartitions(Address[][] partitionTable) {
         for (int partitionId = 0; partitionId < partitionCount; partitionId++) {
             Address[] replicas = partitionTable[partitionId];
@@ -679,6 +764,10 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         }
     }
 
+    /**
+     * Checks if there are unknown addresses in the {@code partitionTable} and requests the member list from the master node if
+     * there are any.
+     */
     private void filterAndLogUnknownAddressesInPartitionTable(Address sender, Address[][] partitionTable) {
         final Set<Address> unknownAddresses = new HashSet<Address>();
         for (int partitionId = 0; partitionId < partitionTable.length; partitionId++) {
@@ -688,17 +777,17 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         logUnknownAddressesInPartitionTable(sender, unknownAddresses);
 
         if (!unknownAddresses.isEmpty()) {
-            Address masterAddress = node.getMasterAddress();
+            Address masterAddress = node.getClusterService().getMasterAddress();
             // If node is shutting down, master can be null.
             if (masterAddress != null && !masterAddress.equals(node.getThisAddress())) {
                 // unknown addresses found in partition table, request a new member-list from master
-                nodeEngine.getOperationService().send(new TriggerMemberListPublishOperation(), masterAddress);
+                nodeEngine.getOperationService().send(new TriggerMemberListPublishOp(), masterAddress);
             }
         }
     }
 
     private void logUnknownAddressesInPartitionTable(Address sender, Set<Address> unknownAddresses) {
-        if (!unknownAddresses.isEmpty() && logger.isLoggable(Level.WARNING)) {
+        if (!unknownAddresses.isEmpty() && logger.isWarningEnabled()) {
             StringBuilder s = new StringBuilder("Following unknown addresses are found in partition table")
                     .append(" sent from master[").append(sender).append("].")
                     .append(" (Probably they have recently joined or left the cluster.)")
@@ -711,6 +800,10 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         }
     }
 
+    /**
+     * Searches {@code addresses} for addresses which are currently not cluster members and were not removed while cluster was
+     * not active and add them to {@code unknownAddresses}.
+     */
     private void searchUnknownAddressesInPartitionTable(Address sender, Set<Address> unknownAddresses, int partitionId,
                                                         Address[] addresses) {
         final ClusterServiceImpl clusterService = node.clusterService;
@@ -718,7 +811,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         for (int index = 0; index < InternalPartition.MAX_REPLICA_COUNT; index++) {
             Address address = addresses[index];
             if (address != null && node.clusterService.getMember(address) == null) {
-                if (clusterState == ClusterState.ACTIVE || !clusterService.isMemberRemovedWhileClusterIsNotActive(address)) {
+                if (clusterState.isJoinAllowed() || !clusterService.isMemberRemovedInNotJoinableState(address)) {
                     if (logger.isFinestEnabled()) {
                         logger.finest(
                                 "Unknown " + address + " found in partition table sent from master "
@@ -761,7 +854,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
 
     @Override
     public boolean prepareToSafeShutdown(long timeout, TimeUnit unit) {
-        if (!node.joined()) {
+        if (!node.getClusterService().isJoined()) {
             return true;
         }
 
@@ -860,29 +953,9 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         return partitionMigrationTimeout;
     }
 
-    // called in operation threads
-    // Caution: Returning version array without copying for performance reasons. Callers must not modify this array!
     @Override
-    public long[] incrementPartitionReplicaVersions(int partitionId, int backupCount) {
-        return replicaManager.incrementPartitionReplicaVersions(partitionId, backupCount);
-    }
-
-    // called in operation threads
-    @Override
-    public void updatePartitionReplicaVersions(int partitionId, long[] versions, int replicaIndex) {
-        replicaManager.updatePartitionReplicaVersions(partitionId, versions, replicaIndex);
-    }
-
-    @Override
-    public boolean isPartitionReplicaVersionStale(int partitionId, long[] versions, int replicaIndex) {
-        return replicaManager.isPartitionReplicaVersionStale(partitionId, versions, replicaIndex);
-    }
-
-    // called in operation threads
-    // Caution: Returning version array without copying for performance reasons. Callers must not modify this array!
-    @Override
-    public long[] getPartitionReplicaVersions(int partitionId) {
-        return replicaManager.getPartitionReplicaVersions(partitionId);
+    public PartitionReplicaVersionManager getPartitionReplicaVersionManager() {
+        return replicaManager;
     }
 
     @Override
@@ -948,7 +1021,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         migrationManager.resumeMigration();
     }
 
-    public boolean isReplicaSyncAllowed() {
+    public boolean isMigrationAllowed() {
         return migrationManager.isMigrationAllowed();
     }
 
@@ -960,7 +1033,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
     }
 
     @Override
-    @Probe(name = "migrationQueueSize")
+    @Probe
     public long getMigrationQueueSize() {
         return migrationManager.getMigrationQueueSize();
     }
@@ -1039,14 +1112,14 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
     /**
      * @return copy of ongoing replica-sync operations
      */
-    public List<ReplicaSyncInfo> getOngoingReplicaSyncRequests() {
+    public List<ReplicaFragmentSyncInfo> getOngoingReplicaSyncRequests() {
         return replicaManager.getOngoingReplicaSyncRequests();
     }
 
     /**
      * @return copy of scheduled replica-sync requests
      */
-    public List<ScheduledEntry<Integer, ReplicaSyncInfo>> getScheduledReplicaSyncRequests() {
+    public List<ScheduledEntry<ReplicaFragmentSyncInfo, Void>> getScheduledReplicaSyncRequests() {
         return replicaManager.getScheduledReplicaSyncRequests();
     }
 
@@ -1107,6 +1180,16 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         }
     }
 
+    /**
+     * Invoked on a node when it becomes master. It will receive partition states from all members and consolidate them into one.
+     * It guarantees the monotonicity of the partition table.
+     * <ul>
+     * <li>Fetch partition tables from all cluster members</li>
+     * <li>Pick the most up to date partition table and apply it to local</li>
+     * <li>Complete the pending migration, if present</li>
+     * <li>Send the new partition table to all cluster members</li>
+     * </ul>
+     */
     private class FetchMostRecentPartitionTableTask implements MigrationRunnable {
 
         private final Address thisAddress = node.getThisAddress();
@@ -1133,6 +1216,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
             syncPartitionRuntimeState();
         }
 
+        /** Sends {@link FetchPartitionStateOperation} to all cluster members. */
         private Collection<Future<PartitionRuntimeState>> invokeFetchPartitionStateOps() {
             Collection<MemberImpl> members = node.clusterService.getMemberImpls();
             Collection<Future<PartitionRuntimeState>> futures = new ArrayList<Future<PartitionRuntimeState>>(
@@ -1151,6 +1235,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
             return futures;
         }
 
+        /** Collects all completed and active migrations and sets the partition state to the latest version. */
         private void processResults(Collection<Future<PartitionRuntimeState>> futures,
                 Collection<MigrationInfo> allCompletedMigrations, Collection<MigrationInfo> allActiveMigrations) {
             for (Future<PartitionRuntimeState> future : futures) {
@@ -1185,6 +1270,13 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
             }
         }
 
+        /**
+         * Applies a partition state and marks all migrations (including local) as complete, when a newer state is received.
+         * The method will acquire the partition state lock.
+         *
+         * @param allCompletedMigrations received completed migrations from other nodes
+         * @param allActiveMigrations    received active migrations from other nodes
+         */
         private void processNewState(Collection<MigrationInfo> allCompletedMigrations,
                 Collection<MigrationInfo> allActiveMigrations) {
 
@@ -1218,6 +1310,7 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
             }
         }
 
+        /** Moves all migrations to completed (including local) and marks active migrations as {@link MigrationStatus#FAILED}. */
         private void processMigrations(Collection<MigrationInfo> allCompletedMigrations,
                                        Collection<MigrationInfo> allActiveMigrations) {
             allCompletedMigrations.addAll(migrationManager.getCompletedMigrationsCopy());
@@ -1240,5 +1333,4 @@ public class InternalPartitionServiceImpl implements InternalPartitionService, M
         return "InternalPartitionService {"
                 + "version: " + getPartitionStateVersion() + ", migrationQ: " + getMigrationQueueSize() + "}";
     }
-
 }

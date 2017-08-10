@@ -1,382 +1,59 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.protocol.compatibility;
 
+import com.hazelcast.cache.impl.CacheEventData;
+import com.hazelcast.cache.impl.CacheEventDataImpl;
+import com.hazelcast.cache.impl.CacheEventType;
+import com.hazelcast.client.impl.MemberImpl;
+import com.hazelcast.client.impl.client.DistributedObjectInfo;
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongAddAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongAlterAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongAlterCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongApplyCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongCompareAndSetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongDecrementAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongGetAndAddCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongGetAndAlterCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongGetAndIncrementCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongGetAndSetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongIncrementAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongSetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceAlterAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceAlterCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceApplyCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceClearCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceCompareAndSetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceContainsCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceGetAndAlterCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceGetAndSetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceIsNullCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceSetAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceSetCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheAddEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheAddInvalidationListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheAddNearCacheInvalidationListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheAddPartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheAssignAndGetUuidsCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheClearCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheContainsKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheCreateConfigCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheDestroyCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheEntryProcessorCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheFetchNearCacheInvalidationMetadataCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheGetAllCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheGetAndRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheGetAndReplaceCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheGetCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheGetConfigCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheIterateCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheIterateEntriesCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheListenerRegistrationCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheLoadAllCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheManagementConfigCodec;
-import com.hazelcast.client.impl.protocol.codec.CachePutAllCodec;
-import com.hazelcast.client.impl.protocol.codec.CachePutCodec;
-import com.hazelcast.client.impl.protocol.codec.CachePutIfAbsentCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemoveAllCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemoveAllKeysCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemoveEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemoveInvalidationListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemovePartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheReplaceCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.CardinalityEstimatorAddCodec;
-import com.hazelcast.client.impl.protocol.codec.CardinalityEstimatorEstimateCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientAddDistributedObjectListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientAddMembershipListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientAddPartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientAuthenticationCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientAuthenticationCustomCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientCreateProxyCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientDestroyProxyCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientGetDistributedObjectsCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientGetPartitionsCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientPingCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientRemoveAllListenersCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientRemoveDistributedObjectListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientRemovePartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ConditionAwaitCodec;
-import com.hazelcast.client.impl.protocol.codec.ConditionBeforeAwaitCodec;
-import com.hazelcast.client.impl.protocol.codec.ConditionSignalAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ConditionSignalCodec;
-import com.hazelcast.client.impl.protocol.codec.CountDownLatchAwaitCodec;
-import com.hazelcast.client.impl.protocol.codec.CountDownLatchCountDownCodec;
-import com.hazelcast.client.impl.protocol.codec.CountDownLatchGetCountCodec;
-import com.hazelcast.client.impl.protocol.codec.CountDownLatchTrySetCountCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorDisposeResultCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorIsShutdownCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorRetrieveAndDisposeResultCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorRetrieveResultCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorShutdownCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorSubmitToPartitionCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapAddListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapDestroyCacheCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapMadePublishableCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapPublisherCreateCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapPublisherCreateWithValueCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapSetReadCursorCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceCancelOnAddressCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceCancelOnPartitionCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceIsShutdownCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceShutdownCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceSubmitToAddressCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceSubmitToPartitionCodec;
-import com.hazelcast.client.impl.protocol.codec.ListAddAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ListAddAllWithIndexCodec;
-import com.hazelcast.client.impl.protocol.codec.ListAddCodec;
-import com.hazelcast.client.impl.protocol.codec.ListAddListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ListAddWithIndexCodec;
-import com.hazelcast.client.impl.protocol.codec.ListClearCodec;
-import com.hazelcast.client.impl.protocol.codec.ListCompareAndRemoveAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ListCompareAndRetainAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ListContainsAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ListContainsCodec;
-import com.hazelcast.client.impl.protocol.codec.ListGetAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ListGetCodec;
-import com.hazelcast.client.impl.protocol.codec.ListIndexOfCodec;
-import com.hazelcast.client.impl.protocol.codec.ListIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.ListIteratorCodec;
-import com.hazelcast.client.impl.protocol.codec.ListLastIndexOfCodec;
-import com.hazelcast.client.impl.protocol.codec.ListListIteratorCodec;
-import com.hazelcast.client.impl.protocol.codec.ListRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.ListRemoveListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ListRemoveWithIndexCodec;
-import com.hazelcast.client.impl.protocol.codec.ListSetCodec;
-import com.hazelcast.client.impl.protocol.codec.ListSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.ListSubCodec;
-import com.hazelcast.client.impl.protocol.codec.LockForceUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.LockGetLockCountCodec;
-import com.hazelcast.client.impl.protocol.codec.LockGetRemainingLeaseTimeCodec;
-import com.hazelcast.client.impl.protocol.codec.LockIsLockedByCurrentThreadCodec;
-import com.hazelcast.client.impl.protocol.codec.LockIsLockedCodec;
-import com.hazelcast.client.impl.protocol.codec.LockLockCodec;
-import com.hazelcast.client.impl.protocol.codec.LockTryLockCodec;
-import com.hazelcast.client.impl.protocol.codec.LockUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddEntryListenerToKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddEntryListenerToKeyWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddEntryListenerWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddIndexCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddInterceptorCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddNearCacheEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddPartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAggregateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAggregateWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAssignAndGetUuidsCodec;
-import com.hazelcast.client.impl.protocol.codec.MapClearCodec;
-import com.hazelcast.client.impl.protocol.codec.MapClearNearCacheCodec;
-import com.hazelcast.client.impl.protocol.codec.MapContainsKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MapContainsValueCodec;
-import com.hazelcast.client.impl.protocol.codec.MapDeleteCodec;
-import com.hazelcast.client.impl.protocol.codec.MapEntriesWithPagingPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapEntriesWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapEntrySetCodec;
-import com.hazelcast.client.impl.protocol.codec.MapEvictAllCodec;
-import com.hazelcast.client.impl.protocol.codec.MapEvictCodec;
-import com.hazelcast.client.impl.protocol.codec.MapExecuteOnAllKeysCodec;
-import com.hazelcast.client.impl.protocol.codec.MapExecuteOnKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MapExecuteOnKeysCodec;
-import com.hazelcast.client.impl.protocol.codec.MapExecuteWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapFetchEntriesCodec;
-import com.hazelcast.client.impl.protocol.codec.MapFetchKeysCodec;
-import com.hazelcast.client.impl.protocol.codec.MapFetchNearCacheInvalidationMetadataCodec;
-import com.hazelcast.client.impl.protocol.codec.MapFlushCodec;
-import com.hazelcast.client.impl.protocol.codec.MapForceUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.MapGetAllCodec;
-import com.hazelcast.client.impl.protocol.codec.MapGetCodec;
-import com.hazelcast.client.impl.protocol.codec.MapGetEntryViewCodec;
-import com.hazelcast.client.impl.protocol.codec.MapIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.MapIsLockedCodec;
-import com.hazelcast.client.impl.protocol.codec.MapKeySetCodec;
-import com.hazelcast.client.impl.protocol.codec.MapKeySetWithPagingPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapKeySetWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapLoadAllCodec;
-import com.hazelcast.client.impl.protocol.codec.MapLoadGivenKeysCodec;
-import com.hazelcast.client.impl.protocol.codec.MapLockCodec;
-import com.hazelcast.client.impl.protocol.codec.MapProjectCodec;
-import com.hazelcast.client.impl.protocol.codec.MapProjectWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapPutAllCodec;
-import com.hazelcast.client.impl.protocol.codec.MapPutCodec;
-import com.hazelcast.client.impl.protocol.codec.MapPutIfAbsentCodec;
-import com.hazelcast.client.impl.protocol.codec.MapPutTransientCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceCancelCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceForCustomCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceForListCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceForMapCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceForMultiMapCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceForSetCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceJobProcessInformationCodec;
-import com.hazelcast.client.impl.protocol.codec.MapRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.MapRemoveEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MapRemoveIfSameCodec;
-import com.hazelcast.client.impl.protocol.codec.MapRemoveInterceptorCodec;
-import com.hazelcast.client.impl.protocol.codec.MapRemovePartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReplaceCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReplaceIfSameCodec;
-import com.hazelcast.client.impl.protocol.codec.MapSetCodec;
-import com.hazelcast.client.impl.protocol.codec.MapSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.MapSubmitToKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MapTryLockCodec;
-import com.hazelcast.client.impl.protocol.codec.MapTryPutCodec;
-import com.hazelcast.client.impl.protocol.codec.MapTryRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.MapUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.MapValuesCodec;
-import com.hazelcast.client.impl.protocol.codec.MapValuesWithPagingPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapValuesWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapAddEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapAddEntryListenerToKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapClearCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapContainsEntryCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapContainsKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapContainsValueCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapEntrySetCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapForceUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapGetCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapIsLockedCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapKeySetCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapLockCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapPutCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapRemoveEntryCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapRemoveEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapTryLockCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapValueCountCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapValuesCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueAddAllCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueAddListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueClearCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueCompareAndRemoveAllCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueCompareAndRetainAllCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueContainsAllCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueContainsCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueDrainToCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueDrainToMaxSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueIteratorCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueOfferCodec;
-import com.hazelcast.client.impl.protocol.codec.QueuePeekCodec;
-import com.hazelcast.client.impl.protocol.codec.QueuePollCodec;
-import com.hazelcast.client.impl.protocol.codec.QueuePutCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueRemainingCapacityCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueRemoveListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueTakeCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapAddEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapAddEntryListenerToKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapAddEntryListenerToKeyWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapAddEntryListenerWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapAddNearCacheEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapClearCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapContainsKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapContainsValueCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapEntrySetCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapGetCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapKeySetCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapPutAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapPutCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapRemoveEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapValuesCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferAddAllCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferAddCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferCapacityCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferHeadSequenceCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferReadManyCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferReadOneCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferRemainingCapacityCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferTailSequenceCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorCancelCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorDisposeCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorGetAllScheduledFuturesCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorGetDelayCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorGetResultCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorGetStatsCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorIsCancelledCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorIsDoneCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorShutdownCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorSubmitToAddressCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorSubmitToPartitionCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreAcquireCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreAvailablePermitsCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreDrainPermitsCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreInitCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreReducePermitsCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreReleaseCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreTryAcquireCodec;
-import com.hazelcast.client.impl.protocol.codec.SetAddAllCodec;
-import com.hazelcast.client.impl.protocol.codec.SetAddCodec;
-import com.hazelcast.client.impl.protocol.codec.SetAddListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.SetClearCodec;
-import com.hazelcast.client.impl.protocol.codec.SetCompareAndRemoveAllCodec;
-import com.hazelcast.client.impl.protocol.codec.SetCompareAndRetainAllCodec;
-import com.hazelcast.client.impl.protocol.codec.SetContainsAllCodec;
-import com.hazelcast.client.impl.protocol.codec.SetContainsCodec;
-import com.hazelcast.client.impl.protocol.codec.SetGetAllCodec;
-import com.hazelcast.client.impl.protocol.codec.SetIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.SetRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.SetRemoveListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.SetSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.TopicAddMessageListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.TopicPublishCodec;
-import com.hazelcast.client.impl.protocol.codec.TopicRemoveMessageListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionCommitCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionCreateCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionRollbackCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalListAddCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalListRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalListSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapContainsKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapDeleteCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapGetCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapGetForUpdateCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapKeySetCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapKeySetWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapPutCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapPutIfAbsentCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapRemoveIfSameCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapReplaceCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapReplaceIfSameCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapSetCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapValuesCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapValuesWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapGetCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapPutCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapRemoveEntryCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapValueCountCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalQueueOfferCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalQueuePeekCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalQueuePollCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalQueueSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalQueueTakeCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalSetAddCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalSetRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalSetSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionClearRemoteCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionCollectTransactionsCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionCommitCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionCreateCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionFinalizeCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionPrepareCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionRollbackCodec;
+import com.hazelcast.client.impl.protocol.codec.*;
+import com.hazelcast.core.Member;
+import com.hazelcast.internal.serialization.impl.HeapData;
+import com.hazelcast.map.impl.SimpleEntryView;
+import com.hazelcast.map.impl.querycache.event.DefaultQueryCacheEventData;
+import com.hazelcast.map.impl.querycache.event.QueryCacheEventData;
+import com.hazelcast.mapreduce.JobPartitionState;
+import com.hazelcast.mapreduce.impl.task.JobPartitionStateImpl;
+import com.hazelcast.nio.Address;
+import com.hazelcast.scheduledexecutor.ScheduledTaskHandler;
+import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.transaction.impl.xa.SerializableXID;
+
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
+import java.lang.reflect.Array;
+import java.net.UnknownHostException;
+import javax.transaction.xa.Xid;
+import java.util.AbstractMap;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.Map;
 
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aBoolean;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aByte;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aData;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aListOfEntry;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aLong;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aMember;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aPartitionTable;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aQueryCacheEventData;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aString;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aUUID;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.anAddress;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.anInt;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.anXid;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.cacheEventDatas;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.datas;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.distributedObjectInfos;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.isEqual;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.jobPartitionStates;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.longs;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.members;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.queryCacheEventDatas;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.strings;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.uuids;
 import static org.junit.Assert.assertTrue;
+import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.*;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -608,6 +285,24 @@ public class EncodeDecodeCompatibilityNullTest {
 {
     ClientMessage clientMessage = ClientPingCodec.encodeResponse( );
     ClientPingCodec.ResponseParameters params = ClientPingCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = ClientStatisticsCodec.encodeRequest(    aString   );
+    ClientStatisticsCodec.RequestParameters params = ClientStatisticsCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.stats));
+}
+{
+    ClientMessage clientMessage = ClientStatisticsCodec.encodeResponse( );
+    ClientStatisticsCodec.ResponseParameters params = ClientStatisticsCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = ClientDeployClassesCodec.encodeRequest(    aListOfStringToByteArrEntry   );
+    ClientDeployClassesCodec.RequestParameters params = ClientDeployClassesCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aListOfStringToByteArrEntry, params.classDefinitions));
+}
+{
+    ClientMessage clientMessage = ClientDeployClassesCodec.encodeResponse( );
+    ClientDeployClassesCodec.ResponseParameters params = ClientDeployClassesCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
 }
 {
     ClientMessage clientMessage = MapPutCodec.encodeRequest(    aString ,    aData ,    aData ,    aLong ,    aLong   );
@@ -1496,18 +1191,115 @@ public class EncodeDecodeCompatibilityNullTest {
             assertTrue(isEqual(anAddress, params.address));
 }
 {
-    ClientMessage clientMessage = MapFetchNearCacheInvalidationMetadataCodec.encodeResponse(    null   );
+    ClientMessage clientMessage = MapFetchNearCacheInvalidationMetadataCodec.encodeResponse(    aNamePartitionSequenceList ,    aPartitionUuidList   );
     MapFetchNearCacheInvalidationMetadataCodec.ResponseParameters params = MapFetchNearCacheInvalidationMetadataCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(null, params.response));
+            assertTrue(isEqual(aNamePartitionSequenceList, params.namePartitionSequenceList));
+            assertTrue(isEqual(aPartitionUuidList, params.partitionUuidList));
 }
 {
     ClientMessage clientMessage = MapAssignAndGetUuidsCodec.encodeRequest( );
     MapAssignAndGetUuidsCodec.RequestParameters params = MapAssignAndGetUuidsCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
 }
 {
-    ClientMessage clientMessage = MapAssignAndGetUuidsCodec.encodeResponse(    datas   );
+    ClientMessage clientMessage = MapAssignAndGetUuidsCodec.encodeResponse(    aPartitionUuidList   );
     MapAssignAndGetUuidsCodec.ResponseParameters params = MapAssignAndGetUuidsCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(datas, params.response));
+            assertTrue(isEqual(aPartitionUuidList, params.partitionUuidList));
+}
+{
+    ClientMessage clientMessage = MapRemoveAllCodec.encodeRequest(    aString ,    aData   );
+    MapRemoveAllCodec.RequestParameters params = MapRemoveAllCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(aData, params.predicate));
+}
+{
+    ClientMessage clientMessage = MapRemoveAllCodec.encodeResponse( );
+    MapRemoveAllCodec.ResponseParameters params = MapRemoveAllCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = MapAddNearCacheInvalidationListenerCodec.encodeRequest(    aString ,    anInt ,    aBoolean   );
+    MapAddNearCacheInvalidationListenerCodec.RequestParameters params = MapAddNearCacheInvalidationListenerCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(anInt, params.listenerFlags));
+            assertTrue(isEqual(aBoolean, params.localOnly));
+}
+{
+    ClientMessage clientMessage = MapAddNearCacheInvalidationListenerCodec.encodeResponse(    aString   );
+    MapAddNearCacheInvalidationListenerCodec.ResponseParameters params = MapAddNearCacheInvalidationListenerCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.response));
+}
+{
+    class MapAddNearCacheInvalidationListenerCodecHandler extends MapAddNearCacheInvalidationListenerCodec.AbstractEventHandler {
+        @Override
+        public void handle(  com.hazelcast.nio.serialization.Data
+ key ,   java.lang.String
+ sourceUuid ,   java.util.UUID
+ partitionUuid ,   long
+ sequence   ) {
+                          assertTrue(isEqual(null, key));
+                          assertTrue(isEqual(aString, sourceUuid));
+                          assertTrue(isEqual(aUUID, partitionUuid));
+                          assertTrue(isEqual(aLong, sequence));
+        }
+        @Override
+        public void handle(  java.util.Collection<com.hazelcast.nio.serialization.Data> keys ,   java.util.Collection<java.lang.String> sourceUuids ,   java.util.Collection<java.util.UUID> partitionUuids ,   java.util.Collection<java.lang.Long> sequences   ) {
+                          assertTrue(isEqual(datas, keys));
+                          assertTrue(isEqual(strings, sourceUuids));
+                          assertTrue(isEqual(uuids, partitionUuids));
+                          assertTrue(isEqual(longs, sequences));
+        }
+    }
+    MapAddNearCacheInvalidationListenerCodecHandler handler = new MapAddNearCacheInvalidationListenerCodecHandler();
+    {
+        ClientMessage clientMessage = MapAddNearCacheInvalidationListenerCodec.encodeIMapInvalidationEvent( null ,  aString ,  aUUID ,  aLong   );
+        handler.handle(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+     }
+    {
+        ClientMessage clientMessage = MapAddNearCacheInvalidationListenerCodec.encodeIMapBatchInvalidationEvent( datas ,  strings ,  uuids ,  longs   );
+        handler.handle(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+     }
+}
+{
+    ClientMessage clientMessage = MapFetchWithQueryCodec.encodeRequest(    aString ,    anInt ,    anInt ,    aData ,    aData   );
+    MapFetchWithQueryCodec.RequestParameters params = MapFetchWithQueryCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(anInt, params.tableIndex));
+            assertTrue(isEqual(anInt, params.batch));
+            assertTrue(isEqual(aData, params.projection));
+            assertTrue(isEqual(aData, params.predicate));
+}
+{
+    ClientMessage clientMessage = MapFetchWithQueryCodec.encodeResponse(    datas ,    anInt   );
+    MapFetchWithQueryCodec.ResponseParameters params = MapFetchWithQueryCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(datas, params.results));
+            assertTrue(isEqual(anInt, params.nextTableIndexToReadFrom));
+}
+{
+    ClientMessage clientMessage = MapEventJournalSubscribeCodec.encodeRequest(    aString   );
+    MapEventJournalSubscribeCodec.RequestParameters params = MapEventJournalSubscribeCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+}
+{
+    ClientMessage clientMessage = MapEventJournalSubscribeCodec.encodeResponse(    aLong ,    aLong   );
+    MapEventJournalSubscribeCodec.ResponseParameters params = MapEventJournalSubscribeCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aLong, params.oldestSequence));
+            assertTrue(isEqual(aLong, params.newestSequence));
+}
+{
+    ClientMessage clientMessage = MapEventJournalReadCodec.encodeRequest(    aString ,    aLong ,    anInt ,    anInt ,    null ,    null   );
+    MapEventJournalReadCodec.RequestParameters params = MapEventJournalReadCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(aLong, params.startSequence));
+            assertTrue(isEqual(anInt, params.minSize));
+            assertTrue(isEqual(anInt, params.maxSize));
+            assertTrue(isEqual(null, params.predicate));
+            assertTrue(isEqual(null, params.projection));
+}
+{
+    ClientMessage clientMessage = MapEventJournalReadCodec.encodeResponse(    anInt ,    datas ,    null   );
+    MapEventJournalReadCodec.ResponseParameters params = MapEventJournalReadCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(anInt, params.readCount));
+            assertTrue(isEqual(datas, params.items));
+            assertTrue(isEqual(null, params.itemSeqs));
 }
 {
     ClientMessage clientMessage = MultiMapPutCodec.encodeRequest(    aString ,    aData ,    aData ,    aLong   );
@@ -4448,18 +4240,47 @@ public class EncodeDecodeCompatibilityNullTest {
             assertTrue(isEqual(anAddress, params.address));
 }
 {
-    ClientMessage clientMessage = CacheFetchNearCacheInvalidationMetadataCodec.encodeResponse(    null   );
+    ClientMessage clientMessage = CacheFetchNearCacheInvalidationMetadataCodec.encodeResponse(    aNamePartitionSequenceList ,    aPartitionUuidList   );
     CacheFetchNearCacheInvalidationMetadataCodec.ResponseParameters params = CacheFetchNearCacheInvalidationMetadataCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(null, params.response));
+            assertTrue(isEqual(aNamePartitionSequenceList, params.namePartitionSequenceList));
+            assertTrue(isEqual(aPartitionUuidList, params.partitionUuidList));
 }
 {
     ClientMessage clientMessage = CacheAssignAndGetUuidsCodec.encodeRequest( );
     CacheAssignAndGetUuidsCodec.RequestParameters params = CacheAssignAndGetUuidsCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
 }
 {
-    ClientMessage clientMessage = CacheAssignAndGetUuidsCodec.encodeResponse(    datas   );
+    ClientMessage clientMessage = CacheAssignAndGetUuidsCodec.encodeResponse(    aPartitionUuidList   );
     CacheAssignAndGetUuidsCodec.ResponseParameters params = CacheAssignAndGetUuidsCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(datas, params.response));
+            assertTrue(isEqual(aPartitionUuidList, params.partitionUuidList));
+}
+{
+    ClientMessage clientMessage = CacheEventJournalSubscribeCodec.encodeRequest(    aString   );
+    CacheEventJournalSubscribeCodec.RequestParameters params = CacheEventJournalSubscribeCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+}
+{
+    ClientMessage clientMessage = CacheEventJournalSubscribeCodec.encodeResponse(    aLong ,    aLong   );
+    CacheEventJournalSubscribeCodec.ResponseParameters params = CacheEventJournalSubscribeCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aLong, params.oldestSequence));
+            assertTrue(isEqual(aLong, params.newestSequence));
+}
+{
+    ClientMessage clientMessage = CacheEventJournalReadCodec.encodeRequest(    aString ,    aLong ,    anInt ,    anInt ,    null ,    null   );
+    CacheEventJournalReadCodec.RequestParameters params = CacheEventJournalReadCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(aLong, params.startSequence));
+            assertTrue(isEqual(anInt, params.minSize));
+            assertTrue(isEqual(anInt, params.maxSize));
+            assertTrue(isEqual(null, params.predicate));
+            assertTrue(isEqual(null, params.projection));
+}
+{
+    ClientMessage clientMessage = CacheEventJournalReadCodec.encodeResponse(    anInt ,    datas ,    null   );
+    CacheEventJournalReadCodec.ResponseParameters params = CacheEventJournalReadCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(anInt, params.readCount));
+            assertTrue(isEqual(datas, params.items));
+            assertTrue(isEqual(null, params.itemSeqs));
 }
 {
     ClientMessage clientMessage = XATransactionClearRemoteCodec.encodeRequest(    anXid   );
@@ -4562,8 +4383,8 @@ public class EncodeDecodeCompatibilityNullTest {
     TransactionRollbackCodec.ResponseParameters params = TransactionRollbackCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapPublisherCreateWithValueCodec.encodeRequest(    aString ,    aString ,    aData ,    anInt ,    anInt ,    aLong ,    aBoolean ,    aBoolean   );
-    EnterpriseMapPublisherCreateWithValueCodec.RequestParameters params = EnterpriseMapPublisherCreateWithValueCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQueryPublisherCreateWithValueCodec.encodeRequest(    aString ,    aString ,    aData ,    anInt ,    anInt ,    aLong ,    aBoolean ,    aBoolean   );
+    ContinuousQueryPublisherCreateWithValueCodec.RequestParameters params = ContinuousQueryPublisherCreateWithValueCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aString, params.mapName));
             assertTrue(isEqual(aString, params.cacheName));
             assertTrue(isEqual(aData, params.predicate));
@@ -4574,13 +4395,13 @@ public class EncodeDecodeCompatibilityNullTest {
             assertTrue(isEqual(aBoolean, params.coalesce));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapPublisherCreateWithValueCodec.encodeResponse(    aListOfEntry   );
-    EnterpriseMapPublisherCreateWithValueCodec.ResponseParameters params = EnterpriseMapPublisherCreateWithValueCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQueryPublisherCreateWithValueCodec.encodeResponse(    aListOfEntry   );
+    ContinuousQueryPublisherCreateWithValueCodec.ResponseParameters params = ContinuousQueryPublisherCreateWithValueCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aListOfEntry, params.response));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapPublisherCreateCodec.encodeRequest(    aString ,    aString ,    aData ,    anInt ,    anInt ,    aLong ,    aBoolean ,    aBoolean   );
-    EnterpriseMapPublisherCreateCodec.RequestParameters params = EnterpriseMapPublisherCreateCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQueryPublisherCreateCodec.encodeRequest(    aString ,    aString ,    aData ,    anInt ,    anInt ,    aLong ,    aBoolean ,    aBoolean   );
+    ContinuousQueryPublisherCreateCodec.RequestParameters params = ContinuousQueryPublisherCreateCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aString, params.mapName));
             assertTrue(isEqual(aString, params.cacheName));
             assertTrue(isEqual(aData, params.predicate));
@@ -4591,34 +4412,34 @@ public class EncodeDecodeCompatibilityNullTest {
             assertTrue(isEqual(aBoolean, params.coalesce));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapPublisherCreateCodec.encodeResponse(    datas   );
-    EnterpriseMapPublisherCreateCodec.ResponseParameters params = EnterpriseMapPublisherCreateCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQueryPublisherCreateCodec.encodeResponse(    datas   );
+    ContinuousQueryPublisherCreateCodec.ResponseParameters params = ContinuousQueryPublisherCreateCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(datas, params.response));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapMadePublishableCodec.encodeRequest(    aString ,    aString   );
-    EnterpriseMapMadePublishableCodec.RequestParameters params = EnterpriseMapMadePublishableCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQueryMadePublishableCodec.encodeRequest(    aString ,    aString   );
+    ContinuousQueryMadePublishableCodec.RequestParameters params = ContinuousQueryMadePublishableCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aString, params.mapName));
             assertTrue(isEqual(aString, params.cacheName));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapMadePublishableCodec.encodeResponse(    aBoolean   );
-    EnterpriseMapMadePublishableCodec.ResponseParameters params = EnterpriseMapMadePublishableCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQueryMadePublishableCodec.encodeResponse(    aBoolean   );
+    ContinuousQueryMadePublishableCodec.ResponseParameters params = ContinuousQueryMadePublishableCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aBoolean, params.response));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeRequest(    aString ,    aBoolean   );
-    EnterpriseMapAddListenerCodec.RequestParameters params = EnterpriseMapAddListenerCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeRequest(    aString ,    aBoolean   );
+    ContinuousQueryAddListenerCodec.RequestParameters params = ContinuousQueryAddListenerCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aString, params.listenerName));
             assertTrue(isEqual(aBoolean, params.localOnly));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeResponse(    aString   );
-    EnterpriseMapAddListenerCodec.ResponseParameters params = EnterpriseMapAddListenerCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeResponse(    aString   );
+    ContinuousQueryAddListenerCodec.ResponseParameters params = ContinuousQueryAddListenerCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aString, params.response));
 }
 {
-    class EnterpriseMapAddListenerCodecHandler extends EnterpriseMapAddListenerCodec.AbstractEventHandler {
+    class ContinuousQueryAddListenerCodecHandler extends ContinuousQueryAddListenerCodec.AbstractEventHandler {
         @Override
         public void handle(  com.hazelcast.map.impl.querycache.event.QueryCacheEventData
  data   ) {
@@ -4633,37 +4454,37 @@ public class EncodeDecodeCompatibilityNullTest {
                           assertTrue(isEqual(anInt, partitionId));
         }
     }
-    EnterpriseMapAddListenerCodecHandler handler = new EnterpriseMapAddListenerCodecHandler();
+    ContinuousQueryAddListenerCodecHandler handler = new ContinuousQueryAddListenerCodecHandler();
     {
-        ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeQueryCacheSingleEvent( aQueryCacheEventData   );
+        ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeQueryCacheSingleEvent( aQueryCacheEventData   );
         handler.handle(ClientMessage.createForDecode(clientMessage.buffer(), 0));
      }
     {
-        ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeQueryCacheBatchEvent( queryCacheEventDatas ,  aString ,  anInt   );
+        ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeQueryCacheBatchEvent( queryCacheEventDatas ,  aString ,  anInt   );
         handler.handle(ClientMessage.createForDecode(clientMessage.buffer(), 0));
      }
 }
 {
-    ClientMessage clientMessage = EnterpriseMapSetReadCursorCodec.encodeRequest(    aString ,    aString ,    aLong   );
-    EnterpriseMapSetReadCursorCodec.RequestParameters params = EnterpriseMapSetReadCursorCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQuerySetReadCursorCodec.encodeRequest(    aString ,    aString ,    aLong   );
+    ContinuousQuerySetReadCursorCodec.RequestParameters params = ContinuousQuerySetReadCursorCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aString, params.mapName));
             assertTrue(isEqual(aString, params.cacheName));
             assertTrue(isEqual(aLong, params.sequence));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapSetReadCursorCodec.encodeResponse(    aBoolean   );
-    EnterpriseMapSetReadCursorCodec.ResponseParameters params = EnterpriseMapSetReadCursorCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQuerySetReadCursorCodec.encodeResponse(    aBoolean   );
+    ContinuousQuerySetReadCursorCodec.ResponseParameters params = ContinuousQuerySetReadCursorCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aBoolean, params.response));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapDestroyCacheCodec.encodeRequest(    aString ,    aString   );
-    EnterpriseMapDestroyCacheCodec.RequestParameters params = EnterpriseMapDestroyCacheCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQueryDestroyCacheCodec.encodeRequest(    aString ,    aString   );
+    ContinuousQueryDestroyCacheCodec.RequestParameters params = ContinuousQueryDestroyCacheCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aString, params.mapName));
             assertTrue(isEqual(aString, params.cacheName));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapDestroyCacheCodec.encodeResponse(    aBoolean   );
-    EnterpriseMapDestroyCacheCodec.ResponseParameters params = EnterpriseMapDestroyCacheCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ContinuousQueryDestroyCacheCodec.encodeResponse(    aBoolean   );
+    ContinuousQueryDestroyCacheCodec.ResponseParameters params = ContinuousQueryDestroyCacheCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aBoolean, params.response));
 }
 {
@@ -4761,10 +4582,11 @@ public class EncodeDecodeCompatibilityNullTest {
             assertTrue(isEqual(null, params.filter));
 }
 {
-    ClientMessage clientMessage = RingbufferReadManyCodec.encodeResponse(    anInt ,    datas   );
+    ClientMessage clientMessage = RingbufferReadManyCodec.encodeResponse(    anInt ,    datas ,    null   );
     RingbufferReadManyCodec.ResponseParameters params = RingbufferReadManyCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(anInt, params.readCount));
             assertTrue(isEqual(datas, params.items));
+            assertTrue(isEqual(null, params.itemSeqs));
 }
 {
     ClientMessage clientMessage = DurableExecutorShutdownCodec.encodeRequest(    aString   );
@@ -4859,114 +4681,462 @@ public class EncodeDecodeCompatibilityNullTest {
     ScheduledExecutorShutdownCodec.ResponseParameters params = ScheduledExecutorShutdownCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorSubmitToPartitionCodec.encodeRequest(    aString ,    aData   );
+    ClientMessage clientMessage = ScheduledExecutorSubmitToPartitionCodec.encodeRequest(    aString ,    aByte ,    aString ,    aData ,    aLong ,    aLong   );
     ScheduledExecutorSubmitToPartitionCodec.RequestParameters params = ScheduledExecutorSubmitToPartitionCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aString, params.schedulerName));
-            assertTrue(isEqual(aData, params.taskDefinition));
+            assertTrue(isEqual(aByte, params.type));
+            assertTrue(isEqual(aString, params.taskName));
+            assertTrue(isEqual(aData, params.task));
+            assertTrue(isEqual(aLong, params.initialDelayInMillis));
+            assertTrue(isEqual(aLong, params.periodInMillis));
 }
 {
     ClientMessage clientMessage = ScheduledExecutorSubmitToPartitionCodec.encodeResponse( );
     ScheduledExecutorSubmitToPartitionCodec.ResponseParameters params = ScheduledExecutorSubmitToPartitionCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorSubmitToAddressCodec.encodeRequest(    aString ,    anAddress ,    aData   );
+    ClientMessage clientMessage = ScheduledExecutorSubmitToAddressCodec.encodeRequest(    aString ,    anAddress ,    aByte ,    aString ,    aData ,    aLong ,    aLong   );
     ScheduledExecutorSubmitToAddressCodec.RequestParameters params = ScheduledExecutorSubmitToAddressCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aString, params.schedulerName));
             assertTrue(isEqual(anAddress, params.address));
-            assertTrue(isEqual(aData, params.taskDefinition));
+            assertTrue(isEqual(aByte, params.type));
+            assertTrue(isEqual(aString, params.taskName));
+            assertTrue(isEqual(aData, params.task));
+            assertTrue(isEqual(aLong, params.initialDelayInMillis));
+            assertTrue(isEqual(aLong, params.periodInMillis));
 }
 {
     ClientMessage clientMessage = ScheduledExecutorSubmitToAddressCodec.encodeResponse( );
     ScheduledExecutorSubmitToAddressCodec.ResponseParameters params = ScheduledExecutorSubmitToAddressCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetAllScheduledFuturesCodec.encodeRequest(    aString ,    anAddress   );
+    ClientMessage clientMessage = ScheduledExecutorGetAllScheduledFuturesCodec.encodeRequest(    aString   );
     ScheduledExecutorGetAllScheduledFuturesCodec.RequestParameters params = ScheduledExecutorGetAllScheduledFuturesCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aString, params.schedulerName));
-            assertTrue(isEqual(anAddress, params.address));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetAllScheduledFuturesCodec.encodeResponse(    strings   );
+    ClientMessage clientMessage = ScheduledExecutorGetAllScheduledFuturesCodec.encodeResponse(    taskHandlers   );
     ScheduledExecutorGetAllScheduledFuturesCodec.ResponseParameters params = ScheduledExecutorGetAllScheduledFuturesCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(strings, params.handlers));
+            assertTrue(isEqual(taskHandlers, params.handlers));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetStatsCodec.encodeRequest(    aString   );
-    ScheduledExecutorGetStatsCodec.RequestParameters params = ScheduledExecutorGetStatsCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(aString, params.handlerUrn));
+    ClientMessage clientMessage = ScheduledExecutorGetStatsFromPartitionCodec.encodeRequest(    aString ,    aString   );
+    ScheduledExecutorGetStatsFromPartitionCodec.RequestParameters params = ScheduledExecutorGetStatsFromPartitionCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetStatsCodec.encodeResponse(    aLong ,    aLong ,    aLong ,    aLong   );
-    ScheduledExecutorGetStatsCodec.ResponseParameters params = ScheduledExecutorGetStatsCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ScheduledExecutorGetStatsFromPartitionCodec.encodeResponse(    aLong ,    aLong ,    aLong ,    aLong   );
+    ScheduledExecutorGetStatsFromPartitionCodec.ResponseParameters params = ScheduledExecutorGetStatsFromPartitionCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aLong, params.lastIdleTimeNanos));
             assertTrue(isEqual(aLong, params.totalIdleTimeNanos));
             assertTrue(isEqual(aLong, params.totalRuns));
             assertTrue(isEqual(aLong, params.totalRunTimeNanos));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetDelayCodec.encodeRequest(    aString ,    aString   );
-    ScheduledExecutorGetDelayCodec.RequestParameters params = ScheduledExecutorGetDelayCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(aString, params.handlerUrn));
-            assertTrue(isEqual(aString, params.timeUnitName));
+    ClientMessage clientMessage = ScheduledExecutorGetStatsFromAddressCodec.encodeRequest(    aString ,    aString ,    anAddress   );
+    ScheduledExecutorGetStatsFromAddressCodec.RequestParameters params = ScheduledExecutorGetStatsFromAddressCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
+            assertTrue(isEqual(anAddress, params.address));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetDelayCodec.encodeResponse(    aLong   );
-    ScheduledExecutorGetDelayCodec.ResponseParameters params = ScheduledExecutorGetDelayCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ScheduledExecutorGetStatsFromAddressCodec.encodeResponse(    aLong ,    aLong ,    aLong ,    aLong   );
+    ScheduledExecutorGetStatsFromAddressCodec.ResponseParameters params = ScheduledExecutorGetStatsFromAddressCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aLong, params.lastIdleTimeNanos));
+            assertTrue(isEqual(aLong, params.totalIdleTimeNanos));
+            assertTrue(isEqual(aLong, params.totalRuns));
+            assertTrue(isEqual(aLong, params.totalRunTimeNanos));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorGetDelayFromPartitionCodec.encodeRequest(    aString ,    aString   );
+    ScheduledExecutorGetDelayFromPartitionCodec.RequestParameters params = ScheduledExecutorGetDelayFromPartitionCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorGetDelayFromPartitionCodec.encodeResponse(    aLong   );
+    ScheduledExecutorGetDelayFromPartitionCodec.ResponseParameters params = ScheduledExecutorGetDelayFromPartitionCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aLong, params.response));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorCancelCodec.encodeRequest(    aString ,    aBoolean   );
-    ScheduledExecutorCancelCodec.RequestParameters params = ScheduledExecutorCancelCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(aString, params.handlerUrn));
+    ClientMessage clientMessage = ScheduledExecutorGetDelayFromAddressCodec.encodeRequest(    aString ,    aString ,    anAddress   );
+    ScheduledExecutorGetDelayFromAddressCodec.RequestParameters params = ScheduledExecutorGetDelayFromAddressCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
+            assertTrue(isEqual(anAddress, params.address));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorGetDelayFromAddressCodec.encodeResponse(    aLong   );
+    ScheduledExecutorGetDelayFromAddressCodec.ResponseParameters params = ScheduledExecutorGetDelayFromAddressCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aLong, params.response));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorCancelFromPartitionCodec.encodeRequest(    aString ,    aString ,    aBoolean   );
+    ScheduledExecutorCancelFromPartitionCodec.RequestParameters params = ScheduledExecutorCancelFromPartitionCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
             assertTrue(isEqual(aBoolean, params.mayInterruptIfRunning));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorCancelCodec.encodeResponse(    aBoolean   );
-    ScheduledExecutorCancelCodec.ResponseParameters params = ScheduledExecutorCancelCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ScheduledExecutorCancelFromPartitionCodec.encodeResponse(    aBoolean   );
+    ScheduledExecutorCancelFromPartitionCodec.ResponseParameters params = ScheduledExecutorCancelFromPartitionCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aBoolean, params.response));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorIsCancelledCodec.encodeRequest(    aString   );
-    ScheduledExecutorIsCancelledCodec.RequestParameters params = ScheduledExecutorIsCancelledCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(aString, params.handlerUrn));
+    ClientMessage clientMessage = ScheduledExecutorCancelFromAddressCodec.encodeRequest(    aString ,    aString ,    anAddress ,    aBoolean   );
+    ScheduledExecutorCancelFromAddressCodec.RequestParameters params = ScheduledExecutorCancelFromAddressCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
+            assertTrue(isEqual(anAddress, params.address));
+            assertTrue(isEqual(aBoolean, params.mayInterruptIfRunning));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorIsCancelledCodec.encodeResponse(    aBoolean   );
-    ScheduledExecutorIsCancelledCodec.ResponseParameters params = ScheduledExecutorIsCancelledCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ScheduledExecutorCancelFromAddressCodec.encodeResponse(    aBoolean   );
+    ScheduledExecutorCancelFromAddressCodec.ResponseParameters params = ScheduledExecutorCancelFromAddressCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aBoolean, params.response));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorIsDoneCodec.encodeRequest(    aString   );
-    ScheduledExecutorIsDoneCodec.RequestParameters params = ScheduledExecutorIsDoneCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(aString, params.handlerUrn));
+    ClientMessage clientMessage = ScheduledExecutorIsCancelledFromPartitionCodec.encodeRequest(    aString ,    aString   );
+    ScheduledExecutorIsCancelledFromPartitionCodec.RequestParameters params = ScheduledExecutorIsCancelledFromPartitionCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorIsDoneCodec.encodeResponse(    aBoolean   );
-    ScheduledExecutorIsDoneCodec.ResponseParameters params = ScheduledExecutorIsDoneCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ScheduledExecutorIsCancelledFromPartitionCodec.encodeResponse(    aBoolean   );
+    ScheduledExecutorIsCancelledFromPartitionCodec.ResponseParameters params = ScheduledExecutorIsCancelledFromPartitionCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(aBoolean, params.response));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetResultCodec.encodeRequest(    aString   );
-    ScheduledExecutorGetResultCodec.RequestParameters params = ScheduledExecutorGetResultCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(aString, params.handlerUrn));
+    ClientMessage clientMessage = ScheduledExecutorIsCancelledFromAddressCodec.encodeRequest(    aString ,    aString ,    anAddress   );
+    ScheduledExecutorIsCancelledFromAddressCodec.RequestParameters params = ScheduledExecutorIsCancelledFromAddressCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
+            assertTrue(isEqual(anAddress, params.address));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetResultCodec.encodeResponse(    null   );
-    ScheduledExecutorGetResultCodec.ResponseParameters params = ScheduledExecutorGetResultCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ScheduledExecutorIsCancelledFromAddressCodec.encodeResponse(    aBoolean   );
+    ScheduledExecutorIsCancelledFromAddressCodec.ResponseParameters params = ScheduledExecutorIsCancelledFromAddressCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aBoolean, params.response));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorIsDoneFromPartitionCodec.encodeRequest(    aString ,    aString   );
+    ScheduledExecutorIsDoneFromPartitionCodec.RequestParameters params = ScheduledExecutorIsDoneFromPartitionCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorIsDoneFromPartitionCodec.encodeResponse(    aBoolean   );
+    ScheduledExecutorIsDoneFromPartitionCodec.ResponseParameters params = ScheduledExecutorIsDoneFromPartitionCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aBoolean, params.response));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorIsDoneFromAddressCodec.encodeRequest(    aString ,    aString ,    anAddress   );
+    ScheduledExecutorIsDoneFromAddressCodec.RequestParameters params = ScheduledExecutorIsDoneFromAddressCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
+            assertTrue(isEqual(anAddress, params.address));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorIsDoneFromAddressCodec.encodeResponse(    aBoolean   );
+    ScheduledExecutorIsDoneFromAddressCodec.ResponseParameters params = ScheduledExecutorIsDoneFromAddressCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aBoolean, params.response));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorGetResultFromPartitionCodec.encodeRequest(    aString ,    aString   );
+    ScheduledExecutorGetResultFromPartitionCodec.RequestParameters params = ScheduledExecutorGetResultFromPartitionCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorGetResultFromPartitionCodec.encodeResponse(    null   );
+    ScheduledExecutorGetResultFromPartitionCodec.ResponseParameters params = ScheduledExecutorGetResultFromPartitionCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
             assertTrue(isEqual(null, params.response));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorDisposeCodec.encodeRequest(    aString   );
-    ScheduledExecutorDisposeCodec.RequestParameters params = ScheduledExecutorDisposeCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
-            assertTrue(isEqual(aString, params.handlerUrn));
+    ClientMessage clientMessage = ScheduledExecutorGetResultFromAddressCodec.encodeRequest(    aString ,    aString ,    anAddress   );
+    ScheduledExecutorGetResultFromAddressCodec.RequestParameters params = ScheduledExecutorGetResultFromAddressCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
+            assertTrue(isEqual(anAddress, params.address));
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorDisposeCodec.encodeResponse( );
-    ScheduledExecutorDisposeCodec.ResponseParameters params = ScheduledExecutorDisposeCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+    ClientMessage clientMessage = ScheduledExecutorGetResultFromAddressCodec.encodeResponse(    null   );
+    ScheduledExecutorGetResultFromAddressCodec.ResponseParameters params = ScheduledExecutorGetResultFromAddressCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(null, params.response));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorDisposeFromPartitionCodec.encodeRequest(    aString ,    aString   );
+    ScheduledExecutorDisposeFromPartitionCodec.RequestParameters params = ScheduledExecutorDisposeFromPartitionCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorDisposeFromPartitionCodec.encodeResponse( );
+    ScheduledExecutorDisposeFromPartitionCodec.ResponseParameters params = ScheduledExecutorDisposeFromPartitionCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorDisposeFromAddressCodec.encodeRequest(    aString ,    aString ,    anAddress   );
+    ScheduledExecutorDisposeFromAddressCodec.RequestParameters params = ScheduledExecutorDisposeFromAddressCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.schedulerName));
+            assertTrue(isEqual(aString, params.taskName));
+            assertTrue(isEqual(anAddress, params.address));
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorDisposeFromAddressCodec.encodeResponse( );
+    ScheduledExecutorDisposeFromAddressCodec.ResponseParameters params = ScheduledExecutorDisposeFromAddressCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddMultiMapConfigCodec.encodeRequest(    aString ,    aString ,    null ,    aBoolean ,    anInt ,    anInt ,    aBoolean   );
+    DynamicConfigAddMultiMapConfigCodec.RequestParameters params = DynamicConfigAddMultiMapConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(aString, params.collectionType));
+            assertTrue(isEqual(null, params.listenerConfigs));
+            assertTrue(isEqual(aBoolean, params.binary));
+            assertTrue(isEqual(anInt, params.backupCount));
+            assertTrue(isEqual(anInt, params.asyncBackupCount));
+            assertTrue(isEqual(aBoolean, params.statisticsEnabled));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddMultiMapConfigCodec.encodeResponse( );
+    DynamicConfigAddMultiMapConfigCodec.ResponseParameters params = DynamicConfigAddMultiMapConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddRingbufferConfigCodec.encodeRequest(    aString ,    anInt ,    anInt ,    anInt ,    anInt ,    aString ,    null   );
+    DynamicConfigAddRingbufferConfigCodec.RequestParameters params = DynamicConfigAddRingbufferConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(anInt, params.capacity));
+            assertTrue(isEqual(anInt, params.backupCount));
+            assertTrue(isEqual(anInt, params.asyncBackupCount));
+            assertTrue(isEqual(anInt, params.timeToLiveSeconds));
+            assertTrue(isEqual(aString, params.inMemoryFormat));
+            assertTrue(isEqual(null, params.ringbufferStoreConfig));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddRingbufferConfigCodec.encodeResponse( );
+    DynamicConfigAddRingbufferConfigCodec.ResponseParameters params = DynamicConfigAddRingbufferConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddCardinalityEstimatorConfigCodec.encodeRequest(    aString ,    anInt ,    anInt   );
+    DynamicConfigAddCardinalityEstimatorConfigCodec.RequestParameters params = DynamicConfigAddCardinalityEstimatorConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(anInt, params.backupCount));
+            assertTrue(isEqual(anInt, params.asyncBackupCount));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddCardinalityEstimatorConfigCodec.encodeResponse( );
+    DynamicConfigAddCardinalityEstimatorConfigCodec.ResponseParameters params = DynamicConfigAddCardinalityEstimatorConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddLockConfigCodec.encodeRequest(    aString ,    null   );
+    DynamicConfigAddLockConfigCodec.RequestParameters params = DynamicConfigAddLockConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(null, params.quorumName));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddLockConfigCodec.encodeResponse( );
+    DynamicConfigAddLockConfigCodec.ResponseParameters params = DynamicConfigAddLockConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddListConfigCodec.encodeRequest(    aString ,    null ,    anInt ,    anInt ,    anInt ,    aBoolean   );
+    DynamicConfigAddListConfigCodec.RequestParameters params = DynamicConfigAddListConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(null, params.listenerConfigs));
+            assertTrue(isEqual(anInt, params.backupCount));
+            assertTrue(isEqual(anInt, params.asyncBackupCount));
+            assertTrue(isEqual(anInt, params.maxSize));
+            assertTrue(isEqual(aBoolean, params.statisticsEnabled));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddListConfigCodec.encodeResponse( );
+    DynamicConfigAddListConfigCodec.ResponseParameters params = DynamicConfigAddListConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddSetConfigCodec.encodeRequest(    aString ,    null ,    anInt ,    anInt ,    anInt ,    aBoolean   );
+    DynamicConfigAddSetConfigCodec.RequestParameters params = DynamicConfigAddSetConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(null, params.listenerConfigs));
+            assertTrue(isEqual(anInt, params.backupCount));
+            assertTrue(isEqual(anInt, params.asyncBackupCount));
+            assertTrue(isEqual(anInt, params.maxSize));
+            assertTrue(isEqual(aBoolean, params.statisticsEnabled));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddSetConfigCodec.encodeResponse( );
+    DynamicConfigAddSetConfigCodec.ResponseParameters params = DynamicConfigAddSetConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddReplicatedMapConfigCodec.encodeRequest(    aString ,    aString ,    aBoolean ,    aBoolean ,    aString ,    null   );
+    DynamicConfigAddReplicatedMapConfigCodec.RequestParameters params = DynamicConfigAddReplicatedMapConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(aString, params.inMemoryFormat));
+            assertTrue(isEqual(aBoolean, params.asyncFillup));
+            assertTrue(isEqual(aBoolean, params.statisticsEnabled));
+            assertTrue(isEqual(aString, params.mergePolicy));
+            assertTrue(isEqual(null, params.listenerConfigs));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddReplicatedMapConfigCodec.encodeResponse( );
+    DynamicConfigAddReplicatedMapConfigCodec.ResponseParameters params = DynamicConfigAddReplicatedMapConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddTopicConfigCodec.encodeRequest(    aString ,    aBoolean ,    aBoolean ,    aBoolean ,    null   );
+    DynamicConfigAddTopicConfigCodec.RequestParameters params = DynamicConfigAddTopicConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(aBoolean, params.globalOrderingEnabled));
+            assertTrue(isEqual(aBoolean, params.statisticsEnabled));
+            assertTrue(isEqual(aBoolean, params.multiThreadingEnabled));
+            assertTrue(isEqual(null, params.listenerConfigs));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddTopicConfigCodec.encodeResponse( );
+    DynamicConfigAddTopicConfigCodec.ResponseParameters params = DynamicConfigAddTopicConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddExecutorConfigCodec.encodeRequest(    aString ,    anInt ,    anInt ,    aBoolean   );
+    DynamicConfigAddExecutorConfigCodec.RequestParameters params = DynamicConfigAddExecutorConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(anInt, params.poolSize));
+            assertTrue(isEqual(anInt, params.queueCapacity));
+            assertTrue(isEqual(aBoolean, params.statisticsEnabled));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddExecutorConfigCodec.encodeResponse( );
+    DynamicConfigAddExecutorConfigCodec.ResponseParameters params = DynamicConfigAddExecutorConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddDurableExecutorConfigCodec.encodeRequest(    aString ,    anInt ,    anInt ,    anInt   );
+    DynamicConfigAddDurableExecutorConfigCodec.RequestParameters params = DynamicConfigAddDurableExecutorConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(anInt, params.poolSize));
+            assertTrue(isEqual(anInt, params.durability));
+            assertTrue(isEqual(anInt, params.capacity));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddDurableExecutorConfigCodec.encodeResponse( );
+    DynamicConfigAddDurableExecutorConfigCodec.ResponseParameters params = DynamicConfigAddDurableExecutorConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddScheduledExecutorConfigCodec.encodeRequest(    aString ,    anInt ,    anInt ,    anInt   );
+    DynamicConfigAddScheduledExecutorConfigCodec.RequestParameters params = DynamicConfigAddScheduledExecutorConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(anInt, params.poolSize));
+            assertTrue(isEqual(anInt, params.durability));
+            assertTrue(isEqual(anInt, params.capacity));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddScheduledExecutorConfigCodec.encodeResponse( );
+    DynamicConfigAddScheduledExecutorConfigCodec.ResponseParameters params = DynamicConfigAddScheduledExecutorConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddSemaphoreConfigCodec.encodeRequest(    aString ,    anInt ,    anInt ,    anInt   );
+    DynamicConfigAddSemaphoreConfigCodec.RequestParameters params = DynamicConfigAddSemaphoreConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(anInt, params.initialPermits));
+            assertTrue(isEqual(anInt, params.backupCount));
+            assertTrue(isEqual(anInt, params.asyncBackupCount));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddSemaphoreConfigCodec.encodeResponse( );
+    DynamicConfigAddSemaphoreConfigCodec.ResponseParameters params = DynamicConfigAddSemaphoreConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddQueueConfigCodec.encodeRequest(    aString ,    null ,    anInt ,    anInt ,    anInt ,    anInt ,    aBoolean ,    null ,    null   );
+    DynamicConfigAddQueueConfigCodec.RequestParameters params = DynamicConfigAddQueueConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(null, params.listenerConfigs));
+            assertTrue(isEqual(anInt, params.backupCount));
+            assertTrue(isEqual(anInt, params.asyncBackupCount));
+            assertTrue(isEqual(anInt, params.maxSize));
+            assertTrue(isEqual(anInt, params.emptyQueueTtl));
+            assertTrue(isEqual(aBoolean, params.statisticsEnabled));
+            assertTrue(isEqual(null, params.quorumName));
+            assertTrue(isEqual(null, params.queueStoreConfig));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddQueueConfigCodec.encodeResponse( );
+    DynamicConfigAddQueueConfigCodec.ResponseParameters params = DynamicConfigAddQueueConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddMapConfigCodec.encodeRequest(    aString ,    anInt ,    anInt ,    anInt ,    anInt ,    aString ,    aBoolean ,    aString ,    aString ,    aString ,    null ,    null ,    aBoolean ,    null ,    null ,    aString ,    anInt ,    null ,    null ,    null ,    null ,    null ,    null ,    null ,    null ,    null   );
+    DynamicConfigAddMapConfigCodec.RequestParameters params = DynamicConfigAddMapConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(anInt, params.backupCount));
+            assertTrue(isEqual(anInt, params.asyncBackupCount));
+            assertTrue(isEqual(anInt, params.timeToLiveSeconds));
+            assertTrue(isEqual(anInt, params.maxIdleSeconds));
+            assertTrue(isEqual(aString, params.evictionPolicy));
+            assertTrue(isEqual(aBoolean, params.readBackupData));
+            assertTrue(isEqual(aString, params.cacheDeserializedValues));
+            assertTrue(isEqual(aString, params.mergePolicy));
+            assertTrue(isEqual(aString, params.inMemoryFormat));
+            assertTrue(isEqual(null, params.listenerConfigs));
+            assertTrue(isEqual(null, params.partitionLostListenerConfigs));
+            assertTrue(isEqual(aBoolean, params.statisticsEnabled));
+            assertTrue(isEqual(null, params.quorumName));
+            assertTrue(isEqual(null, params.mapEvictionPolicy));
+            assertTrue(isEqual(aString, params.maxSizeConfigMaxSizePolicy));
+            assertTrue(isEqual(anInt, params.maxSizeConfigSize));
+            assertTrue(isEqual(null, params.mapStoreConfig));
+            assertTrue(isEqual(null, params.nearCacheConfig));
+            assertTrue(isEqual(null, params.wanReplicationRef));
+            assertTrue(isEqual(null, params.mapIndexConfigs));
+            assertTrue(isEqual(null, params.mapAttributeConfigs));
+            assertTrue(isEqual(null, params.queryCacheConfigs));
+            assertTrue(isEqual(null, params.partitioningStrategyClassName));
+            assertTrue(isEqual(null, params.partitioningStrategyImplementation));
+            assertTrue(isEqual(null, params.hotRestartConfig));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddMapConfigCodec.encodeResponse( );
+    DynamicConfigAddMapConfigCodec.ResponseParameters params = DynamicConfigAddMapConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddReliableTopicConfigCodec.encodeRequest(    aString ,    null ,    anInt ,    aBoolean ,    aString ,    null   );
+    DynamicConfigAddReliableTopicConfigCodec.RequestParameters params = DynamicConfigAddReliableTopicConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(null, params.listenerConfigs));
+            assertTrue(isEqual(anInt, params.readBatchSize));
+            assertTrue(isEqual(aBoolean, params.statisticsEnabled));
+            assertTrue(isEqual(aString, params.topicOverloadPolicy));
+            assertTrue(isEqual(null, params.executor));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddReliableTopicConfigCodec.encodeResponse( );
+    DynamicConfigAddReliableTopicConfigCodec.ResponseParameters params = DynamicConfigAddReliableTopicConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddCacheConfigCodec.encodeRequest(    aString ,    null ,    null ,    aBoolean ,    aBoolean ,    aBoolean ,    aBoolean ,    null ,    null ,    null ,    null ,    anInt ,    anInt ,    aString ,    null ,    null ,    aBoolean ,    null ,    null ,    null ,    null ,    null ,    null ,    null   );
+    DynamicConfigAddCacheConfigCodec.RequestParameters params = DynamicConfigAddCacheConfigCodec.decodeRequest(ClientMessage.createForDecode(clientMessage.buffer(), 0));
+            assertTrue(isEqual(aString, params.name));
+            assertTrue(isEqual(null, params.keyType));
+            assertTrue(isEqual(null, params.valueType));
+            assertTrue(isEqual(aBoolean, params.statisticsEnabled));
+            assertTrue(isEqual(aBoolean, params.managementEnabled));
+            assertTrue(isEqual(aBoolean, params.readThrough));
+            assertTrue(isEqual(aBoolean, params.writeThrough));
+            assertTrue(isEqual(null, params.cacheLoaderFactory));
+            assertTrue(isEqual(null, params.cacheWriterFactory));
+            assertTrue(isEqual(null, params.cacheLoader));
+            assertTrue(isEqual(null, params.cacheWriter));
+            assertTrue(isEqual(anInt, params.backupCount));
+            assertTrue(isEqual(anInt, params.asyncBackupCount));
+            assertTrue(isEqual(aString, params.inMemoryFormat));
+            assertTrue(isEqual(null, params.quorumName));
+            assertTrue(isEqual(null, params.mergePolicy));
+            assertTrue(isEqual(aBoolean, params.disablePerEntryInvalidationEvents));
+            assertTrue(isEqual(null, params.partitionLostListenerConfigs));
+            assertTrue(isEqual(null, params.expiryPolicyFactoryClassName));
+            assertTrue(isEqual(null, params.timedExpiryPolicyFactoryConfig));
+            assertTrue(isEqual(null, params.cacheEntryListeners));
+            assertTrue(isEqual(null, params.evictionConfig));
+            assertTrue(isEqual(null, params.wanReplicationRef));
+            assertTrue(isEqual(null, params.hotRestartConfig));
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddCacheConfigCodec.encodeResponse( );
+    DynamicConfigAddCacheConfigCodec.ResponseParameters params = DynamicConfigAddCacheConfigCodec.decodeResponse(ClientMessage.createForDecode(clientMessage.buffer(), 0));
 }
     }
 }
-
-
-
 

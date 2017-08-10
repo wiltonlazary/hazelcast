@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,14 @@
 package com.hazelcast.client.impl;
 
 import com.hazelcast.client.config.ClientConfig;
+import com.hazelcast.client.connection.AddressProvider;
 import com.hazelcast.client.connection.ClientConnectionManager;
 import com.hazelcast.spi.discovery.integration.DiscoveryService;
+
+import java.util.Collection;
 
 public interface ClientConnectionManagerFactory {
 
     ClientConnectionManager createConnectionManager(ClientConfig config, HazelcastClientInstanceImpl client,
-                                                    DiscoveryService discoveryService);
+            DiscoveryService discoveryService, Collection<AddressProvider> addressProviders);
 }

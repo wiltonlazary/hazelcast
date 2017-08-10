@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,6 @@ import com.hazelcast.core.ReplicatedMap;
 import com.hazelcast.durableexecutor.DurableExecutorService;
 import com.hazelcast.durableexecutor.impl.DistributedDurableExecutorService;
 import com.hazelcast.executor.impl.DistributedExecutorService;
-import com.hazelcast.internal.diagnostics.HealthMonitor;
 import com.hazelcast.internal.jmx.ManagementService;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.logging.ILogger;
@@ -73,6 +72,7 @@ import com.hazelcast.scheduledexecutor.IScheduledExecutorService;
 import com.hazelcast.scheduledexecutor.impl.DistributedScheduledExecutorService;
 import com.hazelcast.spi.ProxyService;
 import com.hazelcast.spi.annotation.PrivateApi;
+import com.hazelcast.spi.impl.SerializationServiceSupport;
 import com.hazelcast.topic.impl.TopicService;
 import com.hazelcast.topic.impl.reliable.ReliableTopicService;
 import com.hazelcast.transaction.HazelcastXAResource;
@@ -93,7 +93,7 @@ import static com.hazelcast.util.Preconditions.checkNotNull;
 
 @PrivateApi
 @SuppressWarnings({"checkstyle:methodcount", "checkstyle:classfanoutcomplexity"})
-public class HazelcastInstanceImpl implements HazelcastInstance {
+public class HazelcastInstanceImpl implements HazelcastInstance, SerializationServiceSupport {
 
     @SuppressWarnings("checkstyle:visibilitymodifier")
     public final Node node;
@@ -109,8 +109,6 @@ public class HazelcastInstanceImpl implements HazelcastInstance {
     final ManagedContext managedContext;
 
     final ConcurrentMap<String, Object> userContext = new ConcurrentHashMap<String, Object>();
-
-    final HealthMonitor healthMonitor;
 
     final HazelcastInstanceCacheManager hazelcastCacheManager;
 
@@ -135,13 +133,12 @@ public class HazelcastInstanceImpl implements HazelcastInstance {
             node.start();
 
             if (!node.isRunning()) {
-                    throw new IllegalStateException("Node failed to start!");
+                throw new IllegalStateException("Node failed to start!");
             }
 
             managementService = new ManagementService(this);
             initManagedContext(configuredManagedContext);
 
-            this.healthMonitor = new HealthMonitor(node).start();
             this.hazelcastCacheManager = new HazelcastInstanceCacheManager(this);
             ClassLoader classLoader = node.getConfigClassLoader();
             if (classLoader instanceof HazelcastInstanceAware) {
@@ -278,7 +275,7 @@ public class HazelcastInstanceImpl implements HazelcastInstance {
 
     @Override
     public IdGenerator getIdGenerator(String name) {
-        checkNotNull(name, "Retrieving an id-generator instance with a null name is not allowed!");
+        checkNotNull(name, "Retrieving an ID-generator instance with a null name is not allowed!");
         return getDistributedObject(IdGeneratorService.SERVICE_NAME, name);
     }
 
@@ -392,6 +389,7 @@ public class HazelcastInstanceImpl implements HazelcastInstance {
         return proxyService.removeProxyListener(registrationId);
     }
 
+    @Override
     public InternalSerializationService getSerializationService() {
         return node.getSerializationService();
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ public class GetResultOperation<V>
 
     private ScheduledTaskHandler handler;
 
-    private V result;
+    private Object result;
 
     public GetResultOperation() {
     }
@@ -51,11 +51,11 @@ public class GetResultOperation<V>
     @Override
     public void run()
             throws Exception {
-        result = (V) getContainer().get(taskName);
+        result = getContainer().get(taskName);
     }
 
     @Override
-    public V getResponse() {
+    public Object getResponse() {
         return result;
     }
 

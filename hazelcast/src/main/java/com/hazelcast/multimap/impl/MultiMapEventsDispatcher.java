@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,8 +28,6 @@ import com.hazelcast.map.impl.DataAwareEntryEvent;
 import com.hazelcast.map.impl.event.EntryEventData;
 import com.hazelcast.map.impl.event.EventData;
 import com.hazelcast.map.impl.event.MapEventData;
-
-import java.util.logging.Level;
 
 /**
  * Dispatches multiMapEvents to appropriate methods of given listener
@@ -88,7 +86,7 @@ class MultiMapEventsDispatcher {
     private Member getMemberOrNull(EventData eventData) {
         final Member member = clusterService.getMember(eventData.getCaller());
         if (member == null) {
-            if (logger.isLoggable(Level.INFO)) {
+            if (logger.isInfoEnabled()) {
                 logger.info("Dropping event " + eventData + " from unknown address:" + eventData.getCaller());
             }
         }

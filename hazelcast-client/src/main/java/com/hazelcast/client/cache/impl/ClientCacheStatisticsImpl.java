@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,11 +28,6 @@ public class ClientCacheStatisticsImpl extends CacheStatisticsImpl {
 
     public ClientCacheStatisticsImpl(long creationTime) {
         super(creationTime);
-    }
-
-    public ClientCacheStatisticsImpl(long creationTime, NearCacheStats nearCacheStats) {
-        super(creationTime);
-        this.nearCacheStats = nearCacheStats;
     }
 
     @Override
@@ -74,5 +69,9 @@ public class ClientCacheStatisticsImpl extends CacheStatisticsImpl {
                 + ", removeTimeTakenNanos=" + removeTimeTakenNanos
                 + (nearCacheStats != null ? ", nearCacheStats=" + nearCacheStats : "")
                 + '}';
+    }
+
+    public void setNearCacheStats(NearCacheStats nearCacheStats) {
+        this.nearCacheStats = nearCacheStats;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,23 +33,24 @@ public class HTTPCommunicator {
 
     private final HazelcastInstance instance;
     private final String address;
+    private int chunkedStreamingLength;
 
     public HTTPCommunicator(HazelcastInstance instance) {
         this.instance = instance;
         this.address = "http:/" + instance.getCluster().getLocalMember().getSocketAddress().toString() + "/hazelcast/rest/";
     }
 
-    public String poll(String queueName, long timeout) throws IOException {
+    public String queuePoll(String queueName, long timeout) throws IOException {
         String url = address + "queues/" + queueName + "/" + String.valueOf(timeout);
         return doGet(url);
     }
 
-    public int size(String queueName) throws IOException {
+    public int queueSize(String queueName) throws IOException {
         String url = address + "queues/" + queueName + "/size";
         return Integer.parseInt(doGet(url));
     }
 
-    public int offer(String queueName, String data) throws IOException {
+    public int queueOffer(String queueName, String data) throws IOException {
         final String url = address + "queues/" + queueName;
         final HttpURLConnection urlConnection = setupConnection(url, "POST");
 
@@ -63,7 +64,7 @@ public class HTTPCommunicator {
         return urlConnection.getResponseCode();
     }
 
-    public String get(String mapName, String key) throws IOException {
+    public String mapGet(String mapName, String key) throws IOException {
         String url = address + "maps/" + mapName + "/" + key;
         return doGet(url);
     }
@@ -73,13 +74,19 @@ public class HTTPCommunicator {
         return doGet(url);
     }
 
+    public String getFailingClusterHealthWithTrailingGarbage() throws IOException {
+        String baseAddress = instance.getCluster().getLocalMember().getSocketAddress().toString();
+        String url = "http:/" + baseAddress + HttpCommandProcessor.URI_HEALTH_URL + "garbage";
+        return doGet(url);
+    }
+
     public String getClusterHealth() throws IOException {
         String baseAddress = instance.getCluster().getLocalMember().getSocketAddress().toString();
         String url = "http:/" + baseAddress + HttpCommandProcessor.URI_HEALTH_URL;
         return doGet(url);
     }
 
-    public int put(String mapName, String key, String value) throws IOException {
+    public int mapPut(String mapName, String key, String value) throws IOException {
         final String url = address + "maps/" + mapName + "/" + key;
         final HttpURLConnection urlConnection = setupConnection(url, "POST");
 
@@ -93,12 +100,12 @@ public class HTTPCommunicator {
         return urlConnection.getResponseCode();
     }
 
-    public int deleteAll(String mapName) throws IOException {
+    public int mapDeleteAll(String mapName) throws IOException {
         String url = address + "maps/" + mapName;
         return setupConnection(url, "DELETE").getResponseCode();
     }
 
-    public int delete(String mapName, String key) throws IOException {
+    public int mapDelete(String mapName, String key) throws IOException {
         String url = address + "maps/" + mapName + "/" + key;
         return setupConnection(url, "DELETE").getResponseCode();
     }
@@ -184,7 +191,12 @@ public class HTTPCommunicator {
         return doPost(url, wanRepConfigJson).response;
     }
 
-    private static HttpURLConnection setupConnection(String url, String method) throws IOException {
+    public String updatePermissions(String groupName, String groupPassword, String permConfJson) throws IOException {
+        String url = address + "mancenter/security/permissions";
+        return doPost(url, groupName, groupPassword, permConfJson).response;
+    }
+
+    private HttpURLConnection setupConnection(String url, String method) throws IOException {
         HttpURLConnection urlConnection = (HttpURLConnection) (new URL(url)).openConnection();
         urlConnection.setRequestMethod(method);
         urlConnection.setDoOutput(true);
@@ -192,6 +204,9 @@ public class HTTPCommunicator {
         urlConnection.setUseCaches(false);
         urlConnection.setAllowUserInteraction(false);
         urlConnection.setRequestProperty("Content-type", "text/xml; charset=" + "UTF-8");
+        if (chunkedStreamingLength > 0) {
+            urlConnection.setChunkedStreamingMode(chunkedStreamingLength);
+        }
         return urlConnection;
     }
 
@@ -209,24 +224,28 @@ public class HTTPCommunicator {
         HttpURLConnection httpUrlConnection = (HttpURLConnection) (new URL(url)).openConnection();
         try {
             InputStream inputStream = httpUrlConnection.getInputStream();
-            byte[] buffer = new byte[4096];
-            int readBytes = inputStream.read(buffer);
-            return readBytes == -1 ? "" : new String(buffer, 0, readBytes);
+            StringBuilder builder = new StringBuilder();
+            byte[] buffer = new byte[1024];
+            int readBytes;
+            while ((readBytes = inputStream.read(buffer)) > -1) {
+                builder.append(new String(buffer, 0, readBytes));
+            }
+            return builder.toString();
         } finally {
             httpUrlConnection.disconnect();
         }
     }
 
-    private static ConnectionResponse doPost(String url, String... params) throws IOException {
+    private ConnectionResponse doPost(String url, String... params) throws IOException {
         HttpURLConnection urlConnection = setupConnection(url, "POST");
         // post the data
         OutputStream out = urlConnection.getOutputStream();
         Writer writer = new OutputStreamWriter(out, "UTF-8");
-        String data = "";
+        StringBuilder data = new StringBuilder();
         for (String param : params) {
-            data += URLEncoder.encode(param, "UTF-8") + "&";
+            data.append(URLEncoder.encode(param, "UTF-8")).append("&");
         }
-        writer.write(data);
+        writer.write(data.toString());
         writer.close();
         out.close();
         try {
@@ -238,5 +257,9 @@ public class HTTPCommunicator {
         } finally {
             urlConnection.disconnect();
         }
+    }
+
+    public void setChunkedStreamingLength(int chunkedStreamingLength) {
+        this.chunkedStreamingLength = chunkedStreamingLength;
     }
 }

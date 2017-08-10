@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapManagedService;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.nearcache.invalidation.MemberMapMetaDataFetcher;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.SerializableByConvention;
 import com.hazelcast.spi.EventFilter;
 import com.hazelcast.spi.EventRegistration;
 import com.hazelcast.spi.ExecutionService;
@@ -49,6 +49,7 @@ import static com.hazelcast.spi.properties.GroupProperty.MAP_INVALIDATION_MESSAG
 import static com.hazelcast.spi.properties.GroupProperty.MAP_INVALIDATION_MESSAGE_BATCH_SIZE;
 
 public class MapNearCacheManager extends DefaultNearCacheManager {
+
     /**
      * Filters out listeners other than invalidation related ones.
      */
@@ -57,16 +58,16 @@ public class MapNearCacheManager extends DefaultNearCacheManager {
     protected final int partitionCount;
     protected final NodeEngine nodeEngine;
     protected final MapServiceContext mapServiceContext;
+    protected final MinimalPartitionService partitionService;
     protected final Invalidator invalidator;
     protected final RepairingTask repairingTask;
-    protected final MinimalPartitionService partitionService;
 
     public MapNearCacheManager(MapServiceContext mapServiceContext) {
         super(mapServiceContext.getNodeEngine().getSerializationService(),
-                mapServiceContext.getNodeEngine().getExecutionService(), null);
+                mapServiceContext.getNodeEngine().getExecutionService().getGlobalTaskScheduler(), null);
         this.nodeEngine = mapServiceContext.getNodeEngine();
-        this.partitionService = new MemberMinimalPartitionService(nodeEngine.getPartitionService());
         this.mapServiceContext = mapServiceContext;
+        this.partitionService = new MemberMinimalPartitionService(nodeEngine.getPartitionService());
         this.partitionCount = partitionService.getPartitionCount();
         this.invalidator = createInvalidator();
         this.repairingTask = createRepairingInvalidationTask();
@@ -88,21 +89,13 @@ public class MapNearCacheManager extends DefaultNearCacheManager {
     /**
      * Filters out listeners other than invalidation related ones.
      */
+    @SerializableByConvention
     private static class InvalidationAcceptorFilter implements IFunction<EventRegistration, Boolean> {
 
         @Override
         public Boolean apply(EventRegistration eventRegistration) {
             EventFilter filter = eventRegistration.getFilter();
-
-            if (!(filter instanceof EventListenerFilter)) {
-                return false;
-            }
-
-            if (!filter.eval(INVALIDATION.getType())) {
-                return false;
-            }
-
-            return true;
+            return filter instanceof EventListenerFilter && filter.eval(INVALIDATION.getType());
         }
     }
 
@@ -115,7 +108,8 @@ public class MapNearCacheManager extends DefaultNearCacheManager {
 
         MetaDataFetcher metaDataFetcher = new MemberMapMetaDataFetcher(clusterService, operationService, logger);
         String localUuid = nodeEngine.getLocalMember().getUuid();
-        return new RepairingTask(metaDataFetcher, executionService, partitionService, properties, localUuid, logger);
+        return new RepairingTask(properties, metaDataFetcher, executionService.getGlobalTaskScheduler(),
+                serializationService, partitionService, localUuid, logger);
     }
 
     /**
@@ -139,23 +133,18 @@ public class MapNearCacheManager extends DefaultNearCacheManager {
      */
     @Override
     public boolean destroyNearCache(String mapName) {
-        if (!super.destroyNearCache(mapName)) {
-            return false;
-        }
-
-        String uuid = nodeEngine.getLocalMember().getUuid();
-        invalidator.destroy(mapName, uuid);
-        return true;
+        invalidator.destroy(mapName, nodeEngine.getLocalMember().getUuid());
+        return super.destroyNearCache(mapName);
     }
 
-    public Object getFromNearCache(String mapName, Data key) {
+    public Object getFromNearCache(String mapName, Object key) {
         MapContainer mapContainer = mapServiceContext.getMapContainer(mapName);
         if (!mapContainer.hasInvalidationListener()) {
             return null;
         }
 
         NearCacheConfig nearCacheConfig = mapContainer.getMapConfig().getNearCacheConfig();
-        NearCache<Data, Object> nearCache = getOrCreateNearCache(mapName, nearCacheConfig);
+        NearCache<Object, Object> nearCache = getOrCreateNearCache(mapName, nearCacheConfig);
         return nearCache.get(key);
     }
 

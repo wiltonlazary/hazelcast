@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ class SubscriberAccumulatorHandler implements AccumulatorHandler<QueryCacheEvent
             case EVICTED:
                 queryCache.deleteInternal(keyData, false, entryEventType);
                 break;
-            // TODO if we want strongly consistent clear & evict, removal can be made based on sequence and partition-id.
+            // TODO: if we want strongly consistent clear & evict, removal can be made based on sequence and partition ID
             case CLEAR_ALL:
             case EVICT_ALL:
                 queryCache.clearInternal(entryEventType);

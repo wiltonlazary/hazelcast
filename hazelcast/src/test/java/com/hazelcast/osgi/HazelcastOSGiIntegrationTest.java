@@ -1,8 +1,23 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.osgi;
 
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -10,8 +25,12 @@ import org.ops4j.pax.exam.Option;
 import org.ops4j.pax.exam.junit.Configuration;
 import org.ops4j.pax.exam.junit.ExamReactorStrategy;
 import org.ops4j.pax.exam.junit.JUnit4TestRunner;
+import org.ops4j.pax.exam.options.CompositeOption;
+import org.ops4j.pax.exam.options.UrlProvisionOption;
 import org.ops4j.pax.exam.spi.reactors.AllConfinedStagedReactorFactory;
 import org.ops4j.pax.exam.util.PathUtils;
+import org.ops4j.pax.url.maven.commons.MavenConstants;
+import org.ops4j.pax.url.mvn.ServiceConstants;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.ServiceReference;
@@ -26,16 +45,25 @@ import static org.ops4j.pax.exam.CoreOptions.options;
 @RunWith(JUnit4TestRunner.class)
 @Category(QuickTest.class)
 @ExamReactorStrategy(AllConfinedStagedReactorFactory.class)
-@Ignore(value = "https://github.com/hazelcast/hazelcast/issues/9537")
 public class HazelcastOSGiIntegrationTest {
 
     @Inject
     private BundleContext bundleContext;
 
+    private static final String MAVEN_REPOSITORIES_PROP = ServiceConstants.PID + MavenConstants.PROPERTY_REPOSITORIES;
+    private static final String MAVEN_REPOSITORIES = "https://osgi.sonatype.org/content/groups/pax-runner@id=paxrunner,"
+            + "https://repo1.maven.org/maven2@id=central";
+    private String oldMavenRepoProperty;
+
     @Configuration
     public Option[] config() {
-        return options(bundle("reference:file:" + PathUtils.getBaseDir() + "/hazelcast/target/classes"),
-                junitBundles());
+        oldMavenRepoProperty = System.getProperty(MAVEN_REPOSITORIES_PROP);
+        System.setProperty(MAVEN_REPOSITORIES_PROP, MAVEN_REPOSITORIES);
+
+        String url = "reference:file:" + PathUtils.getBaseDir() + "/target/classes";
+        UrlProvisionOption hzBundle = bundle(url);
+        CompositeOption junitBundles = junitBundles();
+        return options(hzBundle, junitBundles);
     }
 
     @After
@@ -46,8 +74,18 @@ public class HazelcastOSGiIntegrationTest {
                 break;
             }
         }
+        if (oldMavenRepoProperty == null) {
+            System.clearProperty(MAVEN_REPOSITORIES_PROP);
+        } else {
+            System.setProperty(MAVEN_REPOSITORIES_PROP, oldMavenRepoProperty);
+        }
     }
 
+    /**
+     * Is this test failing in your IDE?
+     * Some versions of Intellij IDEA use a wrong working directory in multi-module Maven projects.
+     * See this for a fix: https://youtrack.jetbrains.com/issue/IDEA-60965
+     */
     @Test
     public void serviceRetrievedSuccessfully() {
         HazelcastOSGiService service = getService();

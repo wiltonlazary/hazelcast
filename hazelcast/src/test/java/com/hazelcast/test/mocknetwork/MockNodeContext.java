@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,13 +12,13 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
 package com.hazelcast.test.mocknetwork;
 
 import com.hazelcast.cluster.Joiner;
 import com.hazelcast.instance.AddressPicker;
+import com.hazelcast.instance.BuildInfoProvider;
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.NodeContext;
 import com.hazelcast.instance.NodeExtension;
@@ -26,11 +26,16 @@ import com.hazelcast.instance.NodeExtensionFactory;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ConnectionManager;
 import com.hazelcast.nio.NodeIOService;
-import com.hazelcast.nio.tcp.FirewallingMockConnectionManager;
+import com.hazelcast.nio.tcp.FirewallingConnectionManager;
+import com.hazelcast.test.TestEnvironment;
+import com.hazelcast.test.compatibility.SamplingNodeExtension;
 
+import java.lang.reflect.Constructor;
 import java.nio.channels.ServerSocketChannel;
 import java.util.Collections;
 import java.util.Set;
+
+import static com.hazelcast.util.ExceptionUtil.rethrow;
 
 public class MockNodeContext implements NodeContext {
 
@@ -39,7 +44,7 @@ public class MockNodeContext implements NodeContext {
     private final Set<Address> initiallyBlockedAddresses;
 
     protected MockNodeContext(TestNodeRegistry registry, Address thisAddress) {
-        this(registry, thisAddress, Collections.EMPTY_SET);
+        this(registry, thisAddress, Collections.<Address>emptySet());
     }
 
     protected MockNodeContext(TestNodeRegistry registry, Address thisAddress, Set<Address> initiallyBlockedAddresses) {
@@ -50,7 +55,11 @@ public class MockNodeContext implements NodeContext {
 
     @Override
     public NodeExtension createNodeExtension(Node node) {
-        return NodeExtensionFactory.create(node);
+        if (TestEnvironment.isRecordingSerializedClassNames()) {
+            return constructSamplingNodeExtension(node);
+        } else {
+            return NodeExtensionFactory.create(node);
+        }
     }
 
     public AddressPicker createAddressPicker(Node node) {
@@ -63,6 +72,26 @@ public class MockNodeContext implements NodeContext {
 
     public ConnectionManager createConnectionManager(Node node, ServerSocketChannel serverSocketChannel) {
         NodeIOService ioService = new NodeIOService(node, node.nodeEngine);
-        return new FirewallingMockConnectionManager(ioService, node, registry, initiallyBlockedAddresses);
+        ConnectionManager delegate = new MockConnectionManager(ioService, node, registry);
+        return new FirewallingConnectionManager(delegate, initiallyBlockedAddresses);
+    }
+
+    /**
+     * @return {@code NodeExtension} suitable for sampling serialized objects in OSS or EE environment
+     */
+    private NodeExtension constructSamplingNodeExtension(Node node) {
+        if (BuildInfoProvider.getBuildInfo().isEnterprise()) {
+            try {
+                Class<? extends NodeExtension> klass = (Class<? extends NodeExtension>)
+                        Class.forName("com.hazelcast.test.compatibility.SamplingEnterpriseNodeExtension");
+                Constructor<? extends NodeExtension> constructor = klass.getConstructor(Node.class);
+                return constructor.newInstance(node);
+            } catch (Exception e) {
+                throw rethrow(e);
+            }
+        } else {
+            NodeExtension wrapped = NodeExtensionFactory.create(node);
+            return new SamplingNodeExtension(wrapped);
+        }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.version.Version;
 
 import java.io.IOException;
 
@@ -55,6 +56,12 @@ public class ClusterStateChange<T> implements IdentifiedDataSerializable {
     public void validate() {
         if (type == null || newState == null) {
             throw new IllegalArgumentException("Invalid null state");
+        }
+
+        if (isOfType(Version.class)) {
+            if (((Version) newState).isUnknown()) {
+                throw new IllegalArgumentException("Cannot change Version to UNKNOWN!");
+            }
         }
 
         if (isOfType(ClusterState.class)) {

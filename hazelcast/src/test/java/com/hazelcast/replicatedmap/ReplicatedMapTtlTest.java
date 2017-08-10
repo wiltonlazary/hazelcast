@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.replicatedmap;
 
 import com.hazelcast.core.HazelcastInstance;
@@ -19,7 +35,7 @@ import java.util.concurrent.TimeUnit;
 public class ReplicatedMapTtlTest extends ReplicatedMapAbstractTest {
 
     @Test
-    public void testPutWithTTL_withMigration() throws Exception {
+    public void testPutWithTTL_withMigration() {
         int nodeCount = 1;
         int keyCount = 10000;
         int operationCount = 10000;
@@ -29,7 +45,7 @@ public class ReplicatedMapTtlTest extends ReplicatedMapAbstractTest {
     }
 
     @Test
-    public void testPutWithTTL_withoutMigration() throws Exception {
+    public void testPutWithTTL_withoutMigration() {
         int nodeCount = 5;
         int keyCount = 10000;
         int operationCount = 10000;
@@ -39,12 +55,12 @@ public class ReplicatedMapTtlTest extends ReplicatedMapAbstractTest {
     }
 
     private void testPutWithTTL(int nodeCount, int keyCount, int operationCount, int threadCount, int ttl,
-                                boolean causeMigration) throws InterruptedException {
+                                boolean causeMigration) {
         TimeUnit timeUnit = TimeUnit.MILLISECONDS;
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
         HazelcastInstance[] instances = factory.newInstances(null, nodeCount);
         String mapName = randomMapName();
-        List<ReplicatedMap> maps = createMapOnEachInstance(instances, mapName);
+        List<ReplicatedMap<String, Object>> maps = createMapOnEachInstance(instances, mapName);
         ArrayList<Integer> keys = generateRandomIntegerList(keyCount);
         Thread[] threads = createThreads(threadCount, maps, keys, ttl, timeUnit, operationCount);
         for (Thread thread : threads) {
@@ -54,11 +70,9 @@ public class ReplicatedMapTtlTest extends ReplicatedMapAbstractTest {
         if (causeMigration) {
             instance = factory.newHazelcastInstance();
         }
-        for (Thread thread : threads) {
-            thread.join();
-        }
+        assertJoinable(threads);
         if (causeMigration) {
-            ReplicatedMap<Object, Object> map = instance.getReplicatedMap(mapName);
+            ReplicatedMap<String, Object> map = instance.getReplicatedMap(mapName);
             maps.add(map);
         }
         for (ReplicatedMap map : maps) {
@@ -66,7 +80,7 @@ public class ReplicatedMapTtlTest extends ReplicatedMapAbstractTest {
         }
     }
 
-    private Thread[] createThreads(int count, List<ReplicatedMap> maps, ArrayList<Integer> keys,
+    private Thread[] createThreads(int count, List<ReplicatedMap<String, Object>> maps, ArrayList<Integer> keys,
                                    long ttl, TimeUnit timeunit, int operations) {
         Thread[] threads = new Thread[count];
         int size = maps.size();
@@ -91,5 +105,4 @@ public class ReplicatedMapTtlTest extends ReplicatedMapAbstractTest {
             }
         });
     }
-
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.client.impl.protocol.task.map;
 
 import com.hazelcast.client.ClientEndpoint;
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapPublisherCreateCodec;
+import com.hazelcast.client.impl.protocol.codec.ContinuousQueryPublisherCreateCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
@@ -47,11 +47,11 @@ import java.util.concurrent.Future;
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
 
 /**
- * Client Protocol Task for handling messages with type id:
- * {@link com.hazelcast.client.impl.protocol.codec.EnterpriseMapMessageType#ENTERPRISEMAP_PUBLISHERCREATE}
+ * Client Protocol Task for handling messages with type ID:
+ * {@link com.hazelcast.client.impl.protocol.codec.ContinuousQueryMessageType#CONTINUOUSQUERY_PUBLISHERCREATE}
  */
 public class MapPublisherCreateMessageTask
-        extends AbstractCallableMessageTask<EnterpriseMapPublisherCreateCodec.RequestParameters> {
+        extends AbstractCallableMessageTask<ContinuousQueryPublisherCreateCodec.RequestParameters> {
 
     public MapPublisherCreateMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -108,13 +108,13 @@ public class MapPublisherCreateMessageTask
     }
 
     @Override
-    protected EnterpriseMapPublisherCreateCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
-        return EnterpriseMapPublisherCreateCodec.decodeRequest(clientMessage);
+    protected ContinuousQueryPublisherCreateCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+        return ContinuousQueryPublisherCreateCodec.decodeRequest(clientMessage);
     }
 
     @Override
     protected ClientMessage encodeResponse(Object response) {
-        return EnterpriseMapPublisherCreateCodec.encodeResponse((Set<Data>) response);
+        return ContinuousQueryPublisherCreateCodec.encodeResponse((Set<Data>) response);
     }
 
     @Override

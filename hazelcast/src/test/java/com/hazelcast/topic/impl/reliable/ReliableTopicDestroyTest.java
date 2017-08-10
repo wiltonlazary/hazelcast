@@ -1,24 +1,40 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.topic.impl.reliable;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.ringbuffer.impl.RingbufferContainer;
 import com.hazelcast.ringbuffer.impl.RingbufferService;
+import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import org.apache.log4j.Level;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.util.concurrent.ConcurrentMap;
+import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -29,17 +45,9 @@ public class ReliableTopicDestroyTest extends HazelcastTestSupport {
 
     @Before
     public void setup() {
-        setLoggingLog4j();
-        setLogLevel(Level.TRACE);
-
         HazelcastInstance hz = createHazelcastInstance();
         topic = (ReliableTopicProxy<String>) hz.<String>getReliableTopic("foo");
         ringbufferService = getNodeEngineImpl(hz).getService(RingbufferService.SERVICE_NAME);
-    }
-
-    @After
-    public void teardown() {
-        resetLogLevel();
     }
 
     @Test
@@ -75,8 +83,11 @@ public class ReliableTopicDestroyTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                ConcurrentMap<String, RingbufferContainer> containers = ringbufferService.getContainers();
-                assertFalse(containers.containsKey(topic.ringbuffer.getName()));
+                final String name = topic.ringbuffer.getName();
+                final Map<ObjectNamespace, RingbufferContainer> partitionContainers =
+                        ringbufferService.getContainers().get(ringbufferService.getRingbufferPartitionId(name));
+                assertTrue(partitionContainers != null);
+                assertFalse(partitionContainers.containsKey(RingbufferService.getRingbufferNamespace(name)));
             }
         });
     }

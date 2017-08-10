@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,15 +27,12 @@ import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.ExceptionUtil;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -43,7 +40,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.hazelcast.core.LifecycleEvent.LifecycleState.STARTED;
 import static com.hazelcast.util.Preconditions.checkHasText;
-import static com.hazelcast.util.Preconditions.checkNotNull;
 import static java.lang.String.format;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -86,7 +82,9 @@ public final class HazelcastInstanceFactory {
     }
 
     public static HazelcastInstance getOrCreateHazelcastInstance(Config config) {
-        checkNotNull(config, "config can't be null");
+        if (config == null) {
+            config = new XmlConfigBuilder().build();
+        }
 
         String name = config.getInstanceName();
         checkHasText(name, "instanceName must contain text");
@@ -130,7 +128,7 @@ public final class HazelcastInstanceFactory {
         );
     }
 
-    private static String createInstanceName(Config config) {
+    public static String createInstanceName(Config config) {
         return "_hzInstance_" + FACTORY_ID_GEN.incrementAndGet() + "_" + config.getGroupConfig().getName();
     }
 
@@ -179,27 +177,6 @@ public final class HazelcastInstanceFactory {
             future.setFailure(t);
             throw ExceptionUtil.rethrow(t);
         }
-    }
-
-    public static Set<HazelcastInstanceImpl> getInstanceImpls(Collection<Member> members) {
-        Set<HazelcastInstanceImpl> set = new HashSet<HazelcastInstanceImpl>();
-        for (InstanceFuture future : INSTANCE_MAP.values()) {
-            try {
-                if (future.isSet()) {
-                    HazelcastInstanceProxy instanceProxy = future.get();
-                    HazelcastInstanceImpl impl = instanceProxy.original;
-                    if (impl != null) {
-                        final MemberImpl localMember = impl.node.getLocalMember();
-                        if (members.contains(localMember)) {
-                            set.add(impl);
-                        }
-                    }
-                }
-            } catch (RuntimeException ignored) {
-                EmptyStatement.ignore(ignored);
-            }
-        }
-        return set;
     }
 
     private static HazelcastInstanceProxy newHazelcastProxy(HazelcastInstanceImpl hazelcastInstance) {
@@ -312,22 +289,6 @@ public final class HazelcastInstanceFactory {
             }
             proxy.original = null;
         }
-    }
-
-    public static Map<MemberImpl, HazelcastInstanceImpl> getInstanceImplMap() {
-        Map<MemberImpl, HazelcastInstanceImpl> map = new HashMap<MemberImpl, HazelcastInstanceImpl>();
-        for (InstanceFuture future : INSTANCE_MAP.values()) {
-            try {
-                HazelcastInstanceProxy instanceProxy = future.get();
-                HazelcastInstanceImpl impl = instanceProxy.original;
-                if (impl != null) {
-                    map.put(impl.node.getLocalMember(), impl);
-                }
-            } catch (RuntimeException ignored) {
-                EmptyStatement.ignore(ignored);
-            }
-        }
-        return map;
     }
 
     public static void remove(HazelcastInstanceImpl instance) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,11 @@ package com.hazelcast.internal.ascii;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.OutOfMemoryErrorDispatcher;
+import com.hazelcast.internal.ascii.memcache.BulkGetCommandProcessor;
 import com.hazelcast.internal.ascii.memcache.DeleteCommandProcessor;
+import com.hazelcast.internal.ascii.memcache.EntryConverter;
 import com.hazelcast.internal.ascii.memcache.ErrorCommandProcessor;
 import com.hazelcast.internal.ascii.memcache.GetCommandProcessor;
 import com.hazelcast.internal.ascii.memcache.IncrementCommandProcessor;
@@ -36,13 +37,15 @@ import com.hazelcast.internal.ascii.rest.HttpGetCommandProcessor;
 import com.hazelcast.internal.ascii.rest.HttpPostCommandProcessor;
 import com.hazelcast.internal.ascii.rest.RestValue;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.ascii.TextWriteHandler;
+import com.hazelcast.nio.ascii.TextChannelOutboundHandler;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.util.Clock;
 import com.hazelcast.util.EmptyStatement;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.nio.ByteBuffer;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -50,6 +53,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.ADD;
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.APPEND;
+import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.BULK_GET;
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.DECREMENT;
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.DELETE;
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.ERROR_CLIENT;
@@ -62,7 +66,6 @@ import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.HTTP_PUT;
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.INCREMENT;
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.NO_OP;
-import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.PARTIAL_GET;
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.PREPEND;
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.QUIT;
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.REPLACE;
@@ -71,6 +74,7 @@ import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.TOUCH;
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.UNKNOWN;
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.VERSION;
+import static com.hazelcast.util.ThreadUtil.createThreadName;
 
 public class TextCommandServiceImpl implements TextCommandService {
 
@@ -95,12 +99,15 @@ public class TextCommandServiceImpl implements TextCommandService {
     private volatile ResponseThreadRunnable responseThreadRunnable;
     private volatile boolean running = true;
 
+    private final Object mutex = new Object();
+
     public TextCommandServiceImpl(Node node) {
         this.node = node;
         this.hazelcast = node.hazelcastInstance;
         this.logger = node.getLogger(this.getClass().getName());
-        textCommandProcessors[GET.getValue()] = new GetCommandProcessor(this, true);
-        textCommandProcessors[PARTIAL_GET.getValue()] = new GetCommandProcessor(this, false);
+        EntryConverter entryConverter = new EntryConverter(this, node.getLogger(EntryConverter.class));
+        textCommandProcessors[GET.getValue()] = new GetCommandProcessor(this, entryConverter);
+        textCommandProcessors[BULK_GET.getValue()] = new BulkGetCommandProcessor(this, entryConverter);
         textCommandProcessors[SET.getValue()] = new SetCommandProcessor(this);
         textCommandProcessors[APPEND.getValue()] = new SetCommandProcessor(this);
         textCommandProcessors[PREPEND.getValue()] = new SetCommandProcessor(this);
@@ -207,24 +214,32 @@ public class TextCommandServiceImpl implements TextCommandService {
 
     @Override
     public void processRequest(TextCommand command) {
+        startResponseThreadIfNotRunning();
+        node.nodeEngine.getExecutionService().execute("hz:text", new CommandExecutor(command));
+    }
+
+    private void startResponseThreadIfNotRunning() {
         if (responseThreadRunnable == null) {
-            synchronized (this) {
+            synchronized (mutex) {
                 if (responseThreadRunnable == null) {
                     responseThreadRunnable = new ResponseThreadRunnable();
-                    HazelcastThreadGroup hazelcastThreadGroup = node.getHazelcastThreadGroup();
-                    String threadNamePrefix = hazelcastThreadGroup.getThreadNamePrefix("ascii.service.response");
-                    Thread thread = new Thread(
-                            hazelcastThreadGroup.getInternalThreadGroup(), responseThreadRunnable, threadNamePrefix);
+                    String threadNamePrefix = createThreadName(hazelcast.getName(), "ascii.service.response");
+                    Thread thread = new Thread(responseThreadRunnable, threadNamePrefix);
                     thread.start();
                 }
             }
         }
-        node.nodeEngine.getExecutionService().execute("hz:text", new CommandExecutor(command));
     }
 
     @Override
     public Object get(String mapName, String key) {
         return hazelcast.getMap(mapName).get(key);
+    }
+
+    @Override
+    public Map<String, Object> getAll(String mapName, Set<String> keys) {
+        IMap<String, Object> map = hazelcast.getMap(mapName);
+        return map.getAll(keys);
     }
 
     @Override
@@ -375,7 +390,7 @@ public class TextCommandServiceImpl implements TextCommandService {
                             stopObject.notify();
                         }
                     } else {
-                        TextWriteHandler textWriteHandler = textCommand.getWriteHandler();
+                        TextChannelOutboundHandler textWriteHandler = textCommand.getWriteHandler();
                         textWriteHandler.enqueue(textCommand);
                     }
                 } catch (InterruptedException e) {

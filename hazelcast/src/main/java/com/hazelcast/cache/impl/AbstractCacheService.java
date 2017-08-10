@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,9 @@ package com.hazelcast.cache.impl;
 import com.hazelcast.cache.CacheNotExistsException;
 import com.hazelcast.cache.HazelcastCacheManager;
 import com.hazelcast.cache.impl.event.CachePartitionLostEventFilter;
-import com.hazelcast.cache.impl.operation.PostJoinCacheOperation;
+import com.hazelcast.cache.impl.journal.CacheEventJournal;
+import com.hazelcast.cache.impl.journal.RingbufferCacheEventJournalImpl;
+import com.hazelcast.cache.impl.operation.OnJoinCacheOperation;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.config.CacheSimpleConfig;
 import com.hazelcast.config.InMemoryFormat;
@@ -36,6 +38,7 @@ import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionAwareService;
 import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PostJoinAwareService;
+import com.hazelcast.spi.PreJoinAwareService;
 import com.hazelcast.spi.QuorumAwareService;
 import com.hazelcast.spi.SplitBrainHandlerService;
 import com.hazelcast.spi.partition.IPartitionLostEvent;
@@ -45,6 +48,7 @@ import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
 import com.hazelcast.util.ContextMutexFactory;
 import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.version.Version;
 
 import javax.cache.CacheException;
 import javax.cache.configuration.CacheEntryListenerConfiguration;
@@ -61,14 +65,11 @@ import java.util.concurrent.ConcurrentMap;
 
 import static com.hazelcast.cache.impl.AbstractCacheRecordStore.SOURCE_NOT_AVAILABLE;
 import static com.hazelcast.config.InMemoryFormat.NATIVE;
+import static com.hazelcast.internal.cluster.Versions.V3_9;
 
 @SuppressWarnings("checkstyle:classdataabstractioncoupling")
-public abstract class AbstractCacheService
-        implements  ICacheService,
-                    PostJoinAwareService,
-                    PartitionAwareService,
-                    QuorumAwareService,
-                    SplitBrainHandlerService {
+public abstract class AbstractCacheService implements ICacheService, PreJoinAwareService, PostJoinAwareService,
+        PartitionAwareService, QuorumAwareService, SplitBrainHandlerService {
 
     private static final String SETUP_REF = "setupRef";
 
@@ -79,7 +80,7 @@ public abstract class AbstractCacheService
     protected final ConcurrentMap<String, Closeable> closeableListeners = new ConcurrentHashMap<String, Closeable>();
     protected final ConcurrentMap<String, CacheOperationProvider> operationProviderCache =
             new ConcurrentHashMap<String, CacheOperationProvider>();
-    protected final ConstructorFunction<String, CacheContext> cacheContexesConstructorFunction =
+    protected final ConstructorFunction<String, CacheContext> cacheContextsConstructorFunction =
             new ConstructorFunction<String, CacheContext>() {
                 @Override
                 public CacheContext createNew(String name) {
@@ -109,6 +110,7 @@ public abstract class AbstractCacheService
     protected CachePartitionSegment[] segments;
     protected CacheEventHandler cacheEventHandler;
     protected CacheSplitBrainHandler cacheSplitBrainHandler;
+    protected RingbufferCacheEventJournalImpl eventJournal;
     protected ILogger logger;
 
     @Override
@@ -122,6 +124,7 @@ public abstract class AbstractCacheService
         this.cacheEventHandler = new CacheEventHandler(nodeEngine);
         this.cacheSplitBrainHandler = new CacheSplitBrainHandler(nodeEngine, configs, segments);
         this.logger = nodeEngine.getLogger(getClass());
+        this.eventJournal = new RingbufferCacheEventJournalImpl(nodeEngine);
         postInit(nodeEngine, properties);
     }
 
@@ -309,7 +312,7 @@ public abstract class AbstractCacheService
         CacheConfig config = deleteCacheConfig(name);
         if (destroy) {
             destroySegments(name);
-            sendInvalidationEvent(name, null, SOURCE_NOT_AVAILABLE);
+            cacheEventHandler.destroy(name, SOURCE_NOT_AVAILABLE);
         } else {
             closeSegments(name);
         }
@@ -359,7 +362,7 @@ public abstract class AbstractCacheService
 
     @Override
     public CacheContext getOrCreateCacheContext(String name) {
-        return ConcurrencyUtil.getOrPutIfAbsent(cacheContexts, name, cacheContexesConstructorFunction);
+        return ConcurrencyUtil.getOrPutIfAbsent(cacheContexts, name, cacheContextsConstructorFunction);
     }
 
     @Override
@@ -422,6 +425,7 @@ public abstract class AbstractCacheService
         }
     }
 
+    @Override
     public Collection<CacheConfig> getCacheConfigs() {
         return configs.values();
     }
@@ -587,10 +591,23 @@ public abstract class AbstractCacheService
     }
 
     @Override
+    public Operation getPreJoinOperation() {
+        Version clusterVersion = nodeEngine.getClusterService().getClusterVersion();
+        OnJoinCacheOperation preJoinCacheOperation = null;
+        assert !clusterVersion.isUnknown() : "Cluster version should not be unknown";
+        if (clusterVersion.isGreaterOrEqual(V3_9)) {
+            preJoinCacheOperation = prepareOnJoinCacheOperation();
+        }
+        return preJoinCacheOperation;
+    }
+
+    @Override
     public Operation getPostJoinOperation() {
-        PostJoinCacheOperation postJoinCacheOperation = new PostJoinCacheOperation();
-        for (Map.Entry<String, CacheConfig> cacheConfigEntry : configs.entrySet()) {
-            postJoinCacheOperation.addCacheConfig(cacheConfigEntry.getValue());
+        Version clusterVersion = nodeEngine.getClusterService().getClusterVersion();
+        OnJoinCacheOperation postJoinCacheOperation = null;
+        assert !clusterVersion.isUnknown() : "Cluster version should not be unknown";
+        if (clusterVersion.isLessThan(V3_9)) {
+            postJoinCacheOperation = prepareOnJoinCacheOperation();
         }
         return postJoinCacheOperation;
     }
@@ -657,10 +674,11 @@ public abstract class AbstractCacheService
      */
     @Override
     public String getQuorumName(String cacheName) {
-        if (configs.get(cacheName) == null) {
+        CacheConfig cacheConfig = configs.get(cacheName);
+        if (cacheConfig == null) {
             return null;
         }
-        return configs.get(cacheName).getQuorumName();
+        return cacheConfig.getQuorumName();
     }
 
     /**
@@ -670,7 +688,7 @@ public abstract class AbstractCacheService
      * @param listener  the {@link com.hazelcast.cache.impl.CacheEventListener} to be registered for specified <code>cache</code>
      * @param localOnly true if only events originated from this member wants be listened, false if all invalidation events in the
      *                  cluster wants to be listened
-     * @return the id which is unique for current registration
+     * @return the ID which is unique for current registration
      */
     @Override
     public String addInvalidationListener(String name, CacheEventListener listener, boolean localOnly) {
@@ -690,7 +708,7 @@ public abstract class AbstractCacheService
      *
      * @param name       the name of the cache that invalidation event is sent for
      * @param key        the {@link com.hazelcast.nio.serialization.Data} represents the invalidation event
-     * @param sourceUuid an id that represents the source for invalidation event
+     * @param sourceUuid an ID that represents the source for invalidation event
      */
     @Override
     public void sendInvalidationEvent(String name, Data key, String sourceUuid) {
@@ -704,5 +722,19 @@ public abstract class AbstractCacheService
 
     public CacheEventHandler getCacheEventHandler() {
         return cacheEventHandler;
+    }
+
+    @Override
+    public CacheEventJournal getEventJournal() {
+        return eventJournal;
+    }
+
+    private OnJoinCacheOperation prepareOnJoinCacheOperation() {
+        OnJoinCacheOperation preJoinCacheOperation;
+        preJoinCacheOperation = new OnJoinCacheOperation();
+        for (Map.Entry<String, CacheConfig> cacheConfigEntry : configs.entrySet()) {
+            preJoinCacheOperation.addCacheConfig(cacheConfigEntry.getValue());
+        }
+        return preJoinCacheOperation;
     }
 }

@@ -1,10 +1,26 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.spi.impl.operationservice.impl;
 
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.MemberLeftException;
+import com.hazelcast.spi.impl.sequence.CallIdSequenceWithBackpressure;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.impl.operationservice.impl.CallIdSequence.CallIdSequenceWithBackpressure;
 import com.hazelcast.spi.impl.operationservice.impl.Invocation.Context;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
@@ -43,7 +59,7 @@ public class InvocationRegistryTest extends HazelcastTestSupport {
 
     private Invocation newInvocation(Operation op) {
         Invocation.Context context = new Context(null, null, null, null, null,
-                1000, invocationRegistry, null, "", logger, null, null, null, null, null, null, null, null);
+                1000, invocationRegistry, null, logger, null, null, null, null, null, null, null, null, null);
         return new PartitionInvocation(context, op, 0, 0, 0, false);
     }
 
@@ -142,7 +158,7 @@ public class InvocationRegistryTest extends HazelcastTestSupport {
         invocationRegistry.register(invocation);
         long callId = invocation.op.getCallId();
 
-        invocationRegistry.reset();
+        invocationRegistry.reset(null);
 
         InvocationFuture f = invocation.future;
         try {

@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.internal.management;
 
 import com.eclipsesource.json.JsonObject;
@@ -15,7 +31,8 @@ import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
-import org.apache.log4j.Level;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.servlet.ServletHandler;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -24,8 +41,6 @@ import org.junit.runner.RunWith;
 
 import java.io.IOException;
 import java.net.ServerSocket;
-import java.net.URL;
-import java.net.URLDecoder;
 
 import static java.lang.String.format;
 import static org.junit.Assert.assertEquals;
@@ -37,27 +52,22 @@ public class ManagementCenterServiceIntegrationTest extends HazelcastTestSupport
 
     private static final String clusterName = "Session Integration (AWS discovery)";
     private int portNum;
-    private JettyServer jettyServer;
+    private Server jettyServer;
 
     @Before
     public void setUp() throws Exception {
-        setLoggingLog4j();
-        setLogLevel(Level.TRACE);
-
-        URL root = new URL(MancenterServlet.class.getResource("/"), "../test-classes");
-        String baseDir = URLDecoder.decode(root.getFile(), "UTF-8");
-        String sourceDir = baseDir + "/../../src/test/webapp";
-        String sourceName = "server_config.xml";
         portNum = availablePort();
-        jettyServer = new JettyServer(portNum, sourceDir, sourceName);
+        jettyServer = new Server(portNum);
+        ServletHandler handler = new ServletHandler();
+        handler.addServletWithMapping(MancenterServlet.class, "/mancen/*");
+        jettyServer.setHandler(handler);
+        jettyServer.start();
 
         Hazelcast.newHazelcastInstance(getManagementCenterConfig());
     }
 
     @After
     public void tearDown() throws Exception {
-        resetLogLevel();
-
         Hazelcast.shutdownAll();
         jettyServer.stop();
     }

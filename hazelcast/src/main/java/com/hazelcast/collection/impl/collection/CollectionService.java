@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.logging.Level;
 
 public abstract class CollectionService implements ManagedService, RemoteService,
         EventPublishingService<CollectionEvent, ItemListener>, TransactionalService, MigrationAwareService {
@@ -88,7 +87,7 @@ public abstract class CollectionService implements ManagedService, RemoteService
         ItemEvent itemEvent = new DataAwareItemEvent(event.getName(), event.getEventType(), event.getData(),
                 member, nodeEngine.getSerializationService());
         if (member == null) {
-            if (logger.isLoggable(Level.INFO)) {
+            if (logger.isInfoEnabled()) {
                 logger.info("Dropping event " + itemEvent + " from unknown address:" + event.getCaller());
             }
             return;
@@ -111,7 +110,7 @@ public abstract class CollectionService implements ManagedService, RemoteService
                     .setPartitionId(partitionId)
                     .setService(this)
                     .setNodeEngine(nodeEngine);
-            operationService.execute(operation);
+            operationService.invokeOnPartition(operation);
         }
     }
 

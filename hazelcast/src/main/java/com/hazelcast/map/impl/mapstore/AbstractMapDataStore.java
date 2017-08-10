@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,8 +29,8 @@ import java.util.Map;
 /**
  * Abstract map data store contains common functionality of map data stores.
  *
- * @param <K> key type for map data store.
- * @param <V> value type for map data store.
+ * @param <K> key type for map data store
+ * @param <V> value type for map data store
  */
 public abstract class AbstractMapDataStore<K, V> implements MapDataStore<K, V> {
 

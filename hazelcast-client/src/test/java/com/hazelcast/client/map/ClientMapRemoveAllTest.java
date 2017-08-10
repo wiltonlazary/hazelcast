@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package com.hazelcast.client.map;
 
 import com.hazelcast.client.test.TestHazelcastFactory;
-import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.query.Predicate;
@@ -53,15 +52,15 @@ public class ClientMapRemoveAllTest extends HazelcastTestSupport {
     private HazelcastInstance client;
 
     @Before
-    public void setUp() throws Exception {
+    public void setUp() {
         factory = new TestHazelcastFactory();
-        factory.newInstances(new Config(), NODE_COUNT);
+        factory.newInstances(getConfig(), NODE_COUNT);
 
         client = factory.newHazelcastClient();
     }
 
     @After
-    public void tearDown() throws Exception {
+    public void tearDown() {
         factory.shutdownAll();
     }
 
@@ -114,6 +113,7 @@ public class ClientMapRemoveAllTest extends HazelcastTestSupport {
     }
 
     private static final class OddFinderPredicate implements Predicate<Integer, Integer> {
+
         @Override
         public boolean apply(Map.Entry<Integer, Integer> mapEntry) {
             return mapEntry.getKey() % 2 != 0;

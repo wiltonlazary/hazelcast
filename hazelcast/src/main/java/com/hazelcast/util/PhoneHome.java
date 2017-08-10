@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_SELECTOR;
+import static java.lang.System.getenv;
 
 /**
  * Pings phone home server with cluster info daily.
@@ -61,6 +62,7 @@ public final class PhoneHome {
     private static final int J_INTERVAL = 600;
 
     private static final String BASE_PHONE_HOME_URL = "http://phonehome.hazelcast.com/ping";
+    private static final String FALSE = "false";
 
     public PhoneHome() {
     }
@@ -73,6 +75,9 @@ public final class PhoneHome {
             return;
         }
         if (!hazelcastNode.getProperties().getBoolean(GroupProperty.PHONE_HOME_ENABLED)) {
+            return;
+        }
+        if (FALSE.equals(getenv("HZ_PHONE_HOME_ENABLED"))) {
             return;
         }
         try {

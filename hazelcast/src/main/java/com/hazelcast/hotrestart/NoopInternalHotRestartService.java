@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import java.util.Set;
  * is not available or not enabled.
  */
 public class NoopInternalHotRestartService implements InternalHotRestartService {
+
     @Override
     public boolean triggerForceStart() {
         return false;
@@ -48,8 +49,11 @@ public class NoopInternalHotRestartService implements InternalHotRestartService 
     }
 
     @Override
-    public void handleExcludedMemberUuids(Address sender, Set<String> excludedMemberUuids) {
+    public void notifyExcludedMember(Address memberAddress) {
+    }
 
+    @Override
+    public void handleExcludedMemberUuids(Address sender, Set<String> excludedMemberUuids) {
     }
 
     @Override
@@ -59,6 +63,5 @@ public class NoopInternalHotRestartService implements InternalHotRestartService 
 
     @Override
     public void resetHotRestartData() {
-
     }
 }

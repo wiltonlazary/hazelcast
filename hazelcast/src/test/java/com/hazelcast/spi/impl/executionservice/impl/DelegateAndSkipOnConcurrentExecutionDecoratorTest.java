@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 @RunWith(HazelcastParallelClassRunner.class)
@@ -85,6 +86,19 @@ public class DelegateAndSkipOnConcurrentExecutionDecoratorTest
         assertEquals(1, counter.get());
     }
 
+    @Test
+    public void toString_contains_runnables_info() throws Exception {
+        ResumableCountingRunnable runnable = new ResumableCountingRunnable();
+        Executor executor = new Executor() {
+            @Override
+            public void execute(Runnable command) {
+
+            }
+        };
+
+        String stringified = new DelegateAndSkipOnConcurrentExecutionDecorator(runnable, executor).toString();
+        assertTrue(stringified.contains("ResumableCountingRunnable"));
+    }
 
     private DelegateAndSkipOnConcurrentExecutionDecorator decorateAndInvokeRunOnDifferentThread(Runnable task,
                                                                                                 Executor executor) {
@@ -121,6 +135,11 @@ public class DelegateAndSkipOnConcurrentExecutionDecoratorTest
 
         public int getExecutionCount() {
             return executionCount.get();
+        }
+
+        @Override
+        public String toString() {
+            return "ResumableCountingRunnable{}";
         }
     }
 }

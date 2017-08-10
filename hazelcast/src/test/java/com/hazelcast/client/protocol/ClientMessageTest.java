@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.protocol;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
@@ -53,7 +69,7 @@ public class ClientMessageTest {
         ClientMessage cmEncode = TestClientMessage.createForEncode(safeBuffer, 0);
 
         cmEncode.setMessageType(0x1122).setVersion((short) 0xEF).addFlag(ClientMessage.BEGIN_AND_END_FLAGS)
-                .setCorrelationId(0x1234567812345678l)
+                .setCorrelationId(0x1234567812345678L)
                 .setPartitionId(0x11223344);
 
         // little endian
@@ -283,7 +299,7 @@ public class ClientMessageTest {
 
         @Override
         protected void wrapForEncode(ClientProtocolBuffer buffer, int offset) {
-            super.wrap(buffer, offset);
+            super.wrap(buffer.byteArray(), offset, true);
             setDataOffset(THE_NEW_HEADER_SIZE);
             setFrameLength(THE_NEW_HEADER_SIZE);
             index(getDataOffset());

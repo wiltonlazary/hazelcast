@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 package com.hazelcast.nio;
 
-import com.hazelcast.spi.annotation.PrivateApi;
-
 import java.io.IOException;
 import java.net.Socket;
 import java.util.Properties;
@@ -28,7 +26,6 @@ import java.util.Properties;
  * For members see {@link com.hazelcast.nio.MemberSocketInterceptor}
  * see {@link com.hazelcast.config.SocketInterceptorConfig}
  */
-@PrivateApi
 public interface SocketInterceptor {
 
     /**

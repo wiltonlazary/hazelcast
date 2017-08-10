@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import static com.hazelcast.util.JsonUtil.getString;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastSerialClassRunner.class)
@@ -47,6 +48,6 @@ public class TriggerPartialStartRequestTest extends HazelcastTestSupport {
         ConsoleRequest request = new TriggerPartialStartRequest();
         JsonObject jsonObject = new JsonObject();
         request.writeResponse(managementCenterService, jsonObject);
-        return String.valueOf(request.readResponse(jsonObject));
+        return String.valueOf(getString(jsonObject, "result"));
     }
 }

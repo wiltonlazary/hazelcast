@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,9 +29,9 @@ public class SocketOptions {
     /**
      * default buffer size of Bytes
      */
-    public static final int DEFAULT_BUFFER_SIZE_BYTE = 32 * KILO_BYTE;
+    public static final int DEFAULT_BUFFER_SIZE_BYTE = 128 * KILO_BYTE;
 
-    static final int DEFAULT_BUFFER_SIZE = 32;
+    static final int DEFAULT_BUFFER_SIZE = 128;
 
     // socket options
 

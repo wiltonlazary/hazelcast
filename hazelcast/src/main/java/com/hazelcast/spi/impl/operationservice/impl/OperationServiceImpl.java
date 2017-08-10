@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.spi.impl.operationservice.impl;
 
 import com.hazelcast.core.ExecutionCallback;
+import com.hazelcast.core.LocalMemberResetException;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.cluster.ClusterClock;
@@ -30,8 +31,6 @@ import com.hazelcast.internal.util.counters.Counter;
 import com.hazelcast.internal.util.counters.MwCounter;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
-import com.hazelcast.nio.Connection;
-import com.hazelcast.nio.ConnectionManager;
 import com.hazelcast.nio.Packet;
 import com.hazelcast.spi.ExecutionService;
 import com.hazelcast.spi.InternalCompletableFuture;
@@ -59,11 +58,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 import static com.hazelcast.internal.metrics.ProbeLevel.MANDATORY;
 import static com.hazelcast.internal.util.counters.MwCounter.newMwCounter;
-import static com.hazelcast.nio.Packet.FLAG_URGENT;
 import static com.hazelcast.spi.InvocationBuilder.DEFAULT_CALL_TIMEOUT;
 import static com.hazelcast.spi.InvocationBuilder.DEFAULT_DESERIALIZE_RESULT;
 import static com.hazelcast.spi.InvocationBuilder.DEFAULT_REPLICA_INDEX;
@@ -104,9 +101,6 @@ public final class OperationServiceImpl implements InternalOperationService, Met
     final InvocationRegistry invocationRegistry;
     final OperationExecutor operationExecutor;
 
-    @Probe(name = "completedCount", level = MANDATORY)
-    final AtomicLong completedOperationsCount = new AtomicLong();
-
     @Probe(name = "operationTimeoutCount", level = MANDATORY)
     final MwCounter operationTimeoutCount = newMwCounter();
 
@@ -125,6 +119,7 @@ public final class OperationServiceImpl implements InternalOperationService, Met
     final OperationBackupHandler backupHandler;
     final BackpressureRegulator backpressureRegulator;
     final OutboundResponseHandler outboundResponseHandler;
+    final OutboundOperationHandler outboundOperationHandler;
     volatile Invocation.Context invocationContext;
 
     private final InvocationMonitor invocationMonitor;
@@ -157,24 +152,28 @@ public final class OperationServiceImpl implements InternalOperationService, Met
                 node.getLogger(OperationServiceImpl.class), backpressureRegulator.newCallIdSequence());
 
         this.invocationMonitor = new InvocationMonitor(
-                nodeEngine, thisAddress, node.getHazelcastThreadGroup(), node.getProperties(), invocationRegistry,
+                nodeEngine, thisAddress, node.getProperties(), invocationRegistry,
                 node.getLogger(InvocationMonitor.class), serializationService, nodeEngine.getServiceManager());
 
-        this.backupHandler = new OperationBackupHandler(this);
+        this.outboundOperationHandler = new OutboundOperationHandler(node, thisAddress, serializationService);
 
+        this.backupHandler = new OperationBackupHandler(this, outboundOperationHandler);
+
+        String hzName = nodeEngine.getHazelcastInstance().getName();
         this.inboundResponseHandler = new InboundResponseHandler(
                 node.getLogger(InboundResponseHandler.class), node.getSerializationService(), invocationRegistry, nodeEngine);
-        this.asyncInboundResponseHandler = new AsyncInboundResponseHandler(
-                node.getHazelcastThreadGroup(), node.getLogger(AsyncInboundResponseHandler.class),
+        ClassLoader configClassLoader = node.getConfigClassLoader();
+        this.asyncInboundResponseHandler = new AsyncInboundResponseHandler(configClassLoader, hzName,
+                node.getLogger(AsyncInboundResponseHandler.class),
                 inboundResponseHandler, node.getProperties());
 
         this.operationExecutor = new OperationExecutorImpl(
                 node.getProperties(), node.loggingService, thisAddress, new OperationRunnerFactoryImpl(this),
-                node.getHazelcastThreadGroup(), node.getNodeExtension());
+                node.getNodeExtension(), hzName, configClassLoader);
 
         this.slowOperationDetector = new SlowOperationDetector(node.loggingService,
                 operationExecutor.getGenericOperationRunners(), operationExecutor.getPartitionOperationRunners(),
-                node.getProperties(), node.getHazelcastThreadGroup());
+                node.getProperties(), hzName);
     }
 
     public OutboundResponseHandler getOutboundResponseHandler() {
@@ -219,7 +218,7 @@ public final class OperationServiceImpl implements InternalOperationService, Met
 
     @Override
     public long getExecutedOperationCount() {
-        return completedOperationsCount.get();
+        return operationExecutor.getExecutedOperationCount();
     }
 
     @Override
@@ -262,7 +261,7 @@ public final class OperationServiceImpl implements InternalOperationService, Met
 
     @Override
     public InvocationBuilder createInvocationBuilder(String serviceName, Operation op, int partitionId) {
-        checkNotNegative(partitionId, "Partition id cannot be negative!");
+        checkNotNegative(partitionId, "Partition ID cannot be negative!");
         return new InvocationBuilderImpl(invocationContext, serviceName, op, partitionId);
     }
 
@@ -398,23 +397,7 @@ public final class OperationServiceImpl implements InternalOperationService, Met
 
     @Override
     public boolean send(Operation op, Address target) {
-        checkNotNull(target, "Target is required!");
-
-        if (thisAddress.equals(target)) {
-            throw new IllegalArgumentException("Target is this node! -> " + target + ", op: " + op);
-        }
-
-        byte[] bytes = serializationService.toBytes(op);
-        int partitionId = op.getPartitionId();
-        Packet packet = new Packet(bytes, partitionId).setPacketType(Packet.Type.OPERATION);
-
-        if (op.isUrgent()) {
-            packet.raiseFlags(FLAG_URGENT);
-        }
-
-        ConnectionManager connectionManager = node.getConnectionManager();
-        Connection connection = connectionManager.getOrConnect(target);
-        return connectionManager.transmit(packet, connection);
+        return outboundOperationHandler.send(op, target);
     }
 
     public void onMemberLeft(MemberImpl member) {
@@ -422,7 +405,8 @@ public final class OperationServiceImpl implements InternalOperationService, Met
     }
 
     public void reset() {
-        invocationRegistry.reset();
+        Throwable cause = new LocalMemberResetException(node.getLocalMember() + " has reset.");
+        invocationRegistry.reset(cause);
     }
 
     @Override
@@ -443,19 +427,10 @@ public final class OperationServiceImpl implements InternalOperationService, Met
         slowOperationDetector.start();
     }
 
-    /**
-     * Initializes the invocation context to use most recent uuid of the local member. We have this method because the local
-     * member can change its uuid when the cluster has performed partial start and invocations should be done with the new uuid.
-     */
-    public void initInvocationContext() {
-        ManagedExecutorService asyncExecutor;
-        if (this.invocationContext != null) {
-            asyncExecutor = this.invocationContext.asyncExecutor;
-        } else {
-            asyncExecutor = nodeEngine.getExecutionService().register(
-                    ExecutionService.ASYNC_EXECUTOR, Runtime.getRuntime().availableProcessors(),
-                    ASYNC_QUEUE_CAPACITY, ExecutorType.CONCRETE);
-        }
+    private void initInvocationContext() {
+        ManagedExecutorService asyncExecutor = nodeEngine.getExecutionService().register(
+                ExecutionService.ASYNC_EXECUTOR, Runtime.getRuntime().availableProcessors(),
+                ASYNC_QUEUE_CAPACITY, ExecutorType.CONCRETE);
 
         this.invocationContext = new Invocation.Context(
                 asyncExecutor,
@@ -466,7 +441,6 @@ public final class OperationServiceImpl implements InternalOperationService, Met
                 nodeEngine.getProperties().getMillis(OPERATION_CALL_TIMEOUT_MILLIS),
                 invocationRegistry,
                 invocationMonitor,
-                node.getThisUuid(),
                 nodeEngine.getLogger(Invocation.class),
                 node,
                 nodeEngine,
@@ -475,7 +449,8 @@ public final class OperationServiceImpl implements InternalOperationService, Met
                 operationExecutor,
                 retryCount,
                 serializationService,
-                nodeEngine.getThisAddress());
+                nodeEngine.getThisAddress(),
+                outboundOperationHandler);
     }
 
     /**

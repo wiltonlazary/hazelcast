@@ -1,6 +1,21 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.aggregation;
 
-import com.hazelcast.aggregation.impl.AbstractAggregator;
 import com.hazelcast.aggregation.impl.DoubleAverageAggregator;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.InMemoryFormat;
@@ -29,6 +44,7 @@ import java.util.Map;
 
 import static com.hazelcast.query.Predicates.greaterThan;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -139,6 +155,16 @@ public class MapAggregateTest extends HazelcastTestSupport {
     }
 
     @Test
+    public void doubleAvg_1Node_objectValue_withEmptyResultPredicate() {
+        IMap<String, Person> map = getMapWithNodeCount(1);
+        populateMapWithPersons(map);
+
+        Double avg = map.aggregate(new DoubleAverageAggregator<Map.Entry<String, Person>>("age"),
+                greaterThan("age", 30.0d));
+        assertNull(avg);
+    }
+
+    @Test
     public void doubleAvg_3Nodes_objectValue_withPredicate() {
         IMap<String, Person> map = getMapWithNodeCount(3);
         populateMapWithPersons(map);
@@ -154,7 +180,7 @@ public class MapAggregateTest extends HazelcastTestSupport {
         return map;
     }
 
-    private static class ExceptionThrowingAggregator<I> extends AbstractAggregator<I, Double> {
+    private static class ExceptionThrowingAggregator<I> extends Aggregator<I, Double> {
 
         private boolean throwOnAccumulate;
         private boolean throwOnCombine;

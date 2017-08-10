@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,12 +25,17 @@ import java.util.List;
 import java.util.Map;
 
 public class ResultSet<K, V> extends AbstractSet<Map.Entry<K, V>> {
+
     private final List<Map.Entry<K, V>> entries;
     private final IterationType iterationType;
 
     public ResultSet(List<Map.Entry<K, V>> entries, IterationType iterationType) {
         this.entries = entries;
         this.iterationType = iterationType;
+    }
+
+    public ResultSet() {
+        this(null, null);
     }
 
     @Override
@@ -78,5 +83,4 @@ public class ResultSet<K, V> extends AbstractSet<Map.Entry<K, V>> {
             throw new UnsupportedOperationException();
         }
     }
-
 }

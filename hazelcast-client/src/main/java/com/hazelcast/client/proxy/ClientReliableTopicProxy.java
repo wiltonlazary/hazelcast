@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,12 @@
 
 package com.hazelcast.client.proxy;
 
+import com.hazelcast.client.HazelcastClientNotActiveException;
 import com.hazelcast.client.config.ClientReliableTopicConfig;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.client.spi.ClientProxy;
 import com.hazelcast.core.ExecutionCallback;
-import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.core.ITopic;
@@ -46,11 +47,12 @@ import com.hazelcast.version.MemberVersion;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
 import static com.hazelcast.ringbuffer.impl.RingbufferService.TOPIC_RB_PREFIX;
 import static com.hazelcast.topic.impl.reliable.ReliableTopicService.SERVICE_NAME;
+import static com.hazelcast.util.ExceptionUtil.peel;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
@@ -75,8 +77,8 @@ public class ClientReliableTopicProxy<E> extends ClientProxy implements ITopic<E
     private final Executor executor;
     private final TopicOverloadPolicy overloadPolicy;
 
-    public ClientReliableTopicProxy(String objectId, HazelcastClientInstanceImpl client) {
-        super(SERVICE_NAME, objectId);
+    public ClientReliableTopicProxy(String objectId, ClientContext context, HazelcastClientInstanceImpl client) {
+        super(SERVICE_NAME, objectId, context);
         this.ringbuffer = client.getRingbuffer(TOPIC_RB_PREFIX + objectId);
         this.serializationService = client.getSerializationService();
         this.config = client.getClientConfig().getReliableTopicConfig(objectId);
@@ -88,7 +90,7 @@ public class ClientReliableTopicProxy<E> extends ClientProxy implements ITopic<E
     private Executor getExecutor(ClientReliableTopicConfig config, HazelcastClientInstanceImpl client) {
         Executor executor = config.getExecutor();
         if (executor == null) {
-            executor = client.getClientExecutionService();
+            executor = client.getClientExecutionService().getUserExecutor();
         }
         return executor;
     }
@@ -114,10 +116,9 @@ public class ClientReliableTopicProxy<E> extends ClientProxy implements ITopic<E
                 default:
                     throw new IllegalArgumentException("Unknown overloadPolicy:" + overloadPolicy);
             }
-        } catch (RuntimeException e) {
-            throw e;
         } catch (Exception e) {
-            throw new HazelcastException("Failed to publish message: " + payload + " to topic:" + name, e);
+            throw (RuntimeException) peel(e, null,
+                    "Failed to publish message: " + payload + " to topic:" + getName());
         }
     }
 
@@ -183,7 +184,7 @@ public class ClientReliableTopicProxy<E> extends ClientProxy implements ITopic<E
 
     @Override
     public LocalTopicStats getLocalTopicStats() {
-        throw new UnsupportedOperationException("Locality is ambiguous for client!!!");
+        throw new UnsupportedOperationException("Locality is ambiguous for client!");
     }
 
     public Ringbuffer getRingbuffer() {
@@ -273,10 +274,10 @@ public class ClientReliableTopicProxy<E> extends ClientProxy implements ITopic<E
                 return;
             }
 
-            if (t instanceof ExecutionException && t.getCause() instanceof StaleSequenceException) {
+            t = peel(t);
+            if (t instanceof StaleSequenceException) {
                 // StaleSequenceException.getHeadSeq() is not available on the client-side, see #7317
                 long remoteHeadSeq = ringbuffer.headSequence();
-
                 if (listener.isLossTolerant()) {
                     if (logger.isFinestEnabled()) {
                         logger.finest("MessageListener " + listener + " on topic: " + name + " ran into a stale sequence. "
@@ -287,7 +288,6 @@ public class ClientReliableTopicProxy<E> extends ClientProxy implements ITopic<E
                     next();
                     return;
                 }
-
                 logger.warning("Terminating MessageListener:" + listener + " on topic: " + name + ". "
                         + "Reason: The listener was too slow or the retention period of the message has been violated. "
                         + "head: " + remoteHeadSeq + " sequence:" + sequence);
@@ -301,11 +301,15 @@ public class ClientReliableTopicProxy<E> extends ClientProxy implements ITopic<E
                     logger.finest("Terminating MessageListener " + listener + " on topic: " + name + ". "
                             + "Reason: Topic is destroyed");
                 }
+            } else if (t instanceof HazelcastClientNotActiveException || t instanceof RejectedExecutionException) {
+                if (logger.isFinestEnabled()) {
+                    logger.finest("Terminating MessageListener " + listener + " on topic: " + name + ". "
+                            + "Reason: HazelcastClient is shutting down");
+                }
             } else {
                 logger.warning("Terminating MessageListener " + listener + " on topic: " + name + ". "
                         + "Reason: Unhandled exception, message: " + t.getMessage(), t);
             }
-
             cancel();
         }
 
@@ -338,5 +342,4 @@ public class ClientReliableTopicProxy<E> extends ClientProxy implements ITopic<E
             }
         }
     }
-
 }

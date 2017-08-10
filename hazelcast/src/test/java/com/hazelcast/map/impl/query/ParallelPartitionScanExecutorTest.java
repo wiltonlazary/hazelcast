@@ -1,7 +1,21 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map.impl.query;
 
-import com.hazelcast.instance.HazelcastThreadGroup;
-import com.hazelcast.logging.NoLogFactory;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.Predicates;
 import com.hazelcast.query.QueryException;
@@ -23,6 +37,7 @@ import java.util.UUID;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import static java.lang.Thread.currentThread;
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Matchers.anyInt;
@@ -39,10 +54,7 @@ public class ParallelPartitionScanExecutorTest {
     public ExpectedException expected = ExpectedException.none();
 
     private ParallelPartitionScanExecutor executor(PartitionScanRunner runner) {
-        NoLogFactory factory = new NoLogFactory();
-        HazelcastThreadGroup group = new HazelcastThreadGroup(UUID.randomUUID().toString(),
-                factory.getLogger(ParallelPartitionScanExecutorTest.class.getName()), Thread.currentThread().getContextClassLoader());
-        PoolExecutorThreadFactory threadFactory = new PoolExecutorThreadFactory(group, UUID.randomUUID().toString());
+        PoolExecutorThreadFactory threadFactory = new PoolExecutorThreadFactory(UUID.randomUUID().toString(), currentThread().getContextClassLoader());
         NamedThreadPoolExecutor pool = new NamedThreadPoolExecutor(UUID.randomUUID().toString(), 1, 1,
                 100, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<Runnable>(100),
@@ -84,5 +96,4 @@ public class ParallelPartitionScanExecutorTest {
         expected.expect(RetryableHazelcastException.class);
         executor.execute("Map", predicate, asList(1, 2, 3));
     }
-
 }

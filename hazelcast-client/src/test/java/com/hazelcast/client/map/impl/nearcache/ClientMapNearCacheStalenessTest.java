@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,16 @@
 
 package com.hazelcast.client.map.impl.nearcache;
 
-import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.proxy.NearCachedClientMapProxy;
+import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.config.NearCacheConfig;
-import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.test.annotation.SlowTest;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -42,7 +42,7 @@ import static com.hazelcast.util.RandomPicker.getInt;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class})
+@Category({SlowTest.class})
 public class ClientMapNearCacheStalenessTest extends HazelcastTestSupport {
 
     private final int ENTRY_COUNT = 10;
@@ -57,16 +57,23 @@ public class ClientMapNearCacheStalenessTest extends HazelcastTestSupport {
     private IMap<Integer, Integer> clientMap;
     private IMap<Integer, Integer> memberMap;
 
+    protected TestHazelcastFactory hazelcastFactory = new TestHazelcastFactory();
+
     @Before
     public void setUp() {
         ClientConfig clientConfig = getClientConfig(MAP_NAME);
         clientConfig.setProperty("hazelcast.invalidation.max.tolerated.miss.count", "0");
 
-        member = Hazelcast.newHazelcastInstance();
-        client = HazelcastClient.newHazelcastClient(clientConfig);
+        member = hazelcastFactory.newHazelcastInstance();
+        client = hazelcastFactory.newHazelcastClient(clientConfig);
 
         memberMap = member.getMap(MAP_NAME);
         clientMap = client.getMap(MAP_NAME);
+    }
+
+    @After
+    public void cleanup() {
+        hazelcastFactory.terminateAll();
     }
 
     protected ClientConfig getClientConfig(String mapName) {
@@ -81,12 +88,6 @@ public class ClientMapNearCacheStalenessTest extends HazelcastTestSupport {
         NearCacheConfig nearCacheConfig = new NearCacheConfig(mapName);
         nearCacheConfig.setInvalidateOnChange(true);
         return nearCacheConfig;
-    }
-
-    @After
-    public void tearDown() {
-        client.shutdown();
-        member.shutdown();
     }
 
     @Test
@@ -115,10 +116,12 @@ public class ClientMapNearCacheStalenessTest extends HazelcastTestSupport {
             thread.join();
         }
 
-        // give some-time to receive possible latest invalidation events
-        sleepSeconds(5);
-
-        assertNoStaleDataExistInNearCache(clientMap);
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertNoStaleDataExistInNearCache(clientMap);
+            }
+        });
     }
 
     private void assertNoStaleDataExistInNearCache(IMap<Integer, Integer> map) {

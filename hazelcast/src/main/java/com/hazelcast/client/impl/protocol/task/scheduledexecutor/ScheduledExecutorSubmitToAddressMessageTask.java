@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,40 +18,40 @@ package com.hazelcast.client.impl.protocol.task.scheduledexecutor;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorSubmitToAddressCodec;
-import com.hazelcast.client.impl.protocol.task.AbstractInvocationMessageTask;
+import com.hazelcast.client.impl.protocol.task.AbstractAddressMessageTask;
 import com.hazelcast.instance.Node;
+import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.scheduledexecutor.impl.DistributedScheduledExecutorService;
 import com.hazelcast.scheduledexecutor.impl.TaskDefinition;
 import com.hazelcast.scheduledexecutor.impl.operations.ScheduleTaskOperation;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.ScheduledExecutorPermission;
-import com.hazelcast.spi.InvocationBuilder;
 import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.impl.operationservice.InternalOperationService;
 
 import java.security.Permission;
+import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
 
 public class ScheduledExecutorSubmitToAddressMessageTask
-        extends AbstractInvocationMessageTask<ScheduledExecutorSubmitToAddressCodec.RequestParameters> {
+        extends AbstractAddressMessageTask<ScheduledExecutorSubmitToAddressCodec.RequestParameters> {
 
     public ScheduledExecutorSubmitToAddressMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
     }
 
     @Override
-    protected InvocationBuilder getInvocationBuilder(Operation op) {
-        final InternalOperationService operationService = nodeEngine.getOperationService();
-        return operationService.createInvocationBuilder(getServiceName(), op, parameters.address);
+    protected Operation prepareOperation() {
+        Callable callable = serializationService.toObject(parameters.task);
+        TaskDefinition def = new TaskDefinition(TaskDefinition.Type.getById(parameters.type),
+                parameters.taskName, callable, parameters.initialDelayInMillis, parameters.periodInMillis,
+                TimeUnit.MILLISECONDS);
+        return new ScheduleTaskOperation(parameters.schedulerName, def);
     }
 
     @Override
-    protected Operation prepareOperation() {
-        TaskDefinition def = serializationService.toObject(parameters.taskDefinition);
-        Operation op = new ScheduleTaskOperation(parameters.schedulerName, def);
-        op.setPartitionId(-1);
-        op.setCallerUuid(endpoint.getUuid());
-        return op;
+    protected Address getAddress() {
+        return parameters.address;
     }
 
     @Override
@@ -86,6 +86,10 @@ public class ScheduledExecutorSubmitToAddressMessageTask
 
     @Override
     public Object[] getParameters() {
-        return new Object[] { parameters.schedulerName, parameters.address, parameters.taskDefinition };
+        Callable callable = serializationService.toObject(parameters.task);
+        TaskDefinition def = new TaskDefinition(TaskDefinition.Type.getById(parameters.type),
+                parameters.taskName, callable, parameters.initialDelayInMillis, parameters.periodInMillis,
+                TimeUnit.MILLISECONDS);
+        return new Object[]{parameters.schedulerName, parameters.address, def};
     }
 }

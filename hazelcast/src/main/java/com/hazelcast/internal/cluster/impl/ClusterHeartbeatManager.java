@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,21 @@
 
 package com.hazelcast.internal.cluster.impl;
 
+import com.hazelcast.core.Member;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.NodeState;
-import com.hazelcast.internal.cluster.MemberInfo;
-import com.hazelcast.internal.cluster.impl.operations.HeartbeatOperation;
-import com.hazelcast.internal.cluster.impl.operations.MasterConfirmationOperation;
-import com.hazelcast.internal.cluster.impl.operations.MemberInfoUpdateOperation;
+import com.hazelcast.internal.cluster.impl.operations.ExplicitSuspicionOp;
+import com.hazelcast.internal.cluster.impl.operations.HeartbeatComplaintOp;
+import com.hazelcast.internal.cluster.impl.operations.HeartbeatOp;
+import com.hazelcast.internal.cluster.impl.operations.MasterConfirmationOp;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
 import com.hazelcast.spi.ExecutionService;
+import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
@@ -37,15 +40,15 @@ import com.hazelcast.util.EmptyStatement;
 import java.net.ConnectException;
 import java.net.NetworkInterface;
 import java.util.Collection;
-import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
 
 import static com.hazelcast.internal.cluster.impl.ClusterServiceImpl.EXECUTOR_NAME;
-import static com.hazelcast.internal.cluster.impl.ClusterServiceImpl.createMemberInfoList;
 import static com.hazelcast.util.StringUtil.timeToString;
 import static java.lang.String.format;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.MINUTES;
 
 /**
@@ -70,6 +73,7 @@ public class ClusterHeartbeatManager {
     private static final int MAX_PING_RETRY_COUNT = 5;
 
     private final ILogger logger;
+    private final Lock clusterServiceLock;
     private final Node node;
     private final NodeEngineImpl nodeEngine;
     private final ClusterServiceImpl clusterService;
@@ -90,12 +94,13 @@ public class ClusterHeartbeatManager {
     private volatile long lastHeartbeat;
     private volatile long lastClusterTimeDiff;
 
-    public ClusterHeartbeatManager(Node node, ClusterServiceImpl clusterService) {
+    ClusterHeartbeatManager(Node node, ClusterServiceImpl clusterService, Lock lock) {
         this.node = node;
         this.clusterService = clusterService;
         this.nodeEngine = node.getNodeEngine();
         clusterClock = clusterService.getClusterClock();
         logger = node.getLogger(getClass());
+        clusterServiceLock = lock;
 
         HazelcastProperties hazelcastProperties = node.getProperties();
         maxNoHeartbeatMillis = hazelcastProperties.getMillis(GroupProperty.MAX_NO_HEARTBEAT_SECONDS);
@@ -109,6 +114,15 @@ public class ClusterHeartbeatManager {
         icmpTimeoutMillis = (int) hazelcastProperties.getMillis(GroupProperty.ICMP_TIMEOUT);
     }
 
+    public long getHeartbeatIntervalMillis() {
+        return heartbeatIntervalMillis;
+    }
+
+    // only used for reading by Diagnostics
+    public ConcurrentMap<MemberImpl, Long> getHeartbeatTimes() {
+        return heartbeatTimes;
+    }
+
     private static long getHeartbeatInterval(HazelcastProperties hazelcastProperties) {
         long heartbeatInterval = hazelcastProperties.getMillis(GroupProperty.HEARTBEAT_INTERVAL_SECONDS);
         return heartbeatInterval > 0 ? heartbeatInterval : TimeUnit.SECONDS.toMillis(1);
@@ -119,7 +133,6 @@ public class ClusterHeartbeatManager {
      * <ul>
      * <li>heartbeat operation to the {@link #getHeartbeatInterval(HazelcastProperties)} interval</li>
      * <li>master confirmation to the {@link GroupProperty#MASTER_CONFIRMATION_INTERVAL_SECONDS} interval</li>
-     * <li>member list publication to the {@link GroupProperty#MEMBER_LIST_PUBLISH_INTERVAL_SECONDS} interval</li>
      * </ul>
      */
     void init() {
@@ -139,14 +152,152 @@ public class ClusterHeartbeatManager {
                 sendMasterConfirmation();
             }
         }, masterConfirmationInterval, masterConfirmationInterval, TimeUnit.SECONDS);
+    }
 
-        long memberListPublishInterval = hazelcastProperties.getSeconds(GroupProperty.MEMBER_LIST_PUBLISH_INTERVAL_SECONDS);
-        memberListPublishInterval = (memberListPublishInterval > 0 ? memberListPublishInterval : 1);
-        executionService.scheduleWithRepetition(EXECUTOR_NAME, new Runnable() {
-            public void run() {
-                sendMemberListToOthers();
+    public void handleHeartbeat(MembersViewMetadata senderMembersViewMetadata, String receiverUuid, long timestamp) {
+        Address senderAddress = senderMembersViewMetadata.getMemberAddress();
+        try {
+            long timeout = Math.min(TimeUnit.SECONDS.toMillis(1), heartbeatIntervalMillis / 2);
+            if (!clusterServiceLock.tryLock(timeout, MILLISECONDS)) {
+                logger.warning("Cannot handle heartbeat from " + senderAddress + ", could not acquire lock in time.");
+                return;
             }
-        }, memberListPublishInterval, memberListPublishInterval, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            logger.warning("Cannot handle heartbeat from " + senderAddress + ", thread interrupted.");
+            Thread.currentThread().interrupt();
+            return;
+        }
+
+        try {
+            if (!clusterService.isJoined()) {
+                if (clusterService.getThisUuid().equals(receiverUuid)) {
+                    logger.fine("Ignoring heartbeat of sender: " + senderMembersViewMetadata + ", because node is not joined!");
+                } else {
+                    // we know that sender version is 3.9 so we send explicit suspicion back even if we are not joined...
+                    logger.fine("Sending explicit suspicion to " + senderAddress + " for heartbeat " + senderMembersViewMetadata
+                            + ", because this node has received an invalid heartbeat before it joins to the cluster");
+                    OperationService operationService = nodeEngine.getOperationService();
+                    Operation op = new ExplicitSuspicionOp(senderMembersViewMetadata);
+                    operationService.send(op, senderAddress);
+                }
+                return;
+            }
+
+            MembershipManager membershipManager = clusterService.getMembershipManager();
+            MemberImpl member = membershipManager.getMember(senderAddress, senderMembersViewMetadata.getMemberUuid());
+            if (member != null) {
+                if (clusterService.getThisUuid().equals(receiverUuid)) {
+                    onHeartbeat(member, timestamp);
+                    return;
+                }
+
+                logger.warning("Local uuid mismatch on received heartbeat. local uuid: " + clusterService.getThisUuid()
+                        + " received uuid: " + receiverUuid + " with " + senderMembersViewMetadata);
+            }
+
+            onInvalidHeartbeat(senderMembersViewMetadata);
+        } finally {
+            clusterServiceLock.unlock();
+        }
+    }
+
+    private void onInvalidHeartbeat(MembersViewMetadata senderMembersViewMetadata) {
+        Address senderAddress = senderMembersViewMetadata.getMemberAddress();
+
+        if (clusterService.isMaster()) {
+            if (!clusterService.getClusterJoinManager().isMastershipClaimInProgress()) {
+                logger.fine("Sending explicit suspicion to " + senderAddress + " for heartbeat "
+                        + senderMembersViewMetadata + ", because it is not a member of this cluster"
+                        + " or its heartbeat cannot be validated!");
+                clusterService.sendExplicitSuspicion(senderMembersViewMetadata);
+            }
+        } else {
+            Address masterAddress = clusterService.getMasterAddress();
+            if (clusterService.getMembershipManager().isMemberSuspected(masterAddress)) {
+                logger.fine("Not sending heartbeat complaint for " + senderMembersViewMetadata
+                        + " to suspected master: " + masterAddress);
+                return;
+            }
+
+            logger.fine("Sending heartbeat complaint to master " + masterAddress + " for heartbeat "
+                    + senderMembersViewMetadata + ", because it is not a member of this cluster"
+                    + " or its heartbeat cannot be validated!");
+            sendHeartbeatComplaintToMaster(senderMembersViewMetadata);
+        }
+    }
+
+    private void sendHeartbeatComplaintToMaster(MembersViewMetadata senderMembersViewMetadata) {
+        if (clusterService.isMaster()) {
+            logger.warning("Cannot send heartbeat complaint for " + senderMembersViewMetadata + " to itself.");
+            return;
+        }
+
+        Address masterAddress = clusterService.getMasterAddress();
+        if (masterAddress == null) {
+            logger.fine("Cannot send heartbeat complaint for " + senderMembersViewMetadata.getMemberAddress()
+                + ", master address is not set.");
+            return;
+        }
+
+        MembersViewMetadata localMembersViewMetadata = clusterService.getMembershipManager().createLocalMembersViewMetadata();
+        Operation op = new HeartbeatComplaintOp(localMembersViewMetadata, senderMembersViewMetadata);
+        OperationService operationService = nodeEngine.getOperationService();
+        operationService.send(op, masterAddress);
+    }
+
+    public void handleHeartbeatComplaint(MembersViewMetadata receiverMVMetadata, MembersViewMetadata senderMVMetadata) {
+        clusterServiceLock.lock();
+        try {
+            if (!clusterService.isJoined()) {
+                logger.warning("Ignoring heartbeat complaint of receiver: " + receiverMVMetadata
+                        + " and sender: " + senderMVMetadata + " because not joined!");
+                return;
+            }
+
+            MembershipManager membershipManager = clusterService.getMembershipManager();
+            ClusterJoinManager clusterJoinManager = clusterService.getClusterJoinManager();
+
+            if (!clusterService.isMaster()) {
+                logger.warning("Ignoring heartbeat complaint of receiver: " + receiverMVMetadata
+                        + " for sender: " + senderMVMetadata + " because this node is not master");
+                return;
+            } else if (clusterJoinManager.isMastershipClaimInProgress()) {
+                logger.fine("Ignoring heartbeat complaint of receiver: " + receiverMVMetadata
+                        + " for sender: " + senderMVMetadata + " because mastership claim process is ongoing");
+                return;
+            } else if (senderMVMetadata.getMemberAddress().equals(receiverMVMetadata.getMemberAddress())) {
+                logger.warning("Ignoring heartbeat complaint of receiver: " + receiverMVMetadata
+                        + " for sender: " + senderMVMetadata + " because they are same member");
+                return;
+            }
+
+            if (membershipManager.validateMembersViewMetadata(senderMVMetadata)) {
+                if (membershipManager.validateMembersViewMetadata(receiverMVMetadata)) {
+                    logger.fine("Sending latest member list to " + senderMVMetadata.getMemberAddress()
+                            + " and " + receiverMVMetadata.getMemberAddress() + " after heartbeat complaint.");
+                    membershipManager.sendMemberListToMember(senderMVMetadata.getMemberAddress());
+                    membershipManager.sendMemberListToMember(receiverMVMetadata.getMemberAddress());
+                } else {
+                    logger.fine("Complainer " + receiverMVMetadata.getMemberAddress() + " will explicitly suspect from "
+                            + node.getThisAddress() + " and " + senderMVMetadata.getMemberAddress());
+                    clusterService.sendExplicitSuspicion(receiverMVMetadata);
+                    clusterService.sendExplicitSuspicionTrigger(senderMVMetadata.getMemberAddress(), receiverMVMetadata);
+                }
+            } else if (membershipManager.validateMembersViewMetadata(receiverMVMetadata)) {
+                logger.fine("Complainee " + senderMVMetadata.getMemberAddress() + " will explicitly suspect from "
+                        + node.getThisAddress() + " and " + receiverMVMetadata.getMemberAddress());
+                clusterService.sendExplicitSuspicion(senderMVMetadata);
+                clusterService.sendExplicitSuspicionTrigger(receiverMVMetadata.getMemberAddress(), senderMVMetadata);
+            } else {
+                logger.fine("Both complainer " + receiverMVMetadata.getMemberAddress()
+                        + " and complainee " + senderMVMetadata.getMemberAddress()
+                        + " will explicitly suspect from " + node.getThisAddress());
+                clusterService.sendExplicitSuspicion(senderMVMetadata);
+                clusterService.sendExplicitSuspicion(receiverMVMetadata);
+            }
+        } finally {
+            clusterServiceLock.unlock();
+        }
     }
 
     /**
@@ -176,6 +327,9 @@ public class ClusterHeartbeatManager {
                 clusterClock.setMasterTime(timestamp);
             }
             heartbeatTimes.put(member, clusterClock.getClusterTime());
+
+            MembershipManager membershipManager = clusterService.getMembershipManager();
+            membershipManager.clearMemberSuspicion(member.getAddress(), "Valid heartbeat");
         }
     }
 
@@ -188,7 +342,7 @@ public class ClusterHeartbeatManager {
      * @param member    the member sending the confirmation to the master node
      * @param timestamp the cluster timestamp when the confirmation was made
      */
-    public void acceptMasterConfirmation(MemberImpl member, long timestamp) {
+    void acceptMasterConfirmation(MemberImpl member, long timestamp) {
         if (member != null) {
             if (logger.isFineEnabled()) {
                 logger.fine("MasterConfirmation has been received from " + member);
@@ -209,14 +363,14 @@ public class ClusterHeartbeatManager {
      * the clock drift based on the expected and actual invocation period.
      */
     void heartbeat() {
-        if (!node.joined()) {
+        if (!clusterService.isJoined()) {
             return;
         }
 
         checkClockDrift(heartbeatIntervalMillis);
 
         final long clusterTime = clusterClock.getClusterTime();
-        if (node.isMaster()) {
+        if (clusterService.isMaster()) {
             heartbeatWhenMaster(clusterTime);
         } else {
             heartbeatWhenSlave(clusterTime);
@@ -297,7 +451,7 @@ public class ClusterHeartbeatManager {
             if (!member.localMember()) {
                 try {
                     logIfConnectionToEndpointIsMissing(now, member);
-                    if (removeMemberIfNotHeartBeating(now, member)) {
+                    if (suspectMemberIfNotHeartBeating(now, member)) {
                         continue;
                     }
 
@@ -306,7 +460,7 @@ public class ClusterHeartbeatManager {
                     }
 
                     pingMemberIfRequired(now, member);
-                    sendHeartbeat(member.getAddress());
+                    sendHeartbeat(member);
                 } catch (Throwable e) {
                     logger.severe(e);
                 }
@@ -322,14 +476,18 @@ public class ClusterHeartbeatManager {
      * @param member the member which needs to be checked
      * @return if the member has been removed
      */
-    private boolean removeMemberIfNotHeartBeating(long now, MemberImpl member) {
+    private boolean suspectMemberIfNotHeartBeating(long now, MemberImpl member) {
+        if (clusterService.getMembershipManager().isMemberSuspected(member.getAddress())) {
+            return true;
+        }
+
         long heartbeatTime = getHeartbeatTime(member);
         if ((now - heartbeatTime) > maxNoHeartbeatMillis) {
-            String reason = format("Removing %s because it has not sent any heartbeats for %d ms."
+            String reason = format("Suspecting %s because it has not sent any heartbeats for %d ms."
                             + " Now: %s, last heartbeat time was %s", member, maxNoHeartbeatMillis,
                     timeToString(now), timeToString(heartbeatTime));
             logger.warning(reason);
-            clusterService.removeAddress(member.getAddress(), reason);
+            clusterService.suspectMember(member, reason, true);
             return true;
         }
         if (logger.isFineEnabled() && (now - heartbeatTime) > heartbeatIntervalMillis * HEART_BEAT_INTERVAL_FACTOR) {
@@ -347,6 +505,10 @@ public class ClusterHeartbeatManager {
      * @return if the member has been removed
      */
     private boolean removeMemberIfMasterConfirmationExpired(long now, MemberImpl member) {
+        if (clusterService.getClusterJoinManager().isMastershipClaimInProgress()) {
+            return false;
+        }
+
         Long lastConfirmation = masterConfirmationTimes.get(member);
         if (lastConfirmation == null) {
             lastConfirmation = 0L;
@@ -361,7 +523,7 @@ public class ClusterHeartbeatManager {
                     timeToString(now),
                     timeToString(lastConfirmation));
             logger.warning(reason);
-            clusterService.removeAddress(member.getAddress(), reason);
+            clusterService.suspectMember(member, reason, true);
             return true;
         }
         return false;
@@ -375,6 +537,7 @@ public class ClusterHeartbeatManager {
      * This method is called on NON-master members.
      */
     private void heartbeatWhenSlave(long now) {
+        MembershipManager membershipManager = clusterService.getMembershipManager();
         Collection<MemberImpl> members = clusterService.getMemberImpls();
 
         for (MemberImpl member : members) {
@@ -382,14 +545,16 @@ public class ClusterHeartbeatManager {
                 try {
                     logIfConnectionToEndpointIsMissing(now, member);
 
-                    if (isMaster(member)) {
-                        if (removeMemberIfNotHeartBeating(now, member)) {
-                            continue;
-                        }
+                    if (suspectMemberIfNotHeartBeating(now, member)) {
+                        continue;
+                    }
+
+                    if (membershipManager.isMemberSuspected(member.getAddress())) {
+                        continue;
                     }
 
                     pingMemberIfRequired(now, member);
-                    sendHeartbeat(member.getAddress());
+                    sendHeartbeat(member);
                 } catch (Throwable e) {
                     logger.severe(e);
                 }
@@ -398,7 +563,7 @@ public class ClusterHeartbeatManager {
     }
 
     private boolean isMaster(MemberImpl member) {
-        return member.getAddress().equals(node.getMasterAddress());
+        return member.getAddress().equals(clusterService.getMasterAddress());
     }
 
     /**
@@ -415,17 +580,17 @@ public class ClusterHeartbeatManager {
     }
 
     /**
-     * Tries to ping the {@code memberImpl} and removes the member if it is unreachable. The actual method of determining
+     * Tries to ping the {@code member} and removes the member if it is unreachable. The actual method of determining
      * reachability is defined by the privileges and does not need to be an ICMP packet
      * (see {@link java.net.InetAddress#isReachable(NetworkInterface, int, int)}).
      *
-     * @param memberImpl the member for which we need to determine reachability
+     * @param member the member for which we need to determine reachability
      */
-    private void ping(final MemberImpl memberImpl) {
+    private void ping(final Member member) {
         nodeEngine.getExecutionService().execute(ExecutionService.SYSTEM_EXECUTOR, new Runnable() {
             public void run() {
                 try {
-                    Address address = memberImpl.getAddress();
+                    Address address = member.getAddress();
                     logger.warning(format("%s will ping %s", node.getThisAddress(), address));
                     for (int i = 0; i < MAX_PING_RETRY_COUNT; i++) {
                         try {
@@ -441,7 +606,7 @@ public class ClusterHeartbeatManager {
                     // host not reachable
                     String reason = format("%s could not ping %s", node.getThisAddress(), address);
                     logger.warning(reason);
-                    clusterService.removeAddress(address, reason);
+                    clusterService.suspectMember(member, reason, true);
                 } catch (Throwable ignored) {
                     EmptyStatement.ignore(ignored);
                 }
@@ -449,13 +614,18 @@ public class ClusterHeartbeatManager {
         });
     }
 
-    /** Send a {@link HeartbeatOperation} to the {@code target} */
-    private void sendHeartbeat(Address target) {
+    /** Send a {@link HeartbeatOp} to the {@code target}
+     * @param target target Member
+     */
+    private void sendHeartbeat(Member target) {
         if (target == null) {
             return;
         }
         try {
-            node.nodeEngine.getOperationService().send(new HeartbeatOperation(clusterClock.getClusterTime()), target);
+            MembersViewMetadata membersViewMetadata = clusterService.getMembershipManager().createLocalMembersViewMetadata();
+            Operation op = new HeartbeatOp(membersViewMetadata, target.getUuid(), clusterClock.getClusterTime());
+            op.setCallerUuid(clusterService.getThisUuid());
+            node.nodeEngine.getOperationService().send(op, target.getAddress());
         } catch (Exception e) {
             if (logger.isFineEnabled()) {
                 logger.fine(format("Error while sending heartbeat -> %s[%s]", e.getClass().getName(), e.getMessage()));
@@ -484,48 +654,40 @@ public class ClusterHeartbeatManager {
     }
 
     /**
-     * Sends a {@link MasterConfirmationOperation} to the master if this node is joined, it is not in the
+     * Sends a {@link MasterConfirmationOp} to the master if this node is joined, it is not in the
      * {@link NodeState#SHUT_DOWN} state and is not the master node.
      */
     public void sendMasterConfirmation() {
-        if (!node.joined() || node.getState() == NodeState.SHUT_DOWN || node.isMaster()) {
+        if (!clusterService.isJoined() || node.getState() == NodeState.SHUT_DOWN || clusterService.isMaster()) {
             return;
         }
-        Address masterAddress = node.getMasterAddress();
+        Address masterAddress = clusterService.getMasterAddress();
         if (masterAddress == null) {
-            logger.fine("Could not send MasterConfirmation, masterAddress is null!");
+            logger.fine("Could not send MasterConfirmation, master address is null!");
             return;
         }
-        MemberImpl masterMember = clusterService.getMember(masterAddress);
+
+        MembershipManager membershipManager = clusterService.getMembershipManager();
+
+        MemberMap memberMap = membershipManager.getMemberMap();
+        MemberImpl masterMember = memberMap.getMember(masterAddress);
         if (masterMember == null) {
-            logger.fine("Could not send MasterConfirmation, masterMember is null!");
+            logger.fine("Could not send MasterConfirmation, master member is null! master address: " + masterAddress);
             return;
         }
+
+        if (membershipManager.isMemberSuspected(masterAddress)) {
+            logger.fine("Not sending MasterConfirmation to " + masterMember + ", since it's suspected.");
+            return;
+        }
+
         if (logger.isFineEnabled()) {
             logger.fine("Sending MasterConfirmation to " + masterMember);
         }
-        nodeEngine.getOperationService().send(new MasterConfirmationOperation(clusterClock.getClusterTime()),
-                masterAddress);
-    }
 
-    /** Invoked on the master to send the member list (see {@link MemberInfoUpdateOperation}) to non-master nodes. */
-    private void sendMemberListToOthers() {
-        if (!node.isMaster()) {
-            return;
-        }
-
-        Collection<MemberImpl> members = clusterService.getMemberImpls();
-        List<MemberInfo> memberInfos = createMemberInfoList(members);
-
-        for (MemberImpl member : members) {
-            if (member.localMember()) {
-                continue;
-            }
-
-            MemberInfoUpdateOperation op = new MemberInfoUpdateOperation(member.getUuid(), memberInfos,
-                    clusterClock.getClusterTime(), null, false);
-            nodeEngine.getOperationService().send(op, member.getAddress());
-        }
+        MembersViewMetadata membersViewMetadata = membershipManager.createLocalMembersViewMetadata();
+        Operation op = new MasterConfirmationOp(membersViewMetadata, clusterClock.getClusterTime());
+        nodeEngine.getOperationService().send(op, masterAddress);
     }
 
     /**

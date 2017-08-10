@@ -1,21 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-/*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,18 +41,18 @@ import static org.junit.Assert.assertEquals;
 
 /**
  * Given:
- *   3-members cluster, maps configured with custom merge policy that subtracts merging from existing value (if exists)
- *   or the merging value itself
+ * 3-members cluster, maps configured with custom merge policy that subtracts merging from existing value (if exists)
+ * or the merging value itself
  *
  * When:
- *   cluster splits in two subclusters with {1, 2} members respectively, on each brain put values:
- *      on first brain, keys 0..1999 -> value 1
- *      on second brain, keys 1000..2999 -> value 3
+ * cluster splits in two subclusters with {1, 2} members respectively, on each brain put values:
+ * on first brain, keys 0..1999 -> value 1
+ * on second brain, keys 1000..2999 -> value 3
  * Then:
- *   custom merge policy's merge method is invoked for all entries of the map, assert final map values as follows:
- *      keys 0..999 -> value 1 (merged, no existing value)
- *      keys 1000..1999 -> value 2 (merged, result of (3-1))
- *      keys 2000..2999 -> value 3 (not merged)
+ * custom merge policy's merge method is invoked for all entries of the map, assert final map values as follows:
+ * keys 0..999 -> value 1 (merged, no existing value)
+ * keys 1000..1999 -> value 2 (merged, result of (3-1))
+ * keys 2000..2999 -> value 3 (not merged)
  */
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -87,7 +71,7 @@ public class MapSplitBrainTest extends SplitBrainTestSupport {
     protected Config config() {
         Config config = super.config();
         config.getMapConfig(TEST_MAPS_PREFIX + "*")
-              .setMergePolicy(SubtractingMergePolicy.class.getName());
+                .setMergePolicy(SubtractingMergePolicy.class.getName());
         return config;
     }
 

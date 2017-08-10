@@ -1,8 +1,25 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.nio.serialization.impl;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.core.IMap;
 import com.hazelcast.instance.HazelcastInstanceProxy;
+import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.SerializationServiceV1;
 import com.hazelcast.map.AbstractEntryProcessor;
 import com.hazelcast.map.impl.LazyMapEntry;
@@ -375,7 +392,7 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
         EntryStealingProcessor processor = new EntryStealingProcessor(portable.toString());
         map.executeOnEntries(processor);
 
-        SerializationServiceV1 ss = (SerializationServiceV1) hz.getSerializationService();
+        InternalSerializationService ss = hz.getSerializationService();
         return ss.createPortableReader(processor.stolenEntryData);
     }
 
@@ -402,8 +419,8 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
     static class CarPortable implements Portable {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 5;
+        static final int FACTORY_ID = 1;
+        static final int ID = 5;
 
         int power;
         String name;
@@ -476,8 +493,8 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
     static class EnginePortable implements Portable, Comparable<EnginePortable> {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 8;
+        static final int FACTORY_ID = 1;
+        static final int ID = 8;
 
         Integer power;
         ChipPortable chip;
@@ -539,8 +556,8 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
     static class ChipPortable implements Portable, Comparable<ChipPortable> {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 6;
+        static final int FACTORY_ID = 1;
+        static final int ID = 6;
 
         Integer power;
 
@@ -598,8 +615,8 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
     static class WheelPortable implements Portable, Comparable<WheelPortable> {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 7;
+        static final int FACTORY_ID = 1;
+        static final int ID = 7;
 
         String name;
         ChipPortable chip;
@@ -685,7 +702,7 @@ public class DefaultPortableReaderQuickTest extends HazelcastTestSupport {
 
     public static class TestPortableFactory implements PortableFactory {
 
-        public final static int ID = 1;
+        public static final int ID = 1;
 
         @Override
         public Portable create(int classId) {

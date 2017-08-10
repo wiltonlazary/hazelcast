@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,11 +25,11 @@ import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.partition.strategy.StringPartitioningStrategy;
 import com.hazelcast.spi.ClientAwareService;
+import com.hazelcast.spi.FragmentedMigrationAwareService;
 import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.MemberAttributeServiceEvent;
 import com.hazelcast.spi.MembershipAwareService;
 import com.hazelcast.spi.MembershipServiceEvent;
-import com.hazelcast.spi.MigrationAwareService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
@@ -38,6 +38,7 @@ import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PartitionReplicationEvent;
 import com.hazelcast.spi.QuorumAwareService;
 import com.hazelcast.spi.RemoteService;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.spi.impl.PartitionSpecificRunnable;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
 import com.hazelcast.spi.partition.MigrationEndpoint;
@@ -57,13 +58,15 @@ import static com.hazelcast.util.ConcurrencyUtil.getOrPutSynchronized;
 
 @SuppressWarnings("checkstyle:methodcount")
 public final class LockServiceImpl implements LockService, ManagedService, RemoteService, MembershipAwareService,
-        MigrationAwareService, ClientAwareService, QuorumAwareService {
+        FragmentedMigrationAwareService, ClientAwareService, QuorumAwareService {
+
+    private static final Object NULL_OBJECT = new Object();
 
     private final NodeEngine nodeEngine;
     private final LockStoreContainer[] containers;
     private final ConcurrentMap<String, ConstructorFunction<ObjectNamespace, LockStoreInfo>> constructors
             = new ConcurrentHashMap<String, ConstructorFunction<ObjectNamespace, LockStoreInfo>>();
-    private final ConcurrentMap<String, String> quorumConfigCache = new ConcurrentHashMap<String, String>();
+    private final ConcurrentMap<String, Object> quorumConfigCache = new ConcurrentHashMap<String, Object>();
     private final ContextMutexFactory quorumConfigCacheMutexFactory = new ContextMutexFactory();
     private final long maxLeaseTimeInMillis;
 
@@ -234,6 +237,18 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
     }
 
     @Override
+    public Collection<ServiceNamespace> getAllServiceNamespaces(PartitionReplicationEvent event) {
+        int partitionId = event.getPartitionId();
+        LockStoreContainer container = containers[partitionId];
+        return container.getAllNamespaces(event.getReplicaIndex());
+    }
+
+    @Override
+    public boolean isKnownServiceNamespace(ServiceNamespace namespace) {
+        return namespace instanceof ObjectNamespace;
+    }
+
+    @Override
     public void beforeMigration(PartitionMigrationEvent partitionMigrationEvent) {
     }
 
@@ -243,11 +258,17 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
         LockStoreContainer container = containers[partitionId];
         int replicaIndex = event.getReplicaIndex();
         LockReplicationOperation op = new LockReplicationOperation(container, partitionId, replicaIndex);
-        if (op.isEmpty()) {
-            return null;
-        } else {
-            return op;
-        }
+        return op.isEmpty() ? null : op;
+    }
+
+    @Override
+    public Operation prepareReplicationOperation(PartitionReplicationEvent event,
+            Collection<ServiceNamespace> namespaces) {
+        int partitionId = event.getPartitionId();
+        LockStoreContainer container = containers[partitionId];
+        int replicaIndex = event.getReplicaIndex();
+        LockReplicationOperation op = new LockReplicationOperation(container, partitionId, replicaIndex, namespaces);
+        return op.isEmpty() ? null : op;
     }
 
     @Override
@@ -255,8 +276,17 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
         if (event.getMigrationEndpoint() == MigrationEndpoint.SOURCE) {
             clearLockStoresHavingLesserBackupCountThan(event.getPartitionId(), event.getNewReplicaIndex());
         } else {
-            int partitionId = event.getPartitionId();
-            scheduleEvictions(partitionId);
+            scheduleEvictions(event.getPartitionId());
+        }
+        // Local locks are local to the partition and replicaIndex where they have been acquired.
+        // That is the reason they are removed on any partition event on the destination.
+        removeLocalLocks(event.getPartitionId());
+    }
+
+    private void removeLocalLocks(int partitionId) {
+        LockStoreContainer container = containers[partitionId];
+        for (LockStoreImpl lockStore : container.getLockStores()) {
+            lockStore.removeLocalLocks();
         }
     }
 
@@ -271,7 +301,11 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
                 }
 
                 long leaseTime = expirationTime - now;
-                ls.scheduleEviction(lock.getKey(), lock.getVersion(), leaseTime);
+                if (leaseTime <= 0) {
+                    ls.forceUnlock(lock.getKey());
+                } else {
+                    ls.scheduleEviction(lock.getKey(), lock.getVersion(), leaseTime);
+                }
             }
         }
     }
@@ -331,13 +365,17 @@ public final class LockServiceImpl implements LockService, ManagedService, Remot
     @Override
     public String getQuorumName(final String name) {
         // we use caching here because lock operations are often and we should avoid lock config lookup
-        return getOrPutSynchronized(quorumConfigCache, name, quorumConfigCacheMutexFactory,
-                new ConstructorFunction<String, String>() {
+        Object quorumName = getOrPutSynchronized(quorumConfigCache, name, quorumConfigCacheMutexFactory,
+                new ConstructorFunction<String, Object>() {
                     @Override
-                    public String createNew(String arg) {
-                        final LockConfig lockConfig = nodeEngine.getConfig().findLockConfig(name);
-                        return lockConfig.getQuorumName();
+                    public Object createNew(String arg) {
+                        LockConfig lockConfig = nodeEngine.getConfig().findLockConfig(name);
+                        String quorumName = lockConfig.getQuorumName();
+                        // The quorumName will be null if there is no quorum defined for this data structure,
+                        // but the QuorumService is active, due to another data structure with a quorum configuration
+                        return quorumName == null ? NULL_OBJECT : quorumName;
                     }
                 });
+        return quorumName == NULL_OBJECT ? null : (String) quorumName;
     }
 }

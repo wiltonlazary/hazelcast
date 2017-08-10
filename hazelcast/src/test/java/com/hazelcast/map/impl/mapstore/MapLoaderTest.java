@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map.impl.mapstore;
 
 import com.hazelcast.config.Config;
@@ -22,7 +38,6 @@ import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -172,16 +187,13 @@ public class MapLoaderTest extends HazelcastTestSupport {
         }, 10);
     }
 
-    // ignored due to: https://github.com/hazelcast/hazelcast/issues/5035
-    @Ignore
     @Test
-    public void testMapLoaderLoadUpdatingIndex() throws Exception {
+    public void testMapLoaderLoadUpdatingIndex_noPreload() throws Exception {
         final int nodeCount = 3;
         String mapName = randomString();
         SampleIndexableObjectMapLoader loader = new SampleIndexableObjectMapLoader();
 
         Config config = createMapConfig(mapName, loader);
-
         NodeBuilder nodeBuilder = new NodeBuilder(nodeCount, config).build();
         HazelcastInstance node = nodeBuilder.getRandomNode();
 
@@ -190,14 +202,23 @@ public class MapLoaderTest extends HazelcastTestSupport {
             map.put(i, new SampleIndexableObject("My-" + i, i));
         }
 
-        final SqlPredicate predicate = new SqlPredicate("name='My-5'");
+        SqlPredicate predicate = new SqlPredicate("name='My-5'");
         assertPredicateResultCorrect(map, predicate);
+    }
 
-        map.destroy();
+    @Test
+    public void testMapLoaderLoadUpdatingIndex_withPreload() throws Exception {
+        final int nodeCount = 3;
+        String mapName = randomString();
+        SampleIndexableObjectMapLoader loader = new SampleIndexableObjectMapLoader();
         loader.preloadValues = true;
 
-        node = nodeBuilder.getRandomNode();
-        map = node.getMap(mapName);
+        Config config = createMapConfig(mapName, loader);
+        NodeBuilder nodeBuilder = new NodeBuilder(nodeCount, config).build();
+        HazelcastInstance node = nodeBuilder.getRandomNode();
+
+        IMap<Integer, SampleIndexableObject> map = node.getMap(mapName);
+        SqlPredicate predicate = new SqlPredicate("name='My-5'");
 
         assertLoadAllKeysCount(loader, 1);
         assertPredicateResultCorrect(map, predicate);

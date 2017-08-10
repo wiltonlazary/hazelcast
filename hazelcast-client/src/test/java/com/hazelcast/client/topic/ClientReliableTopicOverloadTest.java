@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ public class ClientReliableTopicOverloadTest extends TopicOverloadAbstractTest {
     public void setupCluster() {
         Config config = new Config();
         config.addRingBufferConfig(new RingbufferConfig("when*")
-                .setCapacity(100).setTimeToLiveSeconds(5));
+                .setCapacity(100).setTimeToLiveSeconds(Integer.MAX_VALUE));
         hazelcastFactory.newHazelcastInstance(config);
         ClientConfig clientConfig = new ClientConfig();
         clientConfig.addReliableTopicConfig(new ClientReliableTopicConfig("whenError_*")

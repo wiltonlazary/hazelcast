@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -133,7 +133,7 @@ public class ClientConnectionTest extends HazelcastTestSupport {
         connectionManager.addConnectionListener(listener);
 
         final Address serverAddress = new Address(server.getCluster().getLocalMember().getSocketAddress());
-        final Connection connectionToServer = connectionManager.getConnection(serverAddress);
+        final Connection connectionToServer = connectionManager.getActiveConnection(serverAddress);
 
         final CountDownLatch isConnected = new CountDownLatch(1);
         clientImpl.getLifecycleService().addLifecycleListener(new LifecycleListener() {
@@ -146,7 +146,6 @@ public class ClientConnectionTest extends HazelcastTestSupport {
         });
 
         connectionToServer.close(null, null);
-
         assertTrueEventually(new AssertTask() {
             @Override
             public void run()
@@ -156,7 +155,6 @@ public class ClientConnectionTest extends HazelcastTestSupport {
         });
 
         connectionToServer.close(null, null);
-
         assertEquals("connection removed should be called only once", 1, listener.count.get());
     }
 
@@ -166,7 +164,6 @@ public class ClientConnectionTest extends HazelcastTestSupport {
 
         @Override
         public void connectionAdded(Connection connection) {
-
         }
 
         @Override
@@ -210,16 +207,14 @@ public class ClientConnectionTest extends HazelcastTestSupport {
             thread.join();
             countDownLatch.countDown();
         }
-
     }
-
 
     static class WaitingCredentials extends UsernamePasswordCredentials {
 
         private final CountDownLatch countDownLatch;
         AtomicBoolean waitFlag = new AtomicBoolean();
 
-        public WaitingCredentials(String username, String password, CountDownLatch countDownLatch) {
+        WaitingCredentials(String username, String password, CountDownLatch countDownLatch) {
             super(username, password);
             this.countDownLatch = countDownLatch;
         }
@@ -241,5 +236,4 @@ public class ClientConnectionTest extends HazelcastTestSupport {
             return super.getPassword();
         }
     }
-
 }

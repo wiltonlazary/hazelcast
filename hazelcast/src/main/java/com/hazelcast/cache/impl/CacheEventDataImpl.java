@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.cache.impl;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 import java.io.IOException;
 
@@ -27,6 +28,7 @@ import java.io.IOException;
  *
  * @see com.hazelcast.cache.impl.CacheEventData
  */
+@BinaryInterface
 public class CacheEventDataImpl
         implements CacheEventData {
 

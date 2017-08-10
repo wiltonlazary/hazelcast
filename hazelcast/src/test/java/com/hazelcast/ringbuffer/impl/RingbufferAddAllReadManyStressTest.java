@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.ringbuffer.impl;
 
 import com.hazelcast.config.Config;
@@ -8,12 +24,12 @@ import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.ringbuffer.ReadResultSet;
 import com.hazelcast.ringbuffer.Ringbuffer;
+import com.hazelcast.ringbuffer.StaleSequenceException;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestThread;
 import com.hazelcast.test.annotation.NightlyTest;
 import org.junit.After;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -34,7 +50,8 @@ import static org.junit.Assert.assertEquals;
 @Category(NightlyTest.class)
 public class RingbufferAddAllReadManyStressTest extends HazelcastTestSupport {
 
-    public static final int MAX_BATCH = 100;
+    private final ILogger logger = Logger.getLogger(RingbufferAddAllReadManyStressTest.class);
+    private static final int MAX_BATCH = 100;
     private final AtomicBoolean stop = new AtomicBoolean();
     private Ringbuffer<Long> ringbuffer;
 
@@ -70,10 +87,8 @@ public class RingbufferAddAllReadManyStressTest extends HazelcastTestSupport {
         test(ringbufferConfig);
     }
 
-    @Ignore //https://github.com/hazelcast/hazelcast/issues/5498
     @Test
     public void whenShortTTLAndBigBuffer() throws Exception {
-
         RingbufferConfig ringbufferConfig = new RingbufferConfig("rb")
                 .setInMemoryFormat(InMemoryFormat.OBJECT)
                 .setCapacity(20 * 1000 * 1000)
@@ -100,13 +115,13 @@ public class RingbufferAddAllReadManyStressTest extends HazelcastTestSupport {
         producer.start();
 
         sleepAndStop(stop, 60);
-        System.out.println("Waiting fo completion");
+        logger.info("Waiting for completion");
 
         producer.assertSucceedsEventually();
         consumer1.assertSucceedsEventually();
         consumer2.assertSucceedsEventually();
 
-        System.out.println("producer.produced:" + producer.produced);
+        logger.info(producer.getName() + " produced:" + producer.produced);
 
         assertEquals(producer.produced, consumer1.seq);
         assertEquals(producer.produced, consumer2.seq);
@@ -195,7 +210,24 @@ public class RingbufferAddAllReadManyStressTest extends HazelcastTestSupport {
 
             for (; ; ) {
                 int max = max(1, random.nextInt(MAX_BATCH));
-                ReadResultSet<Long> result = ringbuffer.readManyAsync(seq, 1, max, null).get();
+                ReadResultSet<Long> result = null;
+                while (result == null) {
+                    try {
+                        result = ringbuffer.readManyAsync(seq, 1, max, null).get();
+                    } catch (ExecutionException e) {
+                        if (e.getCause() instanceof StaleSequenceException) {
+                            // this consumer is used in a stress test and can fall behind the producer if it gets delayed
+                            // by any reason. This is ok, just jump to the the middle of the ringbuffer.
+                            logger.info(getName() + " has fallen behind, catching up...");
+                            final long tail = ringbuffer.tailSequence();
+                            final long head = ringbuffer.headSequence();
+                            seq = tail >= head ? ((tail + head) / 2) : head;
+                        } else {
+                            throw e;
+                        }
+                    }
+                }
+
                 for (Long item : result) {
                     if (item.equals(Long.MIN_VALUE)) {
                         return;

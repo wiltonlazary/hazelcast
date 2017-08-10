@@ -1,21 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-/*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +26,7 @@ import com.hazelcast.config.XmlConfigBuilder;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.core.Member;
-import com.hazelcast.query.SampleObjects;
+import com.hazelcast.query.SampleTestObjects;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
@@ -90,12 +74,12 @@ public class ClientMapWithIndexCreationTest extends HazelcastTestSupport {
         clientConfig.getNetworkConfig().setSmartRouting(false);
         // the client only connects to member hz2.
         clientConfig.getNetworkConfig().addAddress(
-                        hz2.getCluster().getLocalMember().getAddress().getHost() + ":" +
+                hz2.getCluster().getLocalMember().getAddress().getHost() + ":" +
                         hz2.getCluster().getLocalMember().getAddress().getPort());
 
         HazelcastInstance client = factory.newHazelcastClient(clientConfig);
 
-        IMap<String, SampleObjects.Employee> test = client.getMap("test");
-        test.put("foo", new SampleObjects.Employee(1, "name", "age", 32, true, 230));
+        IMap<String, SampleTestObjects.Employee> test = client.getMap("test");
+        test.put("foo", new SampleTestObjects.Employee(1, "name", "age", 32, true, 230));
     }
 }

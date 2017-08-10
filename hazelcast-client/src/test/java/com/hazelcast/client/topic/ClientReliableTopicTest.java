@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,6 +47,7 @@ import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
@@ -159,7 +160,7 @@ public class ClientReliableTopicTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                assertTrue(listener.objects.contains(msg));
+                assertContains(listener.objects, msg);
             }
         });
     }
@@ -174,8 +175,7 @@ public class ClientReliableTopicTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                //System.out.println("tail sequence:"+ringbuffer.tailSequence());
-                assertTrue(listener.objects.contains(null));
+                assertContains(listener.objects, null);
             }
         });
     }
@@ -221,7 +221,7 @@ public class ClientReliableTopicTest extends HazelcastTestSupport {
                 Message<String> message = listener.messages.get(0);
 
                 assertEquals(messageStr, message.getMessageObject());
-                assertEquals(null, message.getPublishingMember());
+                assertNull(message.getPublishingMember());
 
                 long actualPublishTime = message.getPublishTime();
                 assertTrue(actualPublishTime >= beforePublishTime);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,6 +51,11 @@ public interface MapStore<K, V> extends MapLoader<K, V> {
      * storeAll is used when writeDelaySeconds is positive (write-behind).
      * If an exception is thrown, the entries will try to be stored one by one using the store() method.
      *
+     * Note: on the retry phase only entries left in the map will be stored one-by-one. In this way a
+     * MapStore implementation can handle partial storeAll cases when some entries were stored successfully
+     * before failure happens. Entries removed from the map will be not passed to subsequent call to
+     * store() method any more.
+     *
      * @param map map of entries to store
      */
     void storeAll(Map<K, V> map);
@@ -67,6 +72,11 @@ public interface MapStore<K, V> extends MapLoader<K, V> {
      * Deletes multiple entries from the store.
      * If an exception is thrown the entries will try to be deleted one by one using the delete() method.
      *
+     * Note: on the retry phase only entries left in the keys will be deleted one-by-one. In this way a
+     * MapStore implementation can handle partial deleteAll cases when some entries were deleted successfully
+     * before failure happens. Entries removed from the keys will be not passed to subsequent call to
+     * delete() method any more.
+
      * @param keys the keys of the entries to delete.
      */
     void deleteAll(Collection<K> keys);

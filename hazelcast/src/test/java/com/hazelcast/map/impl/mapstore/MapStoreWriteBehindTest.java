@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -353,9 +353,9 @@ public class MapStoreWriteBehindTest extends AbstractMapStoreTest {
             @Override
             public void run() throws Exception {
                 Set result = map.keySet();
-                assertTrue(result.contains("key1"));
-                assertTrue(result.contains("key2"));
-                assertTrue(result.contains("key3"));
+                assertContains(result, "key1");
+                assertContains(result, "key2");
+                assertContains(result, "key3");
             }
         });
     }
@@ -418,8 +418,8 @@ public class MapStoreWriteBehindTest extends AbstractMapStoreTest {
             @Override
             public void run() throws Exception {
                 int storeOperationCount = mapStore.count.intValue();
-                assertTrue("expected : " + expectedStoreCount
-                        + ", actual : " + storeOperationCount, expectedStoreCount <= storeOperationCount);
+                assertTrue("expected: " + expectedStoreCount
+                        + ", actual: " + storeOperationCount, expectedStoreCount <= storeOperationCount);
             }
         });
     }
@@ -705,6 +705,7 @@ public class MapStoreWriteBehindTest extends AbstractMapStoreTest {
             }
         }
 
+        @Override
         public void delete(Object key) {
             try {
                 if (storeFail.get()) {
@@ -723,6 +724,7 @@ public class MapStoreWriteBehindTest extends AbstractMapStoreTest {
             this.loadFail.set(loadFail);
         }
 
+        @Override
         public void store(Object key, Object value) {
             try {
                 if (storeFail.get()) {
@@ -736,6 +738,7 @@ public class MapStoreWriteBehindTest extends AbstractMapStoreTest {
             }
         }
 
+        @Override
         public Set loadAllKeys() {
             try {
                 return db.keySet();
@@ -744,6 +747,7 @@ public class MapStoreWriteBehindTest extends AbstractMapStoreTest {
             }
         }
 
+        @Override
         public Object load(Object key) {
             try {
                 if (loadFail.get()) {
@@ -756,6 +760,7 @@ public class MapStoreWriteBehindTest extends AbstractMapStoreTest {
             }
         }
 
+        @Override
         public void storeAll(Map map) {
             try {
                 if (storeFail.get()) {
@@ -769,6 +774,7 @@ public class MapStoreWriteBehindTest extends AbstractMapStoreTest {
             }
         }
 
+        @Override
         public Map loadAll(Collection keys) {
             try {
                 if (loadFail.get()) {
@@ -789,6 +795,7 @@ public class MapStoreWriteBehindTest extends AbstractMapStoreTest {
             }
         }
 
+        @Override
         public void deleteAll(Collection keys) {
             try {
                 if (storeFail.get()) {

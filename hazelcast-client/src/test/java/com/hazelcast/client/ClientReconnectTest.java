@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,7 +79,9 @@ public class ClientReconnectTest extends HazelcastTestSupport {
     public void testReconnectToNewInstanceAtSameAddress() throws InterruptedException {
         HazelcastInstance instance = hazelcastFactory.newHazelcastInstance();
         Address localAddress = instance.getCluster().getLocalMember().getAddress();
-        final HazelcastInstance client = hazelcastFactory.newHazelcastClient();
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.getNetworkConfig().setConnectionAttemptLimit(Integer.MAX_VALUE);
+        final HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
 
         final CountDownLatch memberRemovedLatch = new CountDownLatch(1);
         client.getCluster().addMembershipListener(new MembershipAdapter() {
@@ -97,7 +99,7 @@ public class ClientReconnectTest extends HazelcastTestSupport {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                assertEquals(1, client.getCluster().getMembers().size());
+                assertClusterSize(1, client);
                 Iterator<Member> iterator = client.getCluster().getMembers().iterator();
                 Member member = iterator.next();
                 assertEquals(instance2.getCluster().getLocalMember(), member);
@@ -137,5 +139,30 @@ public class ClientReconnectTest extends HazelcastTestSupport {
         test.put("key", "value");
         server.shutdown();
         test.get("key");
+    }
+
+    @Test(expected = HazelcastClientNotActiveException.class)
+    public void testExceptionAfterClientShutdown() throws Exception {
+        hazelcastFactory.newHazelcastInstance();
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.getNetworkConfig().setConnectionAttemptLimit(1);
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
+
+        IMap<Object, Object> test = client.getMap("test");
+        test.put("key", "value");
+        client.shutdown();
+        //to force weak references to be cleaned and get not active exception from serialization service
+        System.gc();
+        test.get("key");
+    }
+
+    @Test(timeout = 10000)
+    public void testShutdownClient_whenThereIsNoCluster() {
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.getConnectionStrategyConfig().setAsyncStart(true);
+        clientConfig.getNetworkConfig()
+                .setConnectionAttemptLimit(Integer.MAX_VALUE);
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
+        client.shutdown();
     }
 }

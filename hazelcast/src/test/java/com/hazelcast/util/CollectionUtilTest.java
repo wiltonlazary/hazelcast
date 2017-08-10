@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -90,7 +90,7 @@ public class CollectionUtilTest extends HazelcastTestSupport {
 
         assertEquals(1, map.size());
         assertEquals(2, list.size());
-        assertTrue(list.contains(42));
+        assertContains(list, 42);
     }
 
     @Test
@@ -103,7 +103,7 @@ public class CollectionUtilTest extends HazelcastTestSupport {
 
         List<Integer> list = map.get("nonExistingKey");
         assertEquals(1, list.size());
-        assertTrue(list.contains(42));
+        assertContains(list, 42);
     }
 
     @Test
@@ -238,19 +238,19 @@ public class CollectionUtilTest extends HazelcastTestSupport {
     }
 
     @Test(expected = NullPointerException.class)
-    public void testToIntegerList_whenNull(){
+    public void testToIntegerList_whenNull() {
         toIntegerList(null);
     }
 
     @Test
-    public void testToIntegerList_whenEmpty(){
+    public void testToIntegerList_whenEmpty() {
         List<Integer> result = toIntegerList(new int[0]);
         assertEquals(0, result.size());
     }
 
     @Test
-    public void testToIntegerList_whenNotEmpty(){
-        List<Integer> result = toIntegerList(new int[]{1,2,3,4});
-        assertEquals(asList(1,2,3,4), result);
+    public void testToIntegerList_whenNotEmpty() {
+        List<Integer> result = toIntegerList(new int[]{1, 2, 3, 4});
+        assertEquals(asList(1, 2, 3, 4), result);
     }
 }

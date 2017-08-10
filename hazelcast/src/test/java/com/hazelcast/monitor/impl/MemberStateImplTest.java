@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.monitor.impl;
 
 import com.hazelcast.cache.impl.CacheStatisticsImpl;
@@ -17,8 +33,8 @@ import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.util.Clock;
-import com.hazelcast.version.ClusterVersion;
 import com.hazelcast.version.MemberVersion;
+import com.hazelcast.version.Version;
 import com.hazelcast.wan.WanSyncStatus;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -67,11 +83,11 @@ public class MemberStateImplTest extends HazelcastTestSupport {
 
         ClusterState clusterState = ClusterState.ACTIVE;
         com.hazelcast.instance.NodeState nodeState = com.hazelcast.instance.NodeState.PASSIVE;
-        ClusterVersion clusterVersion = ClusterVersion.of("3.8.0");
+        Version clusterVersion = Version.of("3.8.0");
         MemberVersion memberVersion = MemberVersion.of("3.9.0");
         NodeState state = new NodeStateImpl(clusterState, nodeState, clusterVersion, memberVersion);
         final BackupTaskStatus backupTaskStatus = new BackupTaskStatus(BackupTaskState.IN_PROGRESS, 5, 10);
-        final HotRestartStateImpl hotRestartState = new HotRestartStateImpl(backupTaskStatus);
+        final HotRestartStateImpl hotRestartState = new HotRestartStateImpl(backupTaskStatus, false);
         final WanSyncState wanSyncState = new WanSyncStateImpl(WanSyncStatus.IN_PROGRESS, 86, "atob", "B");
 
         TimedMemberStateFactory factory = new TimedMemberStateFactory(getHazelcastInstanceImpl(hazelcastInstance));
@@ -83,6 +99,7 @@ public class MemberStateImplTest extends HazelcastTestSupport {
         memberState.putLocalMultiMapStats("multiMapStats", new LocalMultiMapStatsImpl());
         memberState.putLocalQueueStats("queueStats", new LocalQueueStatsImpl());
         memberState.putLocalTopicStats("topicStats", new LocalTopicStatsImpl());
+        memberState.putLocalReliableTopicStats("reliableTopicStats", new LocalTopicStatsImpl());
         memberState.putLocalExecutorStats("executorStats", new LocalExecutorStatsImpl());
         memberState.putLocalReplicatedMapStats("replicatedMapStats", replicatedMapStats);
         memberState.putLocalCacheStats("cacheStats", new LocalCacheStatsImpl(cacheStatistics));
@@ -102,6 +119,7 @@ public class MemberStateImplTest extends HazelcastTestSupport {
         assertNotNull(deserialized.getLocalMultiMapStats("multiMapStats").toString());
         assertNotNull(deserialized.getLocalQueueStats("queueStats").toString());
         assertNotNull(deserialized.getLocalTopicStats("topicStats").toString());
+        assertNotNull(deserialized.getReliableLocalTopicStats("reliableTopicStats").toString());
         assertNotNull(deserialized.getLocalExecutorStats("executorStats").toString());
         assertNotNull(deserialized.getLocalReplicatedMapStats("replicatedMapStats").toString());
         assertEquals(1, deserialized.getLocalReplicatedMapStats("replicatedMapStats").getPutOperationCount());

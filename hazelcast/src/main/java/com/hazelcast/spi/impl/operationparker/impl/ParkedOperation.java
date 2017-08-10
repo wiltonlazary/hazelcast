@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,6 @@ import com.hazelcast.util.Clock;
 import java.util.Queue;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
 
 import static com.hazelcast.util.EmptyStatement.ignore;
 
@@ -167,7 +166,7 @@ class ParkedOperation extends AbstractLocalOperation implements Delayed, Partiti
             logger.warning("Op: " + op + ", " + e.getClass().getName() + ": " + e.getMessage());
         } else if (e instanceof OutOfMemoryError) {
             try {
-                logger.log(Level.SEVERE, e.getMessage(), e);
+                logger.severe(e.getMessage(), e);
             } catch (Throwable ignored) {
                 ignore(ignored);
             }

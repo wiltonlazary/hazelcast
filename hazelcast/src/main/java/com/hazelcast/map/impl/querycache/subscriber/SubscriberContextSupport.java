@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ public interface SubscriberContextSupport {
      * @param mapName     map name.
      * @param cacheName   cache name.
      * @param sequence    sequence to be set.
-     * @param partitionId partitions id of broken sequence
+     * @param partitionId partitions ID of broken sequence
      * @return operation or request according to context.
      * @see QueryCache#tryRecover()
      */

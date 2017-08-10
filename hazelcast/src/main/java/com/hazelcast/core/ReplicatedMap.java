@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,7 +66,7 @@ public interface ReplicatedMap<K, V> extends Map<K, V>, DistributedObject {
      * Removes the specified entry listener.
      * Returns silently if there was no such listener added before.
      *
-     * @param id id of the registered entry listener.
+     * @param id ID of the registered entry listener.
      * @return true if registration is removed, false otherwise.
      */
     boolean removeEntryListener(String id);

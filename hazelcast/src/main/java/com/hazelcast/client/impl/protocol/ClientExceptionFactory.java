@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import com.hazelcast.core.DuplicateInstanceNameException;
 import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.HazelcastOverloadException;
+import com.hazelcast.core.LocalMemberResetException;
 import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.core.OperationTimeoutException;
 import com.hazelcast.durableexecutor.StaleTaskIdException;
@@ -75,15 +76,20 @@ import java.io.UTFDataFormatException;
 import java.net.SocketException;
 import java.net.URISyntaxException;
 import java.security.AccessControlException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.ConcurrentModificationException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * This class has the error codes and means of
@@ -91,6 +97,30 @@ import java.util.concurrent.TimeoutException;
  * 2) getting the error code of given exception
  */
 public class ClientExceptionFactory {
+
+    private static final String CAUSED_BY_STACKTRACE_MARKER = "###### Caused by:";
+
+    /**
+     * This pattern extracts errorCode and exception message from the encoded Caused-by marker.
+     * It has the form:
+     * <pre>    ###### Caused by: (&lt;errorCode>) &lt;cause.toString()> ------</pre>
+     *
+     * As per {@link Throwable#toString()}, this has the form
+     * <pre>&lt;exception class>: &lt;message></pre>
+     *
+     * if message is present, or just {@code &lt;exception class>}, if message is null.
+     *
+     * <p>Commonly, exceptions with causes are created like this:
+     * <pre>new RuntimeException("Additional message: " + e, e);</pre>
+     *
+     * Thus, this pattern matches the marker, error code in parentheses, text up to the semicolon
+     * (reluctantly, as to find the first one), and optional semicolon and the rest of message.
+     */
+    private static final Pattern CAUSED_BY_STACKTRACE_PARSER = Pattern.compile(Pattern.quote(CAUSED_BY_STACKTRACE_MARKER)
+            + " \\((-?[0-9]+)\\) (.+?)(: (.*))? ------", Pattern.DOTALL);
+    private static final int CAUSED_BY_STACKTRACE_PARSER_ERROR_CODE_GROUP = 1;
+    private static final int CAUSED_BY_STACKTRACE_PARSER_CLASS_NAME_GROUP = 2;
+    private static final int CAUSED_BY_STACKTRACE_PARSER_MESSAGE_GROUP = 4;
 
     private final Map<Class, Integer> classToInt = new HashMap<Class, Integer>();
     private final Map<Integer, ExceptionFactory> intToFactory = new HashMap<Integer, ExceptionFactory>();
@@ -295,7 +325,7 @@ public class ClientExceptionFactory {
         register(ClientProtocolErrorCodes.INVALID_ADDRESS, AddressUtil.InvalidAddressException.class, new ExceptionFactory() {
             @Override
             public Throwable createException(String message, Throwable cause) {
-                return new AddressUtil.InvalidAddressException(message);
+                return new AddressUtil.InvalidAddressException(message, false);
             }
         });
         register(ClientProtocolErrorCodes.INVALID_CONFIGURATION, InvalidConfigurationException.class, new ExceptionFactory() {
@@ -594,51 +624,109 @@ public class ClientExceptionFactory {
                 return new StaleTaskException(message);
             }
         });
-        register(ClientProtocolErrorCodes.CANCELLED_TASK, CancellationException.class, new ExceptionFactory() {
+        register(ClientProtocolErrorCodes.LOCAL_MEMBER_RESET, LocalMemberResetException.class, new ExceptionFactory() {
             @Override
             public Throwable createException(String message, Throwable cause) {
-                return new CancellationException(message);
+                return new LocalMemberResetException(message);
             }
         });
-        register(ClientProtocolErrorCodes.REJECTED_TASK, RejectedExecutionException.class, new ExceptionFactory() {
-            @Override
-            public Throwable createException(String message, Throwable cause) {
-                return new RejectedExecutionException(message);
-            }
-        });
-
 
     }
 
     public Throwable createException(ClientMessage clientMessage) {
         ErrorCodec parameters = ErrorCodec.decode(clientMessage);
-        Throwable cause = null;
-        if (parameters.causeClassName != null) {
-            cause = createException(parameters.causeErrorCode, parameters.causeClassName, null, null);
+
+        // first, try to search for the marker to see, if there are any "hidden" causes
+        boolean causedByMarkerFound = false;
+        for (int i = 0; ! causedByMarkerFound && i < parameters.stackTrace.length; i++) {
+            causedByMarkerFound = parameters.stackTrace[i].getClassName().startsWith(CAUSED_BY_STACKTRACE_MARKER);
         }
 
-        Throwable throwable = createException(parameters.errorCode, parameters.className, parameters.message, cause);
-        throwable.setStackTrace(parameters.stackTrace);
-        return throwable;
+        if (causedByMarkerFound) {
+            // This exception has a cause and is from a 3.8+ node
+            StackTraceElement[] st = parameters.stackTrace;
+
+            // Iterate from the end
+            int pos = st.length;
+            int lastPos = pos;
+            Throwable t = null;
+            while (pos >= 0) {
+                Throwable t1 = null;
+                if (pos == 0) {
+                    // the root exception
+                    t1 = createException(parameters.errorCode, parameters.className, parameters.message, t);
+                } else if (st[pos - 1].getClassName().startsWith(CAUSED_BY_STACKTRACE_MARKER)) {
+                    Matcher matcher = CAUSED_BY_STACKTRACE_PARSER.matcher(st[pos - 1].getClassName());
+                    if (matcher.find()) {
+                        int errorCode = Integer.parseInt(matcher.group(CAUSED_BY_STACKTRACE_PARSER_ERROR_CODE_GROUP));
+                        String className = matcher.group(CAUSED_BY_STACKTRACE_PARSER_CLASS_NAME_GROUP);
+                        String message = matcher.group(CAUSED_BY_STACKTRACE_PARSER_MESSAGE_GROUP);
+                        t1 = createException(errorCode, className, message, t);
+                    } else {
+                        // unexpected text, just parse somehow
+                        t1 = createException(ClientProtocolErrorCodes.UNDEFINED, st[pos - 1].toString(), null, t);
+                    }
+                }
+                if (t1 != null) {
+                    t1.setStackTrace(Arrays.copyOfRange(st, pos, lastPos));
+                    pos--;
+                    lastPos = pos;
+                    t = t1;
+                }
+                pos--;
+            }
+            return t;
+        } else {
+            // In this case, the exception does not have a cause, or is from a pre-3.8 node (3.7 or older)
+            Throwable cause = null;
+            // this is for backwards compatibility, currently not used (causes and their causes are hidden in the root stacktrace)
+            if (parameters.causeClassName != null) {
+                cause = createException(parameters.causeErrorCode, parameters.causeClassName, null, null);
+            }
+
+            Throwable throwable = createException(parameters.errorCode, parameters.className, parameters.message, cause);
+
+            throwable.setStackTrace(parameters.stackTrace);
+            return throwable;
+        }
     }
 
     public ClientMessage createExceptionMessage(Throwable throwable) {
         int errorCode = getErrorCode(throwable);
         String message = throwable.getMessage();
-        StackTraceElement[] stackTrace = throwable.getStackTrace();
-        Throwable cause = throwable.getCause();
-        boolean hasCause = cause != null;
-        String className = throwable.getClass().getName();
-        if (hasCause) {
-            int causeErrorCode = getErrorCode(cause);
-            String causeClassName = cause.getClass().getName();
-            return ErrorCodec.encode(errorCode, className, message, stackTrace,
-                    causeErrorCode, causeClassName);
-        } else {
-            return ErrorCodec.encode(errorCode, className, message, stackTrace,
-                    ClientProtocolErrorCodes.UNDEFINED, null);
+
+        // Combine the stack traces of causes recursively into one long stack trace.
+        List<StackTraceElement> combinedStackTrace = new ArrayList<StackTraceElement>();
+        Throwable t = throwable;
+        while (t != null) {
+            combinedStackTrace.addAll(Arrays.asList(t.getStackTrace()));
+            t = t.getCause();
+            // add separator, if there is one more cause
+            if (t != null) {
+                // don't rely on Throwable.toString(), which contains the same logic, but rather use our own, as it might be overridden
+                String throwableToString = t.getClass().getName() + (t.getLocalizedMessage() != null ? ": " + t.getLocalizedMessage() : "");
+
+                combinedStackTrace.add(new StackTraceElement(CAUSED_BY_STACKTRACE_MARKER
+                        + " (" + getErrorCode(t) + ") " + throwableToString
+                        + " ------", "", null, -1));
+            }
         }
 
+        final int causeErrorCode;
+        final String causeClassName;
+
+        Throwable cause = throwable.getCause();
+        if (cause != null) {
+            causeErrorCode = getErrorCode(cause);
+            causeClassName = cause.getClass().getName();
+        } else {
+            causeErrorCode = ClientProtocolErrorCodes.UNDEFINED;
+            causeClassName = null;
+        }
+
+        StackTraceElement[] combinedStackTraceArray = combinedStackTrace.toArray(new StackTraceElement[combinedStackTrace.size()]);
+        return ErrorCodec.encode(errorCode, throwable.getClass().getName(), message, combinedStackTraceArray,
+                causeErrorCode, causeClassName);
     }
 
     private Throwable createException(int errorCode, String className, String message, Throwable cause) {
@@ -652,7 +740,21 @@ public class ClientExceptionFactory {
         return throwable;
     }
 
-    private void register(int errorCode, Class clazz, ExceptionFactory exceptionFactory) {
+    public void register(int errorCode, Class clazz, ExceptionFactory exceptionFactory) {
+        Integer currentCode = classToInt.get(clazz);
+
+        if (currentCode != null) {
+            throw new HazelcastException("Class " + clazz.getName() + " already added with code: " + currentCode);
+        }
+
+        if (intToFactory.containsKey(errorCode)) {
+            throw new HazelcastException("Code " + errorCode + " already used");
+        }
+
+        if (!clazz.equals(exceptionFactory.createException("", null).getClass())) {
+            throw new HazelcastException("Exception factory did not produce an instance of expected class");
+        }
+
         classToInt.put(clazz, errorCode);
         intToFactory.put(errorCode, exceptionFactory);
     }
@@ -665,8 +767,13 @@ public class ClientExceptionFactory {
         return errorCode;
     }
 
+    // package-access for test
+    boolean isKnownClass(Class<? extends Throwable> aClass) {
+        return classToInt.containsKey(aClass);
+    }
 
-    interface ExceptionFactory {
+
+    public interface ExceptionFactory {
         Throwable createException(String message, Throwable cause);
 
     }

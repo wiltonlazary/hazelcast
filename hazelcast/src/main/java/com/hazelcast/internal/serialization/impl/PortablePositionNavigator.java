@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -373,7 +373,7 @@ final class PortablePositionNavigator {
             return false;
         }
 
-        // read factory and class Id and validate if it's the same as expected in the fieldDefinition
+        // read factory and class ID and validate if it's the same as expected in the fieldDefinition
         int factoryId = in.readInt();
         int classId = in.readInt();
         int versionId = in.readInt();
@@ -395,7 +395,7 @@ final class PortablePositionNavigator {
         // read array length and ignore
         in.readInt();
 
-        // read factory and class Id and validate if it's the same as expected in the fieldDefinition
+        // read factory and class ID and validate if it's the same as expected in the fieldDefinition
         int factoryId = in.readInt();
         int classId = in.readInt();
         validateFactoryAndClass(ctx.getCurrentFieldDefinition(), factoryId, classId, path.path());
@@ -514,6 +514,7 @@ final class PortablePositionNavigator {
             int currentIndex = 0;
             while (index > currentIndex) {
                 int indexElementLen = in.readInt();
+                indexElementLen = indexElementLen < 0 ? 0 : indexElementLen;
                 in.position(in.position() + indexElementLen);
                 currentIndex++;
             }

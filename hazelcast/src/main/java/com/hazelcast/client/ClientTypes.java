@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,32 +30,32 @@ public final class ClientTypes {
     public static final int TYPE_LENGTH = 3;
 
     /**
-     * Jvm clients protocol id
+     * JVM clients protocol ID
      */
     public static final String JAVA = "JVM";
 
     /**
-     * CSHARP client protocol id
+     * CSHARP client protocol ID
      */
     public static final String CSHARP = "CSP";
 
     /**
-     * CPP client protocol id
+     * CPP client protocol ID
      */
     public static final String CPP = "CPP";
 
     /**
-     * PYTHON client protocol id
+     * PYTHON client protocol ID
      */
     public static final String PYTHON = "PYH";
 
     /**
-     * RUBY client protocol id
+     * RUBY client protocol ID
      */
     public static final String RUBY = "RBY";
 
     /**
-     * Node.JS client protocol id
+     * Node.JS client protocol ID
      */
     public static final String NODEJS = "NJS";
 

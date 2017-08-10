@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,17 +58,17 @@ public class MapPortableHook implements PortableHook {
     private static class MapPortableFactory implements PortableFactory {
 
         /**
-         * Creates a Portable instance using given class id.
+         * Creates a Portable instance using given class ID.
          *
-         * @param classId portable class id
-         * @return portable instance or null if class id is not known by this factory
+         * @param classId portable class ID
+         * @return portable instance or null if class ID is not known by this factory
          */
         @Override
         public Portable create(int classId) {
             if (classId == CREATE_ACCUMULATOR_INFO) {
                 return new AccumulatorInfo();
             }
-            throw new IndexOutOfBoundsException("No registered constructor exists with class id: " + classId);
+            throw new IndexOutOfBoundsException("No registered constructor exists with class ID: " + classId);
         }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * If this task is running on a thread and another thread calls attempt the execute it concurrently
  * then the 2nd execution will be skipped.
- *
  */
-public class DelegateAndSkipOnConcurrentExecutionDecorator
-        implements Runnable {
+public class DelegateAndSkipOnConcurrentExecutionDecorator implements Runnable {
 
     private final AtomicBoolean isAlreadyRunning = new AtomicBoolean();
     private final Runnable runnable;
@@ -54,8 +52,7 @@ public class DelegateAndSkipOnConcurrentExecutionDecorator
                 + '}';
     }
 
-    private class DelegateDecorator
-            implements Runnable {
+    private class DelegateDecorator implements Runnable {
 
         private final Runnable runnable;
 
@@ -72,5 +69,9 @@ public class DelegateAndSkipOnConcurrentExecutionDecorator
             }
         }
 
+        @Override
+        public String toString() {
+            return "DelegateDecorator{runnable=" + runnable + '}';
+        }
     }
 }

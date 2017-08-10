@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.TopicAddMessageListenerCodec;
 import com.hazelcast.client.impl.protocol.codec.TopicPublishCodec;
 import com.hazelcast.client.impl.protocol.codec.TopicRemoveMessageListenerCodec;
-import com.hazelcast.client.spi.ClientClusterService;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.client.spi.EventHandler;
 import com.hazelcast.client.spi.impl.ListenerMessageCodec;
 import com.hazelcast.core.ITopic;
@@ -29,7 +29,6 @@ import com.hazelcast.core.Message;
 import com.hazelcast.core.MessageListener;
 import com.hazelcast.monitor.LocalTopicStats;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.topic.impl.DataAwareMessage;
 
 /**
@@ -39,14 +38,13 @@ import com.hazelcast.topic.impl.DataAwareMessage;
  */
 public class ClientTopicProxy<E> extends PartitionSpecificClientProxy implements ITopic<E> {
 
-    public ClientTopicProxy(String serviceName, String objectId) {
-        super(serviceName, objectId);
+    public ClientTopicProxy(String serviceName, String objectId, ClientContext context) {
+        super(serviceName, objectId, context);
     }
 
     @Override
     public void publish(E message) {
-        SerializationService serializationService = getContext().getSerializationService();
-        Data data = serializationService.toData(message);
+        Data data = toData(message);
         ClientMessage request = TopicPublishCodec.encodeRequest(name, data);
         invokeOnPartition(request);
     }
@@ -64,7 +62,7 @@ public class ClientTopicProxy<E> extends PartitionSpecificClientProxy implements
 
     @Override
     public LocalTopicStats getLocalTopicStats() {
-        throw new UnsupportedOperationException("Locality is ambiguous for client!!!");
+        throw new UnsupportedOperationException("Locality is ambiguous for client!");
     }
 
     @Override
@@ -82,22 +80,17 @@ public class ClientTopicProxy<E> extends PartitionSpecificClientProxy implements
 
         @Override
         public void handle(Data item, long publishTime, String uuid) {
-            SerializationService serializationService = getContext().getSerializationService();
-            ClientClusterService clusterService = getContext().getClusterService();
-
-            Member member = clusterService.getMember(uuid);
-            Message message = new DataAwareMessage(name, item, publishTime, member, serializationService);
+            Member member = getContext().getClusterService().getMember(uuid);
+            Message message = new DataAwareMessage(name, item, publishTime, member, getSerializationService());
             listener.onMessage(message);
         }
 
         @Override
         public void beforeListenerRegister() {
-
         }
 
         @Override
         public void onListenerRegister() {
-
         }
     }
 

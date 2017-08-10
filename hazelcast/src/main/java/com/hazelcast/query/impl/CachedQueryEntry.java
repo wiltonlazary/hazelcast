@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,25 +17,23 @@
 package com.hazelcast.query.impl;
 
 import com.hazelcast.internal.serialization.InternalSerializationService;
-import com.hazelcast.map.impl.MapDataSerializerHook;
-import com.hazelcast.nio.ObjectDataInput;
-import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.nio.serialization.Portable;
 import com.hazelcast.query.impl.getters.Extractors;
 
-import java.io.IOException;
-
 /**
  * Entry of the Query.
+ *
+ * @param <K> key
+ * @param <V> value
  */
-public class CachedQueryEntry extends QueryableEntry implements IdentifiedDataSerializable {
+public class CachedQueryEntry<K, V> extends QueryableEntry<K, V> {
 
     protected Data keyData;
-    protected Object keyObject;
     protected Data valueData;
-    protected Object valueObject;
+
+    protected K keyObject;
+    protected V valueObject;
 
     public CachedQueryEntry() {
     }
@@ -44,6 +42,7 @@ public class CachedQueryEntry extends QueryableEntry implements IdentifiedDataSe
         init(serializationService, key, value, extractors);
     }
 
+    @SuppressWarnings("unchecked")
     public void init(InternalSerializationService serializationService, Data key, Object value, Extractors extractors) {
         if (key == null) {
             throw new IllegalArgumentException("keyData cannot be null");
@@ -56,14 +55,14 @@ public class CachedQueryEntry extends QueryableEntry implements IdentifiedDataSe
             this.valueData = (Data) value;
             this.valueObject = null;
         } else {
-            this.valueObject = value;
+            this.valueObject = (V) value;
             this.valueData = null;
         }
         this.extractors = extractors;
     }
 
     @Override
-    public Object getKey() {
+    public K getKey() {
         if (keyObject == null) {
             keyObject = serializationService.toObject(keyData);
         }
@@ -71,7 +70,7 @@ public class CachedQueryEntry extends QueryableEntry implements IdentifiedDataSe
     }
 
     @Override
-    public Object getValue() {
+    public V getValue() {
         if (valueObject == null) {
             valueObject = serializationService.toObject(valueData);
         }
@@ -95,7 +94,7 @@ public class CachedQueryEntry extends QueryableEntry implements IdentifiedDataSe
     protected Object getTargetObject(boolean key) {
         Object targetObject;
         if (key) {
-            //keyData is never null
+            // keyData is never null
             if (keyData.isPortable()) {
                 targetObject = keyData;
             } else {
@@ -120,7 +119,7 @@ public class CachedQueryEntry extends QueryableEntry implements IdentifiedDataSe
     }
 
     @Override
-    public Object setValue(Object value) {
+    public V setValue(V value) {
         throw new UnsupportedOperationException();
     }
 
@@ -133,37 +132,12 @@ public class CachedQueryEntry extends QueryableEntry implements IdentifiedDataSe
             return false;
         }
         CachedQueryEntry that = (CachedQueryEntry) o;
-        if (!keyData.equals(that.keyData)) {
-            return false;
-        }
-        return true;
+        return keyData.equals(that.keyData);
     }
 
     @Override
     public int hashCode() {
         return keyData.hashCode();
-    }
-
-    @Override
-    public int getFactoryId() {
-        return MapDataSerializerHook.F_ID;
-    }
-
-    @Override
-    public int getId() {
-        return MapDataSerializerHook.CACHED_QUERY_ENTRY;
-    }
-
-    @Override
-    public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeData(keyData);
-        out.writeData(valueData);
-    }
-
-    @Override
-    public void readData(ObjectDataInput in) throws IOException {
-        keyData = in.readData();
-        valueData = in.readData();
     }
 
 }

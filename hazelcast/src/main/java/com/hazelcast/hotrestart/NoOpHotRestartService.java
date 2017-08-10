@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,29 +21,31 @@ package com.hazelcast.hotrestart;
  * not available or not enabled.
  */
 public class NoOpHotRestartService implements HotRestartService {
+    private static final BackupTaskStatus NO_TASK_BACKUP_STATUS = new BackupTaskStatus(BackupTaskState.NO_TASK, 0, 0);
 
     @Override
     public void backup() {
-
     }
 
     @Override
     public void backup(long backupSeq) {
-
     }
 
     @Override
     public BackupTaskStatus getBackupTaskStatus() {
-        return new BackupTaskStatus(BackupTaskState.NOT_STARTED, 0, 0);
+        return NO_TASK_BACKUP_STATUS;
     }
 
     @Override
     public void interruptLocalBackupTask() {
-
     }
 
     @Override
     public void interruptBackupTask() {
+    }
 
+    @Override
+    public boolean isHotBackupEnabled() {
+        return false;
     }
 }

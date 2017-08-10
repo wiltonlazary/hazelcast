@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,12 +30,14 @@ import com.hazelcast.nio.serialization.ClassDefinition;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.DataSerializable;
 import com.hazelcast.nio.serialization.DataSerializableFactory;
+import com.hazelcast.nio.serialization.DataType;
 import com.hazelcast.nio.serialization.FieldDefinition;
 import com.hazelcast.nio.serialization.FieldType;
 import com.hazelcast.nio.serialization.HazelcastSerializationException;
 import com.hazelcast.nio.serialization.Portable;
 import com.hazelcast.nio.serialization.PortableFactory;
 import com.hazelcast.nio.serialization.PortableReader;
+import com.hazelcast.util.function.Supplier;
 
 import java.io.Externalizable;
 import java.io.IOException;
@@ -65,7 +67,6 @@ import static com.hazelcast.internal.serialization.impl.ConstantSerializers.Shor
 import static com.hazelcast.internal.serialization.impl.ConstantSerializers.ShortSerializer;
 import static com.hazelcast.internal.serialization.impl.ConstantSerializers.StringSerializer;
 import static com.hazelcast.internal.serialization.impl.ConstantSerializers.TheByteArraySerializer;
-import static com.hazelcast.internal.serialization.impl.DataSerializableSerializer.COMP_FLAG;
 import static com.hazelcast.internal.serialization.impl.DataSerializableSerializer.EE_FLAG;
 import static com.hazelcast.internal.serialization.impl.DataSerializableSerializer.IDS_FLAG;
 import static com.hazelcast.internal.serialization.impl.DataSerializableSerializer.isFlagSet;
@@ -80,8 +81,7 @@ import static com.hazelcast.internal.serialization.impl.SerializationUtil.create
 public class SerializationServiceV1 extends AbstractSerializationService {
 
     private static final int FACTORY_AND_CLASS_ID_BYTE_LENGTH = 8;
-    private static final int FACTORY_AND_CLASS_ID_BYTE_COMP_LENGTH = 2;
-    private static final int EE_BYTE_LENGTH = 1;
+    private static final int EE_BYTE_LENGTH = 2;
 
     private final PortableContextImpl portableContext;
     private final PortableSerializer portableSerializer;
@@ -90,9 +90,9 @@ public class SerializationServiceV1 extends AbstractSerializationService {
             Map<Integer, ? extends DataSerializableFactory> dataSerializableFactories,
             Map<Integer, ? extends PortableFactory> portableFactories, ManagedContext managedContext,
             PartitioningStrategy globalPartitionStrategy, int initialOutputBufferSize, BufferPoolFactory bufferPoolFactory,
-            boolean enableCompression, boolean enableSharedObject) {
+            boolean enableCompression, boolean enableSharedObject, Supplier<RuntimeException> notActiveExceptionSupplier) {
         super(inputOutputFactory, version, classLoader, managedContext, globalPartitionStrategy, initialOutputBufferSize,
-                bufferPoolFactory);
+                bufferPoolFactory, notActiveExceptionSupplier);
 
         PortableHookLoader loader = new PortableHookLoader(portableFactories, classLoader);
         portableContext = new PortableContextImpl(this, portableVersion);
@@ -110,6 +110,30 @@ public class SerializationServiceV1 extends AbstractSerializationService {
                 new JavaDefaultSerializers.ExternalizableSerializer(enableCompression), this);
         registerConstantSerializers();
         registerJavaTypeSerializers();
+    }
+
+    @Override
+    public <B extends Data> B toData(Object obj, DataType type) {
+        if (type == DataType.NATIVE) {
+            throw new IllegalArgumentException("Native data type is not supported");
+        }
+        return toData(obj);
+    }
+
+    @Override
+    public <B extends Data> B toData(Object obj, DataType type, PartitioningStrategy strategy) {
+        if (type == DataType.NATIVE) {
+            throw new IllegalArgumentException("Native data type is not supported");
+        }
+        return toData(obj, strategy);
+    }
+
+    @Override
+    public <B extends Data> B convertData(Data data, DataType type) {
+        if (type == DataType.NATIVE) {
+            throw new IllegalArgumentException("Native data type is not supported");
+        }
+        return (B) data;
     }
 
     public PortableReader createPortableReader(Data data) throws IOException {
@@ -213,11 +237,7 @@ public class SerializationServiceV1 extends AbstractSerializationService {
         ObjectDataInput input = createObjectDataInput(data);
         byte header = input.readByte();
         if (isFlagSet(header, IDS_FLAG)) {
-            if (isFlagSet(header, COMP_FLAG)) {
-                skipBytesSafely(input, FACTORY_AND_CLASS_ID_BYTE_COMP_LENGTH);
-            } else {
-                skipBytesSafely(input, FACTORY_AND_CLASS_ID_BYTE_LENGTH);
-            }
+            skipBytesSafely(input, FACTORY_AND_CLASS_ID_BYTE_LENGTH);
         } else {
             input.readUTF();
         }

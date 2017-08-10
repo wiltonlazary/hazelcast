@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,12 +24,25 @@ import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
 import java.io.IOException;
 
+import static com.hazelcast.config.CardinalityEstimatorConfig.DEFAULT_ASYNC_BACKUP_COUNT;
+import static com.hazelcast.config.CardinalityEstimatorConfig.DEFAULT_SYNC_BACKUP_COUNT;
+
 public class CardinalityEstimatorContainer implements IdentifiedDataSerializable {
+
+    private int backupCount;
+
+    private int asyncBackupCount;
 
     private HyperLogLog hll;
 
     public CardinalityEstimatorContainer() {
-        hll = new HyperLogLogImpl();
+        this(DEFAULT_SYNC_BACKUP_COUNT, DEFAULT_ASYNC_BACKUP_COUNT);
+    }
+
+    public CardinalityEstimatorContainer(int backupCount, int asyncBackupCount) {
+        this.hll = new HyperLogLogImpl();
+        this.backupCount = backupCount;
+        this.asyncBackupCount = asyncBackupCount;
     }
 
     public void add(long hash) {
@@ -40,14 +53,30 @@ public class CardinalityEstimatorContainer implements IdentifiedDataSerializable
         return hll.estimate();
     }
 
+    public int getBackupCount() {
+        return backupCount;
+    }
+
+    public int getAsyncBackupCount() {
+        return asyncBackupCount;
+    }
+
+    public int getTotalBackupCount() {
+        return backupCount + asyncBackupCount;
+    }
+
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
         out.writeObject(hll);
+        out.writeInt(backupCount);
+        out.writeInt(asyncBackupCount);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
         hll = in.readObject();
+        backupCount = in.readInt();
+        asyncBackupCount = in.readInt();
     }
 
     @Override

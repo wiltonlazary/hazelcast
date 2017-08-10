@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,8 @@ package com.hazelcast.multimap.impl;
 import com.hazelcast.concurrent.lock.LockService;
 import com.hazelcast.concurrent.lock.LockStore;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.DefaultObjectNamespace;
+import com.hazelcast.spi.DistributedObjectNamespace;
+import com.hazelcast.spi.ObjectNamespace;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -38,13 +39,15 @@ public class MultiMapContainer extends MultiMapContainerSupport {
 
     private static final int ID_PROMOTION_OFFSET = 100000;
 
-    private final DefaultObjectNamespace lockNamespace;
+    private final DistributedObjectNamespace lockNamespace;
 
     private final LockStore lockStore;
 
     private final int partitionId;
 
     private final long creationTime;
+
+    private final ObjectNamespace objectNamespace;
 
     private long idGen;
 
@@ -55,10 +58,11 @@ public class MultiMapContainer extends MultiMapContainerSupport {
     public MultiMapContainer(String name, MultiMapService service, int partitionId) {
         super(name, service.getNodeEngine());
         this.partitionId = partitionId;
-        this.lockNamespace = new DefaultObjectNamespace(MultiMapService.SERVICE_NAME, name);
+        this.lockNamespace = new DistributedObjectNamespace(MultiMapService.SERVICE_NAME, name);
         final LockService lockService = nodeEngine.getSharedService(LockService.SERVICE_NAME);
         this.lockStore = lockService == null ? null : lockService.createLockStore(partitionId, lockNamespace);
         this.creationTime = currentTimeMillis();
+        this.objectNamespace = new DistributedObjectNamespace(MultiMapService.SERVICE_NAME, name);
     }
 
     public boolean canAcquireLock(Data dataKey, String caller, long threadId) {
@@ -210,5 +214,9 @@ public class MultiMapContainer extends MultiMapContainerSupport {
 
     public long getLockedCount() {
         return lockStore.getLockedKeys().size();
+    }
+
+    public ObjectNamespace getObjectNamespace() {
+        return objectNamespace;
     }
 }

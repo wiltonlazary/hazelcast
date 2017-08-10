@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -125,6 +125,7 @@ public class ClientMultiMapLockTest extends HazelcastTestSupport {
     }
 
     static class UnLockThread extends Thread {
+
         public Exception exception = null;
         public MultiMap mm = null;
         public Object key = null;
@@ -142,8 +143,6 @@ public class ClientMultiMapLockTest extends HazelcastTestSupport {
             }
         }
     }
-
-    ;
 
     @Test
     public void testLock_whenAlreadyLockedBySelf() throws Exception {
@@ -334,7 +333,6 @@ public class ClientMultiMapLockTest extends HazelcastTestSupport {
                 assertFalse(mm.isLocked(key));
             }
         });
-
     }
 
     @Test

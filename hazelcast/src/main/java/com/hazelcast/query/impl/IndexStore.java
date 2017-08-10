@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ package com.hazelcast.query.impl;
 import com.hazelcast.nio.serialization.Data;
 
 import java.util.Set;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * This interface stores indexes of Query.
@@ -30,10 +29,10 @@ public interface IndexStore {
     void updateIndex(Object oldValue, Object newValue, QueryableEntry entry);
     void removeIndex(Object oldValue, Data indexKey);
     void clear();
+    void destroy();
 
     Set<QueryableEntry> getSubRecordsBetween(Comparable from, Comparable to);
     Set<QueryableEntry> getSubRecords(ComparisonType comparisonType, Comparable searchedValue);
     Set<QueryableEntry> getRecords(Comparable value);
     Set<QueryableEntry> getRecords(Set<Comparable> values);
-    ConcurrentMap<Data, QueryableEntry> getRecordMap(Comparable indexValue);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.hazelcast.internal.management;
 
 import com.eclipsesource.json.JsonObject;
 import com.eclipsesource.json.JsonValue;
+import com.hazelcast.cache.impl.JCacheDetector;
 import com.hazelcast.config.GroupConfig;
 import com.hazelcast.config.ManagementCenterConfig;
 import com.hazelcast.core.Member;
@@ -25,7 +26,6 @@ import com.hazelcast.core.MemberAttributeEvent;
 import com.hazelcast.core.MembershipEvent;
 import com.hazelcast.core.MembershipListener;
 import com.hazelcast.instance.HazelcastInstanceImpl;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.internal.ascii.rest.HttpCommand;
 import com.hazelcast.internal.management.operation.UpdateManagementCenterUrlOperation;
 import com.hazelcast.internal.management.request.AsyncConsoleRequest;
@@ -37,11 +37,13 @@ import com.hazelcast.internal.management.request.ConsoleCommandRequest;
 import com.hazelcast.internal.management.request.ConsoleRequest;
 import com.hazelcast.internal.management.request.ExecuteScriptRequest;
 import com.hazelcast.internal.management.request.ForceStartNodeRequest;
+import com.hazelcast.internal.management.request.GetCacheEntryRequest;
 import com.hazelcast.internal.management.request.GetClusterStateRequest;
 import com.hazelcast.internal.management.request.GetMapEntryRequest;
 import com.hazelcast.internal.management.request.GetMemberSystemPropertiesRequest;
 import com.hazelcast.internal.management.request.MapConfigRequest;
 import com.hazelcast.internal.management.request.MemberConfigRequest;
+import com.hazelcast.internal.management.request.PromoteMemberRequest;
 import com.hazelcast.internal.management.request.RunGcRequest;
 import com.hazelcast.internal.management.request.ShutdownClusterRequest;
 import com.hazelcast.internal.management.request.ThreadDumpRequest;
@@ -78,8 +80,10 @@ import static com.hazelcast.instance.OutOfMemoryErrorDispatcher.inspectOutOfMemo
 import static com.hazelcast.nio.IOUtil.closeResource;
 import static com.hazelcast.spi.ExecutionService.ASYNC_EXECUTOR;
 import static com.hazelcast.util.EmptyStatement.ignore;
+import static com.hazelcast.util.ExceptionUtil.rethrow;
 import static com.hazelcast.util.JsonUtil.getInt;
 import static com.hazelcast.util.JsonUtil.getObject;
+import static com.hazelcast.util.ThreadUtil.createThreadName;
 import static java.net.URLEncoder.encode;
 
 /**
@@ -103,7 +107,7 @@ public class ManagementCenterService {
     private final ManagementCenterIdentifier identifier;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
     private final TimedMemberStateFactory timedMemberStateFactory;
-    private final HazelcastThreadGroup threadGroup;
+    private final ManagementCenterConnectionFactory connectionFactory;
 
     private volatile String managementCenterUrl;
     private volatile boolean urlChanged;
@@ -113,7 +117,6 @@ public class ManagementCenterService {
 
     public ManagementCenterService(HazelcastInstanceImpl instance) {
         this.instance = instance;
-        this.threadGroup = instance.node.getHazelcastThreadGroup();
         this.logger = instance.node.getLogger(ManagementCenterService.class);
         this.managementCenterConfig = getManagementCenterConfig();
         this.managementCenterUrl = getManagementCenterUrl();
@@ -121,7 +124,9 @@ public class ManagementCenterService {
         this.taskPollThread = new TaskPollThread();
         this.stateSendThread = new StateSendThread();
         this.prepareStateThread = new PrepareStateThread();
-        this.timedMemberStateFactory = new TimedMemberStateFactory(instance);
+        this.timedMemberStateFactory = instance.node.getNodeExtension().createTimedMemberStateFactory(instance);
+        this.connectionFactory = instance.node.getNodeExtension().getManagementCenterConnectionFactory();
+
         this.identifier = newManagementCenterIdentifier();
 
         if (this.managementCenterConfig.isEnabled()) {
@@ -168,6 +173,14 @@ public class ManagementCenterService {
         }
 
         timedMemberStateFactory.init();
+        try {
+            if (connectionFactory != null) {
+                connectionFactory.init(managementCenterConfig.getMutualAuthConfig());
+            }
+        } catch (Exception e) {
+            throw rethrow(e);
+        }
+
         taskPollThread.start();
         prepareStateThread.start();
         stateSendThread.start();
@@ -284,7 +297,7 @@ public class ManagementCenterService {
         private final long updateIntervalMs;
 
         private PrepareStateThread() {
-            super(threadGroup.getInternalThreadGroup(), threadGroup.getThreadNamePrefix("MC.State.Sender"));
+            super(createThreadName(instance.getName(), "MC.State.Sender"));
             updateIntervalMs = calcUpdateInterval();
         }
 
@@ -322,7 +335,7 @@ public class ManagementCenterService {
         private final long updateIntervalMs;
 
         private StateSendThread() {
-            super(threadGroup.getInternalThreadGroup(), threadGroup.getThreadNamePrefix("MC.State.Sender"));
+            super(createThreadName(instance.getName(), "MC.State.Sender"));
             updateIntervalMs = calcUpdateInterval();
         }
 
@@ -397,7 +410,10 @@ public class ManagementCenterService {
                 logger.finest("Opening collector connection:" + url);
             }
 
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            HttpURLConnection connection = (HttpURLConnection) (connectionFactory != null
+                ? connectionFactory.openConnection(url)
+                : url.openConnection());
+
             connection.setDoOutput(true);
             connection.setConnectTimeout(CONNECTION_TIMEOUT_MILLIS);
             connection.setReadTimeout(CONNECTION_TIMEOUT_MILLIS);
@@ -424,7 +440,7 @@ public class ManagementCenterService {
         private final ExecutionService executionService = instance.node.getNodeEngine().getExecutionService();
 
         TaskPollThread() {
-            super(threadGroup.getInternalThreadGroup(), threadGroup.getThreadNamePrefix("MC.Task.Poller"));
+            super(createThreadName(instance.getName(), "MC.Task.Poller"));
             register(new ThreadDumpRequest());
             register(new ExecuteScriptRequest());
             register(new ConsoleCommandRequest());
@@ -435,12 +451,18 @@ public class ManagementCenterService {
             register(new RunGcRequest());
             register(new GetMemberSystemPropertiesRequest());
             register(new GetMapEntryRequest());
+            if (JCacheDetector.isJCacheAvailable(instance.node.getNodeEngine().getConfigClassLoader(), logger)) {
+                register(new GetCacheEntryRequest());
+            } else {
+                logger.finest("javax.cache api is not detected on classpath.Skip registering GetCacheEntryRequest...");
+            }
             register(new GetClusterStateRequest());
             register(new ChangeClusterStateRequest());
             register(new ShutdownClusterRequest());
             register(new ForceStartNodeRequest());
             register(new TriggerPartialStartRequest());
             register(new ClearWanQueuesRequest());
+            register(new PromoteMemberRequest());
         }
 
         public void register(ConsoleRequest consoleRequest) {
@@ -455,7 +477,9 @@ public class ManagementCenterService {
             if (logger.isFinestEnabled()) {
                 logger.finest("Opening sendResponse connection:" + url);
             }
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            HttpURLConnection connection = (HttpURLConnection) (connectionFactory != null
+                    ? connectionFactory.openConnection(url)
+                    : url.openConnection());
             connection.setDoOutput(true);
             connection.setRequestMethod("POST");
             connection.setConnectTimeout(CONNECTION_TIMEOUT_MILLIS);
@@ -557,7 +581,10 @@ public class ManagementCenterService {
             if (logger.isFinestEnabled()) {
                 logger.finest("Opening getTask connection:" + url);
             }
-            URLConnection connection = url.openConnection();
+            URLConnection connection = connectionFactory != null
+                                        ? connectionFactory.openConnection(url)
+                                        : url.openConnection();
+
             connection.setRequestProperty("Connection", "keep-alive");
             return connection;
         }

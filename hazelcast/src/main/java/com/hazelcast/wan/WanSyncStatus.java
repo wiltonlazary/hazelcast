@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ public enum WanSyncStatus {
     IN_PROGRESS(1),
 
     /**
-     * Indicates sync operation is unsuccessfull.
+     * Indicates sync operation is unsuccessful.
      */
     FAILED(2);
 
@@ -45,7 +45,7 @@ public enum WanSyncStatus {
     }
 
     /**
-     * @return unique id of the event type.
+     * @return unique ID of the event type
      */
     public int getStatus() {
         return status;

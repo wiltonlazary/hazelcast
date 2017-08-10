@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -258,6 +258,44 @@ public class MinAggregationTest {
         List<ValueContainer> values = sampleValueContainers(STRING);
         Collections.sort(values);
         String expectation = values.get(0).stringValue;
+
+        Aggregator<Map.Entry<ValueContainer, ValueContainer>, String> aggregation = Aggregators.comparableMin("stringValue");
+        for (ValueContainer value : values) {
+            aggregation.accumulate(createExtractableEntryWithValue(value));
+        }
+
+        Aggregator<Map.Entry<ValueContainer, ValueContainer>, String> resultAggregation = Aggregators.comparableMin("stringValue");
+        resultAggregation.combine(aggregation);
+        String result = resultAggregation.aggregate();
+
+        assertThat(result, is(equalTo(expectation)));
+    }
+
+    @Test(timeout = TimeoutInMillis.MINUTE)
+    public void testComparableMin_withNull() {
+        List<String> values = sampleStrings();
+        Collections.sort(values);
+        String expectation = values.get(0);
+        values.add(null);
+
+        Aggregator<Map.Entry<String, String>, String> aggregation = Aggregators.comparableMin();
+        for (String value : values) {
+            aggregation.accumulate(createEntryWithValue(value));
+        }
+
+        Aggregator<Map.Entry<String, String>, String> resultAggregation = Aggregators.comparableMin();
+        resultAggregation.combine(aggregation);
+        String result = resultAggregation.aggregate();
+
+        assertThat(result, is(equalTo(expectation)));
+    }
+
+    @Test(timeout = TimeoutInMillis.MINUTE)
+    public void testComparableMin_withAttributePath_withNull() {
+        List<ValueContainer> values = sampleValueContainers(STRING);
+        Collections.sort(values);
+        String expectation = values.get(0).stringValue;
+        values.add(null);
 
         Aggregator<Map.Entry<ValueContainer, ValueContainer>, String> aggregation = Aggregators.comparableMin("stringValue");
         for (ValueContainer value : values) {

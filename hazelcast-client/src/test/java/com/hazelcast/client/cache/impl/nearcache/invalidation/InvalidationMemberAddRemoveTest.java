@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@ import com.hazelcast.cache.impl.CacheEventHandler;
 import com.hazelcast.cache.impl.CacheProxy;
 import com.hazelcast.cache.impl.CacheService;
 import com.hazelcast.cache.impl.HazelcastServerCachingProvider;
-import com.hazelcast.client.cache.impl.ClientCacheProxy;
 import com.hazelcast.client.cache.impl.HazelcastClientCachingProvider;
+import com.hazelcast.client.cache.impl.NearCachedClientCacheProxy;
 import com.hazelcast.client.cache.impl.nearcache.ClientNearCacheTestSupport;
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.impl.HazelcastClientProxy;
@@ -30,11 +30,13 @@ import com.hazelcast.config.Config;
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.internal.nearcache.NearCache;
 import com.hazelcast.internal.nearcache.NearCacheRecord;
+import com.hazelcast.internal.nearcache.NearCacheRecordStore;
 import com.hazelcast.internal.nearcache.impl.DefaultNearCache;
 import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataContainer;
 import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataGenerator;
-import com.hazelcast.internal.nearcache.impl.store.AbstractNearCacheRecordStore;
+import com.hazelcast.internal.nearcache.impl.invalidation.StaleReadDetector;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.properties.GroupProperty;
@@ -62,27 +64,30 @@ import static org.junit.Assert.assertEquals;
 @Category(NightlyTest.class)
 public class InvalidationMemberAddRemoveTest extends ClientNearCacheTestSupport {
 
-    private static final int POPULATOR_THREAD_COUNT = 5;
+    private static final int NEAR_CACHE_POPULATOR_THREAD_COUNT = 5;
+    private static final int TEST_RUN_SECONDS = 30;
+    private static final int INVALIDATION_BATCH_SIZE = 100;
+    private static final int KEY_COUNT = 1000;
+    private static final int RECONCILIATION_INTERVAL_SECONDS = 30;
 
     @Override
     protected Config createConfig() {
         Config config = super.createConfig();
         config.setProperty(GroupProperty.PARTITION_COUNT.getName(), "271");
         config.setProperty(GroupProperty.CACHE_INVALIDATION_MESSAGE_BATCH_ENABLED.getName(), "true");
-        config.setProperty(GroupProperty.CACHE_INVALIDATION_MESSAGE_BATCH_SIZE.getName(), "1000");
+        config.setProperty(GroupProperty.CACHE_INVALIDATION_MESSAGE_BATCH_SIZE.getName(), Integer.toString(INVALIDATION_BATCH_SIZE));
         return config;
     }
 
     protected ClientConfig createClientConfig() {
         ClientConfig clientConfig = new ClientConfig();
         clientConfig.setProperty("hazelcast.invalidation.max.tolerated.miss.count", "0");
-        clientConfig.setProperty("hazelcast.invalidation.reconciliation.interval.seconds", "30");
+        clientConfig.setProperty("hazelcast.invalidation.reconciliation.interval.seconds", Integer.toString(RECONCILIATION_INTERVAL_SECONDS));
         return clientConfig;
     }
 
     @Test
     public void ensure_nearCachedClient_and_member_data_sync_eventually() throws Exception {
-        final int cacheSize = 100000;
         final AtomicBoolean stopTest = new AtomicBoolean();
 
         final Config config = createConfig();
@@ -91,9 +96,9 @@ public class InvalidationMemberAddRemoveTest extends ClientNearCacheTestSupport 
         CachingProvider provider = HazelcastServerCachingProvider.createCachingProvider(serverInstance);
         final CacheManager serverCacheManager = provider.getCacheManager();
 
-        // populated from member.
+        // populated from member
         final Cache<Integer, Integer> memberCache = serverCacheManager.createCache(DEFAULT_CACHE_NAME, createCacheConfig(BINARY));
-        for (int i = 0; i < cacheSize; i++) {
+        for (int i = 0; i < KEY_COUNT; i++) {
             memberCache.put(i, i);
         }
 
@@ -114,19 +119,19 @@ public class InvalidationMemberAddRemoveTest extends ClientNearCacheTestSupport 
                 while (!stopTest.get()) {
                     HazelcastInstance member = hazelcastFactory.newHazelcastInstance(config);
                     sleepSeconds(5);
-                    member.getLifecycleService().shutdown();
+                    member.getLifecycleService().terminate();
                 }
             }
         });
 
         threads.add(shadowMember);
 
-        for (int i = 0; i < POPULATOR_THREAD_COUNT; i++) {
-            // populates client near-cache
+        for (int i = 0; i < NEAR_CACHE_POPULATOR_THREAD_COUNT; i++) {
+            // populates client Near Cache
             Thread populateClientNearCache = new Thread(new Runnable() {
                 public void run() {
                     while (!stopTest.get()) {
-                        for (int i = 0; i < cacheSize; i++) {
+                        for (int i = 0; i < KEY_COUNT; i++) {
                             clientCache.get(i);
                         }
                     }
@@ -135,11 +140,11 @@ public class InvalidationMemberAddRemoveTest extends ClientNearCacheTestSupport 
             threads.add(populateClientNearCache);
         }
 
-        // updates data from member.
+        // updates data from member
         Thread putFromMember = new Thread(new Runnable() {
             public void run() {
                 while (!stopTest.get()) {
-                    int key = getInt(cacheSize);
+                    int key = getInt(KEY_COUNT);
                     int value = getInt(Integer.MAX_VALUE);
                     memberCache.put(key, value);
 
@@ -153,12 +158,11 @@ public class InvalidationMemberAddRemoveTest extends ClientNearCacheTestSupport 
             public void run() {
                 while (!stopTest.get()) {
                     memberCache.clear();
-                    sleepSeconds(5);
+                    sleepSeconds(3);
                 }
             }
         });
         threads.add(clearFromMember);
-
 
         // start threads
         for (Thread thread : threads) {
@@ -166,7 +170,7 @@ public class InvalidationMemberAddRemoveTest extends ClientNearCacheTestSupport 
         }
 
         // stress system some seconds
-        sleepSeconds(60);
+        sleepSeconds(TEST_RUN_SECONDS);
 
         //stop threads
         stopTest.set(true);
@@ -177,9 +181,13 @@ public class InvalidationMemberAddRemoveTest extends ClientNearCacheTestSupport 
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                for (int i = 0; i < cacheSize; i++) {
+                for (int i = 0; i < KEY_COUNT; i++) {
                     Integer valueSeenFromMember = memberCache.get(i);
                     Integer valueSeenFromClient = clientCache.get(i);
+                    if (valueSeenFromMember != null && valueSeenFromClient == null) {
+                        System.err.println("found");
+                        valueSeenFromClient = clientCache.get(i);
+                    }
 
                     String msg = createFailureMessage(i);
                     assertEquals(msg, valueSeenFromMember, valueSeenFromClient);
@@ -191,14 +199,15 @@ public class InvalidationMemberAddRemoveTest extends ClientNearCacheTestSupport 
                 Data keyData = getSerializationService(serverInstance).toData(i);
                 int partitionId = partitionService.getPartitionId(keyData);
 
-                AbstractNearCacheRecordStore nearCacheRecordStore = getAbstractNearCacheRecordStore();
+                NearCacheRecordStore nearCacheRecordStore = getNearCacheRecordStore();
                 NearCacheRecord record = nearCacheRecordStore.getRecord(keyData);
                 long recordSequence = record == null ? NO_SEQUENCE : record.getInvalidationSequence();
 
                 MetaDataGenerator metaDataGenerator = getMetaDataGenerator();
                 long memberSequence = metaDataGenerator.currentSequence("/hz/" + DEFAULT_CACHE_NAME, partitionId);
 
-                MetaDataContainer metaDataContainer = nearCacheRecordStore.getStaleReadDetector().getMetaDataContainer(keyData);
+                StaleReadDetector staleReadDetector = nearCacheRecordStore.getStaleReadDetector();
+                MetaDataContainer metaDataContainer = staleReadDetector.getMetaDataContainer(partitionId);
                 return String.format("partition=%d, onRecordSequence=%d, latestSequence=%d, staleSequence=%d, memberSequence=%d",
                         partitionService.getPartitionId(keyData), recordSequence, metaDataContainer.getSequence(),
                         metaDataContainer.getStaleSequence(), memberSequence);
@@ -209,13 +218,13 @@ public class InvalidationMemberAddRemoveTest extends ClientNearCacheTestSupport 
                 return cacheEventHandler.getMetaDataGenerator();
             }
 
-            private AbstractNearCacheRecordStore getAbstractNearCacheRecordStore() {
-                DefaultNearCache defaultNearCache = (DefaultNearCache) ((ClientCacheProxy) clientCache).getNearCache().unwrap(DefaultNearCache.class);
-                return (AbstractNearCacheRecordStore) defaultNearCache.getNearCacheRecordStore();
+            private NearCacheRecordStore getNearCacheRecordStore() {
+                NearCache nearCache = ((NearCachedClientCacheProxy) clientCache).getNearCache();
+                DefaultNearCache defaultNearCache = (DefaultNearCache) nearCache.unwrap(DefaultNearCache.class);
+                return defaultNearCache.getNearCacheRecordStore();
             }
         });
     }
-
 
     @Override
     protected CacheConfig createCacheConfig(InMemoryFormat inMemoryFormat) {

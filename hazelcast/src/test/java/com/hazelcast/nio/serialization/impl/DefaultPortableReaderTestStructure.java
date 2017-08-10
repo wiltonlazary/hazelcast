@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.nio.serialization.impl;
 
 import com.hazelcast.nio.serialization.Portable;
@@ -88,8 +104,8 @@ public class DefaultPortableReaderTestStructure {
 
     public static class PrimitivePortable implements Portable {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 10;
+        static final int FACTORY_ID = 1;
+        static final int ID = 10;
 
         enum Init {
             FULL, NONE, NULL
@@ -219,8 +235,12 @@ public class DefaultPortableReaderTestStructure {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             PrimitivePortable that = (PrimitivePortable) o;
             return byte_ == that.byte_;
         }
@@ -315,8 +335,8 @@ public class DefaultPortableReaderTestStructure {
 
     static class GroupPortable implements Portable {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 11;
+        static final int FACTORY_ID = 1;
+        static final int ID = 11;
 
         Portable portable;
         Portable[] portables;
@@ -359,8 +379,12 @@ public class DefaultPortableReaderTestStructure {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             GroupPortable that = (GroupPortable) o;
             return Arrays.equals(portables, that.portables);
         }
@@ -396,8 +420,8 @@ public class DefaultPortableReaderTestStructure {
 
     static class NestedGroupPortable implements Portable {
 
-        final static int FACTORY_ID = 1;
-        final static int ID = 12;
+        static final int FACTORY_ID = 1;
+        static final int ID = 12;
 
         Portable portable;
         Portable[] portables;
@@ -441,8 +465,12 @@ public class DefaultPortableReaderTestStructure {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             GroupPortable that = (GroupPortable) o;
             return Arrays.equals(portables, that.portables);
         }
@@ -477,16 +505,17 @@ public class DefaultPortableReaderTestStructure {
     }
 
     static class TestPortableFactory implements PortableFactory {
-        final static int ID = 1;
+        static final int ID = 1;
 
         @Override
         public Portable create(int classId) {
-            if (PrimitivePortable.ID == classId)
+            if (PrimitivePortable.ID == classId) {
                 return new PrimitivePortable();
-            else if (GroupPortable.ID == classId)
+            } else if (GroupPortable.ID == classId) {
                 return new GroupPortable();
-            else if (NestedGroupPortable.ID == classId)
+            } else if (NestedGroupPortable.ID == classId) {
                 return new NestedGroupPortable();
+            }
             return null;
         }
     }

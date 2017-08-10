@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.client.impl.protocol.task.map;
 
 import com.hazelcast.client.ClientEndpoint;
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapAddListenerCodec;
+import com.hazelcast.client.impl.protocol.codec.ContinuousQueryAddListenerCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
 import com.hazelcast.core.IMapEvent;
 import com.hazelcast.instance.Node;
@@ -35,11 +35,11 @@ import com.hazelcast.spi.impl.eventservice.impl.TrueEventFilter;
 import java.security.Permission;
 
 /**
- * Client Protocol Task for handling messages with type id:
- * {@link com.hazelcast.client.impl.protocol.codec.EnterpriseMapMessageType#ENTERPRISEMAP_ADDLISTENER}
+ * Client Protocol Task for handling messages with type ID:
+ * {@link com.hazelcast.client.impl.protocol.codec.ContinuousQueryMessageType#CONTINUOUSQUERY_ADDLISTENER}
  */
 public class MapAddListenerMessageTask
-        extends AbstractCallableMessageTask<EnterpriseMapAddListenerCodec.RequestParameters>
+        extends AbstractCallableMessageTask<ContinuousQueryAddListenerCodec.RequestParameters>
         implements ListenerAdapter<IMapEvent> {
 
     public MapAddListenerMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
@@ -79,7 +79,7 @@ public class MapAddListenerMessageTask
     private ClientMessage getEventData(IMapEvent iMapEvent) {
         if (iMapEvent instanceof SingleIMapEvent) {
             QueryCacheEventData eventData = ((SingleIMapEvent) iMapEvent).getEventData();
-            ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeQueryCacheSingleEvent(eventData);
+            ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeQueryCacheSingleEvent(eventData);
             int partitionId = eventData.getPartitionId();
             clientMessage.setPartitionId(partitionId);
             return clientMessage;
@@ -90,7 +90,7 @@ public class MapAddListenerMessageTask
             BatchEventData batchEventData = batchIMapEvent.getBatchEventData();
             int partitionId = batchEventData.getPartitionId();
             ClientMessage clientMessage =
-                    EnterpriseMapAddListenerCodec.encodeQueryCacheBatchEvent(batchEventData.getEvents(),
+                    ContinuousQueryAddListenerCodec.encodeQueryCacheBatchEvent(batchEventData.getEvents(),
                             batchEventData.getSource(), partitionId);
             clientMessage.setPartitionId(partitionId);
             return clientMessage;
@@ -100,13 +100,13 @@ public class MapAddListenerMessageTask
     }
 
     @Override
-    protected EnterpriseMapAddListenerCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
-        return EnterpriseMapAddListenerCodec.decodeRequest(clientMessage);
+    protected ContinuousQueryAddListenerCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+        return ContinuousQueryAddListenerCodec.decodeRequest(clientMessage);
     }
 
     @Override
     protected ClientMessage encodeResponse(Object response) {
-        return EnterpriseMapAddListenerCodec.encodeResponse((String) response);
+        return ContinuousQueryAddListenerCodec.encodeResponse((String) response);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ import static org.junit.Assert.assertEquals;
 public class ReplicatedMapLoadingTest extends ReplicatedMapAbstractTest {
 
     @Test
-    public void testAsyncFillUp() throws Exception {
+    public void testAsyncFillUp() {
         Config config = new Config();
         String mapName = randomMapName();
         ReplicatedMapConfig replicatedMapConfig = config.getReplicatedMapConfig(mapName);
@@ -48,7 +48,7 @@ public class ReplicatedMapLoadingTest extends ReplicatedMapAbstractTest {
     }
 
     @Test
-    public void testSyncFillUp() throws Exception {
+    public void testSyncFillUp() {
         Config config = new Config();
         String mapName = randomMapName();
         ReplicatedMapConfig replicatedMapConfig = config.getReplicatedMapConfig(mapName);

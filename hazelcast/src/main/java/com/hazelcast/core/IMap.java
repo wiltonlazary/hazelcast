@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.hazelcast.core;
 
 import com.hazelcast.aggregation.Aggregator;
 import com.hazelcast.map.EntryProcessor;
+import com.hazelcast.map.LockAware;
 import com.hazelcast.map.MapInterceptor;
 import com.hazelcast.map.QueryCache;
 import com.hazelcast.map.QueryResultSizeExceededException;
@@ -73,6 +74,25 @@ import java.util.concurrent.TimeUnit;
  * </p>
  * <p>This class does <em>not</em> allow <tt>null</tt> to be used as a key or value.</p>
  *
+ * <p>Entry Processing</p>
+ * The following operations are lock-aware, since they operate on a single key only.
+ * If the key is locked the EntryProcessor will wait until it acquires the lock.
+ * <ul>
+ * <li> {@link IMap#executeOnKey(Object, EntryProcessor)} </li>
+ * <li> {@link IMap#submitToKey(Object, EntryProcessor)} </li>
+ * <li> {@link IMap#submitToKey(Object, EntryProcessor, ExecutionCallback)} </li>
+ * </ul>
+ * There are however following methods that run the EntryProcessor on more than one entry. These operations are not lock-aware.
+ * The EntryProcessor will process the entries no matter if they are locked or not.
+ * The user may however check if an entry is locked by casting the {@link java.util.Map.Entry} to ]
+ * {@link LockAware} and invoking the {@link LockAware#isLocked()} method.
+ * <ul>
+ * <li> {@link IMap#executeOnEntries(EntryProcessor)} </li>
+ * <li> {@link IMap#executeOnEntries(EntryProcessor, Predicate)} </li>
+ * <li> {@link IMap#executeOnKeys(Set, EntryProcessor)} </li>
+ * </ul>
+ * This applies to both EntryProcessor and backup EntryProcessor.
+ *
  * @param <K> key
  * @param <V> value
  * @see java.util.concurrent.ConcurrentMap
@@ -82,8 +102,14 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
     /**
      * {@inheritDoc}
      * <p>
-     * No atomicity guarantees are given. It could be that in case of failure some of the key/value-pairs get written, while
-     * others are not.
+     *      No atomicity guarantees are given. It could be that in case of failure
+     *      some of the key/value-pairs get written, while others are not.
+     * </p>
+     * <p>
+     *      <p><b>Warning:</b></p>
+     *      If you have previously set a TTL for the key, the TTL remains unchanged and the entry will
+     *      expire when the initial TTL has elapsed.
+     * </p>
      */
     void putAll(Map<? extends K, ? extends V> m);
 
@@ -136,16 +162,22 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
     /**
      * {@inheritDoc}
      * <p/>
-     * <p><b>Warning:</b></p>
      * <p>
-     * This method returns a clone of the previous value, not the original (identically equal) value
-     * previously put into the map.
+     *      <p><b>Warning:</b></p>
+     *      This method returns a clone of the previous value, not the original (identically equal) value
+     *      previously put into the map.
      * </p>
-     * <p/>
-     * <p><b>Warning-2:</b></p>
-     * This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
-     * the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
-     * defined in the <tt>key</tt>'s class.
+     * <p>
+     *      <p><b>Warning-2:</b></p>
+     *      This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
+     *      the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
+     *      defined in the <tt>key</tt>'s class.
+     * </p>
+     * <p>
+     *      <p><b>Warning-3:</b></p>
+     *      If you have previously set a TTL for the key, the TTL remains unchanged and the entry will
+     *      expire when the initial TTL has elapsed.
+     * </p>
      *
      * @throws NullPointerException if the specified key or value is null.
      */
@@ -183,12 +215,11 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      */
     boolean remove(Object key, Object value);
 
-
     /**
      * Removes all entries which match with the supplied predicate.
      * If this map has index, matching entries will be found via index search, otherwise they will be found by full-scan.
      *
-     * Note that calling this method also removes all entries from callers near cache.
+     * Note that calling this method also removes all entries from callers Near Cache.
      *
      * @param predicate matching entries with this predicate will be removed from this map
      * @throws NullPointerException if the specified predicate is null.
@@ -373,10 +404,17 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      * </pre>
      * ExecutionException is never thrown.
      * <p/>
-     * <p><b>Warning:</b></p>
-     * This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
-     * the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
-     * defined in the <tt>key</tt>'s class.
+     * <p>
+     *      <p><b>Warning:</b></p>
+     *      This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
+     *      the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
+     *      defined in the <tt>key</tt>'s class.
+     * </p>
+     * <p>
+     *      <p><b>Warning-2:</b></p>
+     *      If you have previously set a TTL for the key, the TTL remains unchanged and the entry will
+     *      expire when the initial TTL has elapsed.
+     * </p>
      *
      * @param key   the key of the map entry.
      * @param value the new value of the map entry.
@@ -482,12 +520,17 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      *     });
      * </pre>
      * ExecutionException is never thrown.
-     * <p/>
-     * <p><b>Warning 1:</b></p>
-     * This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
-     * the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
-     * defined in the <tt>key</tt>'s class.
-     * <p/>
+     * <p>
+     *      <p><b>Warning 1:</b></p>
+     *      This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
+     *      the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
+     *      defined in the <tt>key</tt>'s class.
+     * </p>
+     * <p>
+     *      <p><b>Warning-2:</b></p>
+     *      If you have previously set a TTL for the key, the TTL remains unchanged and the entry will
+     *      expire when the initial TTL has elapsed.
+     * </p>
      *
      * @param key   the key of the map entry.
      * @param value the new value of the map entry.
@@ -604,11 +647,17 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      * timeout value. If this method returns false, it means that
      * the caller thread could not acquire the lock for the key within the
      * timeout duration, thus the put operation is not successful.
-     * <p/>
-     * <p><b>Warning:</b></p>
-     * This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
-     * the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
-     * defined in the <tt>key</tt>'s class.
+     * <p>
+     *      <p><b>Warning:</b></p>
+     *      This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
+     *      the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
+     *      defined in the <tt>key</tt>'s class.
+     * </p>
+     * <p>
+     *      <p><b>Warning-2:</b></p>
+     *      If you have previously set a TTL for the key, the TTL remains unchanged and the entry will
+     *      expire when the initial TTL has elapsed.
+     * </p>
      *
      * @param key      key of the entry.
      * @param value    value of the entry.
@@ -729,16 +778,20 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
 
     /**
      * {@inheritDoc}
-     * <p/>
-     * <p><b>Warning:</b></p>
-     * This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
-     * the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
-     * defined in the <tt>key</tt>'s class.
-     * <p/>
-     * <p><b>Warning-2:</b></p>
      * <p>
-     * This method returns a clone of the previous value, not the original (identically equal) value
-     * previously put into the map.
+     *      <p><b>Warning:</b></p>
+     *      This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
+     *      the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
+     *      defined in the <tt>key</tt>'s class.
+     * </p>
+     * <p>
+     *      <p><b>Warning-2:</b></p>
+     *      This method returns a clone of the previous value, not the original (identically equal) value
+     *      previously put into the map.
+     * </p>
+     * <p>
+     *      <p><b>Warning-3:</b></p>
+     *      If you have previously set a TTL for the key, the same TTL will be again set on the new value.
      * </p>
      *
      * @throws NullPointerException if the specified key or value is null.
@@ -749,16 +802,22 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      * Puts an entry into this map.
      * Similar to the put operation except that set
      * doesn't return the old value, which is more efficient.
-     * <p/>
-     * <p><b>Warning:</b></p>
-     * This method breaks the contract of EntryListener.
-     * When an entry is updated by set(), it fires an EntryEvent with a null oldValue.
-     * <p/>
-     * <p><b>Warning-2:</b></p>
-     * This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
-     * the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
-     * defined in the <tt>key</tt>'s class.
-     * <p/>
+     * <p>
+     *      <p><b>Warning:</b></p>
+     *      This method breaks the contract of EntryListener.
+     *      When an entry is updated by set(), it fires an EntryEvent with a null oldValue.
+     * </p>
+     * <p>
+     *      <p><b>Warning-2:</b></p>
+     *      This method uses <tt>hashCode</tt> and <tt>equals</tt> of the binary form of
+     *      the <tt>key</tt>, not the actual implementations of <tt>hashCode</tt> and <tt>equals</tt>
+     *      defined in the <tt>key</tt>'s class.
+     * </p>
+     * <p>
+     *      <p><b>Warning-3:</b></p>
+     *      If you have previously set a TTL for the key, the TTL remains unchanged and the entry will
+     *      expire when the initial TTL has elapsed.
+     * </p>
      *
      * @param key   key of the entry.
      * @param value value of the entry.
@@ -1089,7 +1148,7 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      * <p/>
      *
      * @param interceptor map interceptor.
-     * @return id of registered interceptor.
+     * @return ID of registered interceptor.
      */
     String addInterceptor(MapInterceptor interceptor);
 
@@ -1097,7 +1156,7 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      * Removes the given interceptor for this map so it will not intercept operations anymore.
      * <p/>
      *
-     * @param id registration id of the map interceptor.
+     * @param id registration ID of the map interceptor.
      */
     void removeInterceptor(String id);
 
@@ -1131,7 +1190,7 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      * Removes the specified entry listener.
      * Returns silently if there is no such listener added before.
      *
-     * @param id id of registered listener.
+     * @param id ID of registered listener.
      * @return true if registration is removed, false otherwise.
      */
     boolean removeEntryListener(String id);
@@ -1140,7 +1199,7 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
     /**
      * Adds a MapPartitionLostListener.
      * <p/>
-     * The addPartitionLostListener returns a register-id. This id is needed to remove the MapPartitionLostListener using the
+     * The addPartitionLostListener returns a register ID. This ID is needed to remove the MapPartitionLostListener using the
      * {@link #removePartitionLostListener(String)} method.
      * <p/>
      * There is no check for duplicate registrations, so if you register the listener twice, it will get events twice.
@@ -1149,7 +1208,7 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      * to design limitations.
      *
      * @param listener the added MapPartitionLostListener.
-     * @return returns the registration id for the MapPartitionLostListener.
+     * @return returns the registration ID for the MapPartitionLostListener.
      * @throws java.lang.NullPointerException if listener is null.
      * @see #removePartitionLostListener(String)
      */
@@ -1159,7 +1218,7 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      * Removes the specified map partition lost listener.
      * Returns silently if there is no such listener added before.
      *
-     * @param id id of registered listener.
+     * @param id ID of registered listener.
      * @return true if registration is removed, false otherwise.
      */
     boolean removePartitionLostListener(String id);
@@ -1549,8 +1608,43 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      * Returns the the object which is result of the process() method of EntryProcessor.
      * <p/>
      *
+     * The EntryProcessor may implement the Offloadable and ReadOnly interfaces.
+     *
+     * If the EntryProcessor implements the Offloadable interface the processing will be offloaded to the given
+     * ExecutorService allowing unblocking the partition-thread, which means that other partition-operations
+     * may proceed. The key will be locked for the time-span of the processing in order to not generate a write-conflict.
+     * In this case the threading looks as follows:
+     * 1.) partition-thread (fetch & lock)
+     * 2.) execution-thread (process)
+     * 3.) partition-thread (set & unlock, or just unlock if no changes)
+     *
+     * If the EntryProcessor implements the Offloadable and ReadOnly interfaces the processing will be offloaded to the
+     * given ExecutorService allowing unblocking the partition-thread. Since the EntryProcessor is not supposed to do
+     * any changes to the Entry the key will NOT be locked for the time-span of the processing. In this case the threading
+     * looks as follows:
+     * 1.) partition-thread (fetch & lock)
+     * 2.) execution-thread (process)
+     * In this case the EntryProcessor.getBackupProcessor() has to return null; otherwise an IllegalArgumentException
+     * exception is thrown.
+     *
+     * If the EntryProcessor implements only ReadOnly without implementing Offloadable the processing unit will not
+     * be offloaded, however, the EntryProcessor will not wait for the lock to be acquired, since the EP will not
+     * do any modifications.
+     *
+     * Using offloading is useful if the EntryProcessor encompasses heavy logic that may stall the partition-thread.
+     *
+     * If the EntryProcessor implements ReadOnly and modifies the entry it is processing an UnsupportedOperationException
+     * will be thrown.
+     *
+     * Offloading will not be applied to backup partitions. It is possible to initialize the EntryBackupProcessor
+     * with some input provided by the EntryProcessor in the EntryProcessor.getBackupProcessor() method.
+     * The input allows providing context to the EntryBackupProcessor - for example the "delta"
+     * so that the EntryBackupProcessor does not have to calculate the "delta" but it may just apply it.
+     *
      * @return result of entry process.
      * @throws NullPointerException if the specified key is null
+     * @see Offloadable
+     * @see ReadOnly
      */
     Object executeOnKey(K key, EntryProcessor entryProcessor);
 
@@ -1569,9 +1663,44 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      * Applies the user defined EntryProcessor to the entry mapped by the key with
      * specified ExecutionCallback to listen event status and returns immediately.
      *
+     * The EntryProcessor may implement the Offloadable and ReadOnly interfaces.
+     *
+     * If the EntryProcessor implements the Offloadable interface the processing will be offloaded to the given
+     * ExecutorService allowing unblocking the partition-thread, which means that other partition-operations
+     * may proceed. The key will be locked for the time-span of the processing in order to not generate a write-conflict.
+     * In this case the threading looks as follows:
+     * 1.) partition-thread (fetch & lock)
+     * 2.) execution-thread (process)
+     * 3.) partition-thread (set & unlock, or just unlock if no changes)
+     *
+     * If the EntryProcessor implements the Offloadable and ReadOnly interfaces the processing will be offloaded to the
+     * given ExecutorService allowing unblocking the partition-thread. Since the EntryProcessor is not supposed to do
+     * any changes to the Entry the key will NOT be locked for the time-span of the processing. In this case the threading
+     * looks as follows:
+     * 1.) partition-thread (fetch & lock)
+     * 2.) execution-thread (process)
+     * In this case the EntryProcessor.getBackupProcessor() has to return null; otherwise an IllegalArgumentException
+     * exception is thrown.
+     *
+     * If the EntryProcessor implements only ReadOnly without implementing Offloadable the processing unit will not
+     * be offloaded, however, the EntryProcessor will not wait for the lock to be acquired, since the EP will not
+     * do any modifications.
+     *
+     * If the EntryProcessor implements ReadOnly and modifies the entry it is processing an UnsupportedOperationException
+     * will be thrown.
+     *
+     * Using offloading is useful if the EntryProcessor encompasses heavy logic that may stall the partition-thread.
+     *
+     * Offloading will not be applied to backup partitions. It is possible to initialize the EntryBackupProcessor
+     * with some input provided by the EntryProcessor in the EntryProcessor.getBackupProcessor() method.
+     * The input allows providing context to the EntryBackupProcessor - for example the "delta"
+     * so that the EntryBackupProcessor does not have to calculate the "delta" but it may just apply it.
+     *
      * @param key            key to be processed.
      * @param entryProcessor processor to process the key.
      * @param callback       to listen whether operation is finished or not.
+     * @see Offloadable
+     * @see ReadOnly
      */
     void submitToKey(K key, EntryProcessor entryProcessor, ExecutionCallback callback);
 
@@ -1582,9 +1711,44 @@ public interface IMap<K, V> extends ConcurrentMap<K, V>, LegacyAsyncMap<K, V> {
      * EntryProcessor is not cancellable, so calling ICompletableFuture.cancel() method
      * won't cancel the operation of EntryProcessor.
      *
+     * The EntryProcessor may implement the Offloadable and ReadOnly interfaces.
+     *
+     * If the EntryProcessor implements the Offloadable interface the processing will be offloaded to the given
+     * ExecutorService allowing unblocking the partition-thread, which means that other partition-operations
+     * may proceed. The key will be locked for the time-span of the processing in order to not generate a write-conflict.
+     * In this case the threading looks as follows:
+     * 1.) partition-thread (fetch & lock)
+     * 2.) execution-thread (process)
+     * 3.) partition-thread (set & unlock, or just unlock if no changes)
+     *
+     * If the EntryProcessor implements the Offloadable and ReadOnly interfaces the processing will be offloaded to the
+     * given ExecutorService allowing unblocking the partition-thread. Since the EntryProcessor is not supposed to do
+     * any changes to the Entry the key will NOT be locked for the time-span of the processing. In this case the threading
+     * looks as follows:
+     * 1.) partition-thread (fetch & lock)
+     * 2.) execution-thread (process)
+     * In this case the EntryProcessor.getBackupProcessor() has to return null; otherwise an IllegalArgumentException
+     * exception is thrown.
+     *
+     * If the EntryProcessor implements only ReadOnly without implementing Offloadable the processing unit will not
+     * be offloaded, however, the EntryProcessor will not wait for the lock to be acquired, since the EP will not
+     * do any modifications.
+     *
+     * If the EntryProcessor implements ReadOnly and modifies the entry it is processing a UnsupportedOperationException
+     * will be thrown.
+     *
+     * Using offloading is useful if the EntryProcessor encompasses heavy logic that may stall the partition-thread.
+     *
+     * Offloading will not be applied to backup partitions. It is possible to initialize the EntryBackupProcessor
+     * with some input provided by the EntryProcessor in the EntryProcessor.getBackupProcessor() method.
+     * The input allows providing context to the EntryBackupProcessor - for example the "delta"
+     * so that the EntryBackupProcessor does not have to calculate the "delta" but it may just apply it.
+     *
      * @param key            key to be processed
      * @param entryProcessor processor to process the key
      * @return ICompletableFuture from which the result of the operation can be retrieved.
+     * @see Offloadable
+     * @see ReadOnly
      * @see ICompletableFuture
      */
     ICompletableFuture submitToKey(K key, EntryProcessor entryProcessor);

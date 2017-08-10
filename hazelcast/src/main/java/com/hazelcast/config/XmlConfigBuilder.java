@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,12 @@ import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.DurationConfig;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.TimedExpiryPolicyFactoryConfig;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.TimedExpiryPolicyFactoryConfig.ExpiryPolicyType;
-import com.hazelcast.config.DistributedClassloadingConfig.ClassCacheMode;
-import com.hazelcast.config.DistributedClassloadingConfig.ProviderMode;
 import com.hazelcast.config.EvictionConfig.MaxSizePolicy;
 import com.hazelcast.config.LoginModuleConfig.LoginModuleUsage;
 import com.hazelcast.config.PartitionGroupConfig.MemberGroupType;
 import com.hazelcast.config.PermissionConfig.PermissionType;
+import com.hazelcast.config.UserCodeDeploymentConfig.ClassCacheMode;
+import com.hazelcast.config.UserCodeDeploymentConfig.ProviderMode;
 import com.hazelcast.core.HazelcastException;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
@@ -54,6 +54,7 @@ import java.net.URL;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -61,8 +62,9 @@ import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.config.MapStoreConfig.InitialLoadMode;
 import static com.hazelcast.config.XmlElements.CACHE;
-import static com.hazelcast.config.XmlElements.DISTRIBUTED_CLASSLOADING;
+import static com.hazelcast.config.XmlElements.CARDINALITY_ESTIMATOR;
 import static com.hazelcast.config.XmlElements.DURABLE_EXECUTOR_SERVICE;
+import static com.hazelcast.config.XmlElements.EVENT_JOURNAL;
 import static com.hazelcast.config.XmlElements.EXECUTOR_SERVICE;
 import static com.hazelcast.config.XmlElements.GROUP;
 import static com.hazelcast.config.XmlElements.HOT_RESTART_PERSISTENCE;
@@ -94,6 +96,7 @@ import static com.hazelcast.config.XmlElements.SERIALIZATION;
 import static com.hazelcast.config.XmlElements.SERVICES;
 import static com.hazelcast.config.XmlElements.SET;
 import static com.hazelcast.config.XmlElements.TOPIC;
+import static com.hazelcast.config.XmlElements.USER_CODE_DEPLOYMENT;
 import static com.hazelcast.config.XmlElements.WAN_REPLICATION;
 import static com.hazelcast.config.XmlElements.canOccurMultipleTimes;
 import static com.hazelcast.instance.BuildInfoProvider.HAZELCAST_INTERNAL_OVERRIDE_VERSION;
@@ -129,7 +132,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
      * Constructs a XmlConfigBuilder that reads from the provided XML file.
      *
      * @param xmlFileName the name of the XML file that the XmlConfigBuilder reads from
-     * @throws FileNotFoundException if the file can't be found.
+     * @throws FileNotFoundException if the file can't be found
      */
     public XmlConfigBuilder(String xmlFileName) throws FileNotFoundException {
         this(new FileInputStream(xmlFileName));
@@ -139,8 +142,8 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
     /**
      * Constructs a XmlConfigBuilder that reads from the given InputStream.
      *
-     * @param inputStream the InputStream containing the XML configuration.
-     * @throws IllegalArgumentException if inputStream is null.
+     * @param inputStream the InputStream containing the XML configuration
+     * @throws IllegalArgumentException if inputStream is {@code null}
      */
     public XmlConfigBuilder(InputStream inputStream) {
         if (inputStream == null) {
@@ -174,7 +177,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
     /**
      * Gets the current used properties. Can be null if no properties are set.
      *
-     * @return the current used properties.
+     * @return the current used properties
      * @see #setProperties(java.util.Properties)
      */
     @Override
@@ -184,10 +187,10 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
 
     /**
      * Sets the used properties. Can be null if no properties should be used.
-     * <p/>
+     * <p>
      * Properties are used to resolve ${variable} occurrences in the XML file.
      *
-     * @param properties the new properties.
+     * @param properties the new properties
      * @return the XmlConfigBuilder
      */
     public XmlConfigBuilder setProperties(Properties properties) {
@@ -316,6 +319,8 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             handleDurableExecutor(node);
         } else if (SCHEDULED_EXECUTOR_SERVICE.isEqual(nodeName)) {
             handleScheduledExecutor(node);
+        } else if (EVENT_JOURNAL.isEqual(nodeName)) {
+            handleEventJournal(node);
         } else if (SERVICES.isEqual(nodeName)) {
             handleServices(node);
         } else if (QUEUE.isEqual(nodeName)) {
@@ -366,8 +371,10 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             handleLiteMember(node);
         } else if (HOT_RESTART_PERSISTENCE.isEqual(nodeName)) {
             handleHotRestartPersistence(node);
-        } else if (DISTRIBUTED_CLASSLOADING.isEqual(nodeName)) {
-            handleDistributedClassLoading(node);
+        } else if (USER_CODE_DEPLOYMENT.isEqual(nodeName)) {
+            handleUserCodeDeployment(node);
+        } else if (CARDINALITY_ESTIMATOR.isEqual(nodeName)) {
+            handleCardinalityEstimator(node);
         } else {
             return true;
         }
@@ -382,8 +389,8 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
         config.setInstanceName(instanceName);
     }
 
-    private void handleDistributedClassLoading(Node dcRoot) {
-        DistributedClassloadingConfig dcConfig = new DistributedClassloadingConfig();
+    private void handleUserCodeDeployment(Node dcRoot) {
+        UserCodeDeploymentConfig dcConfig = new UserCodeDeploymentConfig();
         Node attrEnabled = dcRoot.getAttributes().getNamedItem("enabled");
         boolean enabled = getBooleanValue(getTextContent(attrEnabled));
         dcConfig.setEnabled(enabled);
@@ -415,7 +422,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
                 dcConfig.setProviderFilter(value);
             }
         }
-        config.setDistributedClassloadingConfig(dcConfig);
+        config.setUserCodeDeploymentConfig(dcConfig);
     }
 
     private void handleHotRestartPersistence(Node hrRoot) {
@@ -566,6 +573,10 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             publisherConfig.setQueueCapacity(queueCapacity);
         } else if ("properties".equals(targetChildName)) {
             fillProperties(targetChild, publisherConfig.getProperties());
+        } else if ("aws".equals(targetChildName)) {
+            handleAWS(publisherConfig.getAwsConfig(), targetChild);
+        } else if ("discovery-strategies".equals(targetChildName)) {
+            handleDiscoveryStrategies(publisherConfig.getDiscoveryConfig(), targetChild);
         }
     }
 
@@ -618,6 +629,11 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
     private void handleScheduledExecutor(Node node) throws Exception {
         ScheduledExecutorConfig scheduledExecutorConfig = new ScheduledExecutorConfig();
         handleViaReflection(node, config, scheduledExecutorConfig);
+    }
+
+    private void handleCardinalityEstimator(Node node) throws Exception {
+        CardinalityEstimatorConfig cardinalityEstimatorConfig = new CardinalityEstimatorConfig();
+        handleViaReflection(node, config, cardinalityEstimatorConfig);
     }
 
     private void handleGroup(Node node) {
@@ -747,9 +763,9 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             } else if ("tcp-ip".equals(name)) {
                 handleTcpIp(child);
             } else if ("aws".equals(name)) {
-                handleAWS(child);
+                handleAWS(config.getNetworkConfig().getJoin().getAwsConfig(), child);
             } else if ("discovery-strategies".equals(name)) {
-                handleDiscoveryStrategies(child);
+                handleDiscoveryStrategies(config.getNetworkConfig().getJoin().getDiscoveryConfig(), child);
             }
         }
 
@@ -757,9 +773,7 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
         joinConfig.verify();
     }
 
-    private void handleDiscoveryStrategies(Node node) {
-        JoinConfig join = config.getNetworkConfig().getJoin();
-        DiscoveryConfig discoveryConfig = join.getDiscoveryConfig();
+    private void handleDiscoveryStrategies(DiscoveryConfig discoveryConfig, Node node) {
         for (Node child : childElements(node)) {
             String name = cleanNodeName(child);
             if ("discovery-strategy".equals(name)) {
@@ -810,10 +824,8 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
         discoveryConfig.addDiscoveryStrategyConfig(new DiscoveryStrategyConfig(clazz, properties));
     }
 
-    private void handleAWS(Node node) {
-        JoinConfig join = config.getNetworkConfig().getJoin();
+    private void handleAWS(AwsConfig awsConfig, Node node) {
         NamedNodeMap atts = node.getAttributes();
-        AwsConfig awsConfig = join.getAwsConfig();
         for (int a = 0; a < atts.getLength(); a++) {
             Node att = atts.item(a);
             String value = getTextContent(att).trim();
@@ -1225,10 +1237,10 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
     }
     //CHECKSTYLE:ON
 
-
     private NearCacheConfig handleNearCacheConfig(Node node) {
         String name = getAttribute(node, "name");
         NearCacheConfig nearCacheConfig = new NearCacheConfig(name);
+        Boolean serializeKeys = null;
         for (Node child : childElements(node)) {
             String nodeName = cleanNodeName(child);
             String value = getTextContent(child).trim();
@@ -1244,6 +1256,9 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
                 LOGGER.warning("The element <eviction-policy/> for <near-cache/> is deprecated, please use <eviction/> instead!");
             } else if ("in-memory-format".equals(nodeName)) {
                 nearCacheConfig.setInMemoryFormat(InMemoryFormat.valueOf(upperCaseInternal(value)));
+            } else if ("serialize-keys".equals(nodeName)) {
+                serializeKeys = Boolean.parseBoolean(value);
+                nearCacheConfig.setSerializeKeys(serializeKeys);
             } else if ("invalidate-on-change".equals(nodeName)) {
                 nearCacheConfig.setInvalidateOnChange(Boolean.parseBoolean(value));
             } else if ("cache-local-entries".equals(nodeName)) {
@@ -1254,6 +1269,10 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
             } else if ("eviction".equals(nodeName)) {
                 nearCacheConfig.setEvictionConfig(getEvictionConfig(child, true));
             }
+        }
+        if (serializeKeys != null && !serializeKeys && nearCacheConfig.getInMemoryFormat() == InMemoryFormat.NATIVE) {
+            LOGGER.warning("The Near Cache doesn't support keys by-reference with NATIVE in-memory-format."
+                    + " This setting will have no effect!");
         }
         return nearCacheConfig;
     }
@@ -1739,6 +1758,25 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
         config.getNetworkConfig().setSSLConfig(sslConfig);
     }
 
+    private void handleMcMutualAuthConfig(Node node) {
+        MCMutualAuthConfig mcMutualAuthConfig = new MCMutualAuthConfig();
+        NamedNodeMap atts = node.getAttributes();
+        Node enabledNode = atts.getNamedItem("enabled");
+        boolean enabled = enabledNode != null && getBooleanValue(getTextContent(enabledNode).trim());
+        mcMutualAuthConfig.setEnabled(enabled);
+
+        for (Node n : childElements(node)) {
+            String nodeName = cleanNodeName(n);
+            if ("factory-class-name".equals(nodeName)) {
+                mcMutualAuthConfig.setFactoryClassName(getTextContent(n).trim());
+            } else if ("properties".equals(nodeName)) {
+                fillProperties(n, mcMutualAuthConfig.getProperties());
+            }
+        }
+
+        config.getManagementCenterConfig().setMutualAuthConfig(mcMutualAuthConfig);
+    }
+
     private void handleSocketInterceptorConfig(Node node) {
         SocketInterceptorConfig socketInterceptorConfig = parseSocketInterceptorConfig(node);
         config.getNetworkConfig().setSocketInterceptorConfig(socketInterceptorConfig);
@@ -1846,6 +1884,12 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
         config.addSemaphoreConfig(sConfig);
     }
 
+    private void handleEventJournal(Node node) throws Exception {
+        final EventJournalConfig journalConfig = new EventJournalConfig();
+        handleViaReflection(node, config, journalConfig);
+        config.addEventJournalConfig(journalConfig);
+    }
+
     private void handleRingbuffer(Node node) {
         Node attName = node.getAttributes().getNamedItem("name");
         String name = getTextContent(attName);
@@ -1928,11 +1972,33 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
         int interval = intervalNode != null ? getIntegerValue("update-interval",
                 getTextContent(intervalNode)) : ManagementCenterConfig.UPDATE_INTERVAL;
 
-        String url = getTextContent(node);
         ManagementCenterConfig managementCenterConfig = config.getManagementCenterConfig();
         managementCenterConfig.setEnabled(enabled);
         managementCenterConfig.setUpdateInterval(interval);
-        managementCenterConfig.setUrl("".equals(url) ? null : url);
+
+        // < 3.9 - Backwards compatibility
+        boolean isComplexType = false;
+        List<String> complexTypeElements = Arrays.asList("url", "mutual-auth");
+        for (Node c : childElements(node)) {
+            if (complexTypeElements.contains(c.getNodeName())) {
+                isComplexType = true;
+                break;
+            }
+        }
+
+        if (!isComplexType) {
+            String url = getTextContent(node);
+            managementCenterConfig.setUrl("".equals(url) ? null : url);
+        } else {
+            for (Node child : childElements(node)) {
+                if ("url".equals(cleanNodeName(child))) {
+                    String url = getTextContent(child);
+                    managementCenterConfig.setUrl(url);
+                } else if ("mutual-auth".equals(cleanNodeName(child))) {
+                    handleMcMutualAuthConfig(child);
+                }
+            }
+        }
     }
 
     private void handleSecurity(Node node) throws Exception {
@@ -2099,6 +2165,18 @@ public class XmlConfigBuilder extends AbstractConfigBuilder implements ConfigBui
                 type = PermissionType.TRANSACTION;
             } else if ("all-permissions".equals(nodeName)) {
                 type = PermissionType.ALL;
+            } else if ("durable-executor-service-permission".equals(nodeName)) {
+                type = PermissionType.DURABLE_EXECUTOR_SERVICE;
+            } else if ("cardinality-estimator-permission".equals(nodeName)) {
+                type = PermissionType.CARDINALITY_ESTIMATOR;
+            } else if ("scheduled-executor-permission".equals(nodeName)) {
+                type = PermissionType.SCHEDULED_EXECUTOR;
+            } else if ("cache-permission".equals(nodeName)) {
+                type = PermissionType.CACHE;
+            } else if ("user-code-deployment".equals(nodeName)) {
+                type = PermissionType.USER_CODE_DEPLOYMENT;
+            } else if (PermissionType.CONFIG.getNodeName().equals(nodeName)) {
+                type = PermissionType.CONFIG;
             } else {
                 continue;
             }

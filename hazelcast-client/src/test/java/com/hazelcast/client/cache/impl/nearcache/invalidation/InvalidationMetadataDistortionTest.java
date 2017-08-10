@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -209,7 +209,7 @@ public class InvalidationMetadataDistortionTest extends ClientNearCacheTestSuppo
         CacheEventHandler cacheEventHandler = service.getCacheEventHandler();
         MetaDataGenerator metaDataGenerator = cacheEventHandler.getMetaDataGenerator();
 
-        UUID uuid = UuidUtil.newSecureUUID();
+        UUID uuid = UuidUtil.newUnsecureUUID();
         int randomPartition = getInt(partitionCount);
         metaDataGenerator.setUuid(randomPartition, uuid);
     }

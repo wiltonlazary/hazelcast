@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import com.hazelcast.cache.impl.CachePartitionSegment;
 import com.hazelcast.cache.impl.CacheService;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
@@ -30,7 +30,9 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import static org.junit.Assert.assertTrue;
+import java.util.Collection;
+
+import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -46,14 +48,20 @@ public class CacheReplicationOperationTest extends HazelcastTestSupport {
         CacheService cacheService = nodeEngineImpl.getService(CacheService.SERVICE_NAME);
         cacheService.putCacheConfigIfAbsent(config);
 
+        CachePartitionSegment segment = new CachePartitionSegment(cacheService, 0);
+        segment.getOrCreateRecordStore(config.getNameWithPrefix());
+        Collection<ServiceNamespace> namespaces = segment.getAllNamespaces(0);
+        assertEquals(1, namespaces.size());
+
         // create operation
-        Operation operation = new CacheReplicationOperation(new CachePartitionSegment(cacheService, 0), 0);
+        CacheReplicationOperation operation = new CacheReplicationOperation();
+        operation.prepare(segment, namespaces, 0);
 
         // serialize & deserialize operation
         Data data = nodeEngineImpl.toData(operation);
         CacheReplicationOperation cacheReplicationOperation = (CacheReplicationOperation) nodeEngineImpl.toObject(data);
 
         // new operation instance should have previously added config.
-        assertTrue(cacheReplicationOperation.configs.contains(config));
+        assertContains(cacheReplicationOperation.getConfigs(), config);
     }
 }

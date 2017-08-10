@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 
 package com.hazelcast.config;
 
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -56,6 +56,12 @@ public class WanReplicationRef implements DataSerializable, Serializable {
         republishingEnabled = ref.republishingEnabled;
     }
 
+    /**
+     * Gets immutable version of this configuration.
+     *
+     * @return immutable version of this configuration
+     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
+     */
     public WanReplicationRefReadOnly getAsReadOnly() {
         if (readOnly == null) {
             readOnly = new WanReplicationRefReadOnly(this);
@@ -81,15 +87,37 @@ public class WanReplicationRef implements DataSerializable, Serializable {
         return this;
     }
 
+    /**
+     * Add class name implementing the CacheWanEventFilter or MapWanEventFilter for filtering WAN replication events.
+     * NOTE: EE only
+     *
+     * @param filter the class name
+     * @return this configuration
+     */
     public WanReplicationRef addFilter(String filter) {
         filters.add(filter);
         return this;
     }
 
+    /**
+     * Return the list of class names implementing the CacheWanEventFilter or MapWanEventFilter for filtering WAN replication
+     * events.
+     * NOTE: EE only
+     *
+     * @return list of class names implementing the CacheWanEventFilter or MapWanEventFilter
+     */
     public List<String> getFilters() {
         return filters;
     }
 
+    /**
+     * Set the list of class names implementing the CacheWanEventFilter or MapWanEventFilter for filtering WAN replication
+     * events.
+     * NOTE: EE only
+     *
+     * @param filters the list of class names implementing CacheWanEventFilter or MapWanEventFilter
+     * @return this configuration
+     */
     public WanReplicationRef setFilters(List<String> filters) {
         this.filters = filters;
         return this;
@@ -135,5 +163,37 @@ public class WanReplicationRef implements DataSerializable, Serializable {
                 + ", republishingEnabled='" + republishingEnabled
                 + '\''
                 + '}';
+    }
+
+    @Override
+    @SuppressWarnings("checkstyle:npathcomplexity")
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        WanReplicationRef that = (WanReplicationRef) o;
+        if (republishingEnabled != that.republishingEnabled) {
+            return false;
+        }
+        if (name != null ? !name.equals(that.name) : that.name != null) {
+            return false;
+        }
+        if (mergePolicy != null ? !mergePolicy.equals(that.mergePolicy) : that.mergePolicy != null) {
+            return false;
+        }
+        return filters != null ? filters.equals(that.filters) : that.filters == null;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = name != null ? name.hashCode() : 0;
+        result = 31 * result + (mergePolicy != null ? mergePolicy.hashCode() : 0);
+        result = 31 * result + (filters != null ? filters.hashCode() : 0);
+        result = 31 * result + (republishingEnabled ? 1 : 0);
+        return result;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 package com.hazelcast.internal.eviction;
 
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
-
 import java.io.Serializable;
 import java.util.Comparator;
 
@@ -25,7 +23,6 @@ import java.util.Comparator;
  * A kind of {@link java.util.Comparator} to be used while comparing
  * entries to be evicted.
  */
-@BinaryInterface
 public abstract class EvictionPolicyComparator<K, V, E extends EvictableEntryView<K, V>>
         implements Comparator<E>, Serializable {
 
@@ -61,4 +58,16 @@ public abstract class EvictionPolicyComparator<K, V, E extends EvictableEntryVie
     @Override
     public abstract int compare(E e1, E e2);
 
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == null) {
+            return false;
+        }
+        return this.getClass().equals(obj.getClass());
+    }
+
+    @Override
+    public int hashCode() {
+        return this.getClass().hashCode();
+    }
 }

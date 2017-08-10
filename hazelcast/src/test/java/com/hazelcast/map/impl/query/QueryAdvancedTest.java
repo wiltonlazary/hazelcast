@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,9 +30,9 @@ import com.hazelcast.nio.serialization.DataSerializable;
 import com.hazelcast.nio.serialization.Portable;
 import com.hazelcast.nio.serialization.PortableFactory;
 import com.hazelcast.query.Predicate;
-import com.hazelcast.query.SampleObjects.Employee;
-import com.hazelcast.query.SampleObjects.PortableEmployee;
-import com.hazelcast.query.SampleObjects.ValueType;
+import com.hazelcast.query.SampleTestObjects.Employee;
+import com.hazelcast.query.SampleTestObjects.PortableEmployee;
+import com.hazelcast.query.SampleTestObjects.ValueType;
 import com.hazelcast.query.SqlPredicate;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
@@ -65,6 +65,7 @@ public class QueryAdvancedTest extends HazelcastTestSupport {
         TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(2);
         HazelcastInstance fullMember = nodeFactory.newHazelcastInstance();
         HazelcastInstance liteMember = nodeFactory.newHazelcastInstance(new Config().setLiteMember(true));
+
         assertClusterSizeEventually(2, fullMember);
 
         IMap<Integer, Integer> map = fullMember.getMap(randomMapName());
@@ -88,7 +89,8 @@ public class QueryAdvancedTest extends HazelcastTestSupport {
         }
 
         @Override
-        public void writeData(ObjectDataOutput out) throws IOException { }
+        public void writeData(ObjectDataOutput out) throws IOException {
+        }
 
         @Override
         public void readData(ObjectDataInput in) throws IOException {
@@ -164,8 +166,7 @@ public class QueryAdvancedTest extends HazelcastTestSupport {
             Employee employee = new Employee(i, "name" + i % 100, "city" + (i % 100), i % 60, ((i & 1) == 1), (double) i);
             map.put(String.valueOf(i), employee);
         }
-        assertEquals(2, instance1.getCluster().getMembers().size());
-        assertEquals(2, instance2.getCluster().getMembers().size());
+        assertClusterSize(2, instance1, instance2);
 
         map = instance2.getMap("employees");
         map.addIndex("name", false);
@@ -212,8 +213,7 @@ public class QueryAdvancedTest extends HazelcastTestSupport {
             Employee employee = new Employee(i, "name" + i % 100, "city" + (i % 100), i % 60, ((i & 1) == 1), (double) i);
             map.put(String.valueOf(i), employee);
         }
-        assertEquals(2, instance1.getCluster().getMembers().size());
-        assertEquals(2, instance2.getCluster().getMembers().size());
+        assertClusterSize(2, instance1, instance2);
 
         map = instance2.getMap("employees");
         map.addIndex("name", false);

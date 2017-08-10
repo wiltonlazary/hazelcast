@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ import static com.hazelcast.nio.Bits.readIntB;
 import static com.hazelcast.nio.Bits.writeIntB;
 import static com.hazelcast.nio.IOUtil.closeResource;
 import static com.hazelcast.nio.IOUtil.deleteQuietly;
+import static com.hazelcast.nio.IOUtil.getPath;
 import static com.hazelcast.nio.IOUtil.readFullyOrNothing;
 import static com.hazelcast.nio.IOUtil.rename;
 import static com.hazelcast.nio.IOUtil.toFileName;
@@ -104,7 +105,7 @@ public class NearCachePreloader<K> {
         this.nearCacheStats = nearCacheStats;
         this.serializationService = serializationService;
 
-        String filename = getFileName(preloaderConfig.getFilename(), nearCacheName);
+        String filename = getFilename(preloaderConfig.getDirectory(), nearCacheName);
         this.lock = new NearCachePreloaderLock(logger, filename + ".lock");
         this.storeFile = new File(filename);
         this.tmpStoreFile = new File(filename + "~");
@@ -119,7 +120,7 @@ public class NearCachePreloader<K> {
      *
      * @param adapter the {@link DataStructureAdapter} to load the values from
      */
-    public void loadKeys(DataStructureAdapter<Data, ?> adapter) {
+    public void loadKeys(DataStructureAdapter<Object, ?> adapter) {
         if (!storeFile.exists()) {
             logger.info(format("Skipped loading keys of Near Cache %s since storage file doesn't exist (%s)", nearCacheName,
                     storeFile.getAbsolutePath()));
@@ -187,6 +188,7 @@ public class NearCachePreloader<K> {
             }
 
             fos.flush();
+            closeResource(fos);
             rename(tmpStoreFile, storeFile);
 
             updatePersistenceStats(startedNanos);
@@ -195,8 +197,8 @@ public class NearCachePreloader<K> {
 
             nearCacheStats.addPersistenceFailure(e);
         } finally {
-            deleteQuietly(tmpStoreFile);
             closeResource(fos);
+            deleteQuietly(tmpStoreFile);
         }
     }
 
@@ -208,17 +210,18 @@ public class NearCachePreloader<K> {
                 MemoryUnit.BYTES.toKiloBytes(lastWrittenBytes)));
     }
 
-    private int loadKeySet(BufferingInputStream bis, DataStructureAdapter<Data, ?> adapter) throws IOException {
+    private int loadKeySet(BufferingInputStream bis, DataStructureAdapter<Object, ?> adapter) throws IOException {
         int loadedKeys = 0;
 
-        Builder<Data> builder = InflatableSet.newBuilder(LOAD_BATCH_SIZE);
+        Builder<Object> builder = InflatableSet.newBuilder(LOAD_BATCH_SIZE);
         while (readFullyOrNothing(bis, tmpBytes)) {
             int dataSize = readIntB(tmpBytes, 0);
             byte[] payload = new byte[dataSize];
             if (!readFullyOrNothing(bis, payload)) {
                 break;
             }
-            builder.add(new HeapData(payload));
+            Data key = new HeapData(payload);
+            builder.add(serializationService.toObject(key));
             if (builder.size() == LOAD_BATCH_SIZE) {
                 adapter.getAll(builder.build());
                 builder = InflatableSet.newBuilder(LOAD_BATCH_SIZE);
@@ -286,11 +289,12 @@ public class NearCachePreloader<K> {
         buf.clear();
     }
 
-    private static String getFileName(String configFileName, String nearCacheName) {
-        if (!isNullOrEmpty(configFileName)) {
-            return configFileName;
+    private static String getFilename(String directory, String nearCacheName) {
+        String filename = toFileName("nearCache-" + nearCacheName + ".store");
+        if (isNullOrEmpty(directory)) {
+            return filename;
         }
-        return "nearcache-" + toFileName(nearCacheName) + ".store";
+        return getPath(directory, filename);
     }
 
     private static long getElapsedMillis(long startedNanos) {

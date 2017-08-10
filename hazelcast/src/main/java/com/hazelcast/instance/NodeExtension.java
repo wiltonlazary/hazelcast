@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,12 @@ import com.hazelcast.hotrestart.HotRestartService;
 import com.hazelcast.hotrestart.InternalHotRestartService;
 import com.hazelcast.internal.cluster.impl.JoinMessage;
 import com.hazelcast.internal.cluster.impl.JoinRequest;
-import com.hazelcast.internal.networking.ReadHandler;
-import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
-import com.hazelcast.internal.networking.WriteHandler;
+import com.hazelcast.internal.dynamicconfig.DynamicConfigListener;
+import com.hazelcast.internal.management.TimedMemberStateFactory;
+import com.hazelcast.internal.management.ManagementCenterConnectionFactory;
+import com.hazelcast.internal.networking.ChannelFactory;
+import com.hazelcast.internal.networking.ChannelInboundHandler;
+import com.hazelcast.internal.networking.ChannelOutboundHandler;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.memory.MemoryStats;
 import com.hazelcast.nio.Address;
@@ -32,14 +35,16 @@ import com.hazelcast.nio.IOService;
 import com.hazelcast.nio.MemberSocketInterceptor;
 import com.hazelcast.nio.tcp.TcpIpConnection;
 import com.hazelcast.security.SecurityContext;
+import com.hazelcast.security.SecurityService;
 import com.hazelcast.spi.annotation.PrivateApi;
-import com.hazelcast.version.ClusterVersion;
+import com.hazelcast.util.ByteArrayProcessor;
+import com.hazelcast.version.Version;
 
 import java.util.Map;
 
 /**
  * NodeExtension is a <tt>Node</tt> extension mechanism to be able to plug different implementations of
- * some modules, like; <tt>SerializationService</tt>, <tt>SocketChannelWrapperFactory</tt> etc.
+ * some modules, like; <tt>SerializationService</tt>, <tt>ChannelFactory</tt> etc.
  */
 @PrivateApi
 @SuppressWarnings({"checkstyle:methodcount"})
@@ -87,6 +92,8 @@ public interface NodeExtension {
      */
     InternalSerializationService createSerializationService();
 
+    SecurityService getSecurityService();
+
     /**
      * Returns <tt>SecurityContext</tt> for this <tt>Node</tt> if available, otherwise returns null.
      *
@@ -122,29 +129,29 @@ public interface NodeExtension {
     MemberSocketInterceptor getMemberSocketInterceptor();
 
     /**
-     * Returns <tt>SocketChannelWrapperFactory</tt> instance to be used by this <tt>Node</tt>.
+     * Returns <tt>ChannelFactory</tt> instance to be used by this <tt>Node</tt>.
      *
-     * @return SocketChannelWrapperFactory
+     * @return ChannelFactory
      */
-    SocketChannelWrapperFactory getSocketChannelWrapperFactory();
+    ChannelFactory getChannelFactory();
 
     /**
-     * Creates a <tt>ReadHandler</tt> for given <tt>Connection</tt> instance.
+     * Creates a <tt>ChannelInboundHandler</tt> for given <tt>Connection</tt> instance.
      *
      * @param connection tcp-ip connection
      * @param ioService  IOService
-     * @return the created ReadHandler.
+     * @return the created ChannelInboundHandler.
      */
-    ReadHandler createReadHandler(TcpIpConnection connection, IOService ioService);
+    ChannelInboundHandler createInboundHandler(TcpIpConnection connection, IOService ioService);
 
     /**
-     * Creates a <tt>WriteHandler</tt> for given <tt>Connection</tt> instance.
+     * Creates a <tt>ChannelOutboundHandler</tt> for given <tt>Connection</tt> instance.
      *
      * @param connection tcp-ip connection
      * @param ioService  IOService
-     * @return the created WriteHandler
+     * @return the created ChannelOutboundHandler
      */
-    WriteHandler createWriteHandler(TcpIpConnection connection, IOService ioService);
+    ChannelOutboundHandler createOutboundHandler(TcpIpConnection connection, IOService ioService);
 
     /**
      * Called on thread start to inject/intercept extension specific logic,
@@ -196,14 +203,14 @@ public interface NodeExtension {
      *
      * @param newVersion the new version at which the cluster operates.
      */
-    void onClusterVersionChange(ClusterVersion newVersion);
+    void onClusterVersionChange(Version newVersion);
 
     /**
      * Check if this node's codebase version is compatible with given cluster version.
      * @param clusterVersion the cluster version to check against
      * @return {@code true} if compatible, otherwise false.
      */
-    boolean isNodeVersionCompatibleWith(ClusterVersion clusterVersion);
+    boolean isNodeVersionCompatibleWith(Version clusterVersion);
 
     /**
      * Registers given listener if it's a known type.
@@ -224,4 +231,26 @@ public interface NodeExtension {
      * @return new uuid
      */
     String createMemberUuid(Address address);
+
+    /**
+     * Creates a TimedMemberStateFactory for a given Hazelcast instance
+     * @param instance The instance to associate with the timed member state factory
+     * @return {@link TimedMemberStateFactory}
+     */
+    TimedMemberStateFactory createTimedMemberStateFactory(HazelcastInstanceImpl instance);
+
+    ManagementCenterConnectionFactory getManagementCenterConnectionFactory();
+
+    /** Returns a byte array processor for incoming data on the Multicast joiner */
+    ByteArrayProcessor createMulticastInputProcessor(IOService ioService);
+
+    /** Returns a byte array processor for outgoing data on the Multicast joiner */
+    ByteArrayProcessor createMulticastOutputProcessor(IOService ioService);
+
+    /**
+     * Creates a listener for changes in dynamic data structure configurations
+     *
+     * @return Listener to be notfied about changes in data structure configurations
+     */
+    DynamicConfigListener createDynamicConfigListener();
 }

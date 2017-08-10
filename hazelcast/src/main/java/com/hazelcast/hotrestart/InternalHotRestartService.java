@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,6 +59,13 @@ public interface InternalHotRestartService {
      * @return uuids of the members that have been excluded during the cluster start
      */
     Set<String> getExcludedMemberUuids();
+
+    /**
+     * Notifies the excluded member and triggers the member force start process.
+     *
+     * @param memberAddress address of the member to notify
+     */
+    void notifyExcludedMember(Address memberAddress);
 
     /**
      * Handles the uuid set of excluded members only if this member is also excluded, and triggers the member force start process.

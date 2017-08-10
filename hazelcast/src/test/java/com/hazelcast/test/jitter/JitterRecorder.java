@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.test.jitter;
 
 import java.util.ArrayList;
@@ -7,15 +23,16 @@ import static com.hazelcast.test.jitter.JitterRule.AGGREGATION_INTERVAL_MILLIS;
 import static com.hazelcast.test.jitter.JitterRule.CAPACITY;
 import static com.hazelcast.util.QuickMath.modPowerOfTwo;
 
-public class JitterRecorder {
+class JitterRecorder {
+
     private final AtomicReferenceArray<Slot> slots = new AtomicReferenceArray<Slot>(CAPACITY);
 
-    public void recordPause(long startTimeMillis, long hiccupNanos) {
+    void recordPause(long startTimeMillis, long hiccupNanos) {
         Slot slot = getSlotForTimestamp(startTimeMillis);
         slot.recordHiccup(hiccupNanos);
     }
 
-    public Iterable<Slot> getSlotsBetween(long from, long to) {
+    Iterable<Slot> getSlotsBetween(long from, long to) {
         long firstBucket = getBucket(from);
         int slotIndex = toSlotIndex(firstBucket);
 
@@ -38,9 +55,9 @@ public class JitterRecorder {
     }
 
     private Slot getSlotForTimestamp(long startTime) {
-        //bucket on a linear time-line
+        // bucket on a linear time-line
         long bucket = getBucket(startTime);
-        //slot in a circular buffer
+        // slot in a circular buffer
         int slotIndex = toSlotIndex(bucket);
         Slot slot = slots.get(slotIndex);
         if (isNullOrStale(slot, bucket)) {
@@ -70,5 +87,4 @@ public class JitterRecorder {
         long slotBucket = getBucket(slot.getStartIntervalMillis());
         return slotBucket != currentBucket;
     }
-
 }

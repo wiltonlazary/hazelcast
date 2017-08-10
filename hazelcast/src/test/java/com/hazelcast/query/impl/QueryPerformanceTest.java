@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.query.impl;
 
 import com.hazelcast.config.Config;
@@ -11,7 +27,7 @@ import com.hazelcast.query.Predicates;
 import com.hazelcast.query.extractor.ValueCollector;
 import com.hazelcast.query.extractor.ValueExtractor;
 import com.hazelcast.query.extractor.ValueReader;
-import com.hazelcast.query.impl.extractor.specification.ComplexDataStructure;
+import com.hazelcast.query.impl.extractor.specification.ComplexTestDataStructure;
 import com.hazelcast.test.HazelcastTestSupport;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -31,10 +47,10 @@ import org.openjdk.jmh.runner.options.VerboseMode;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
-import static com.hazelcast.query.impl.extractor.specification.ComplexDataStructure.finger;
-import static com.hazelcast.query.impl.extractor.specification.ComplexDataStructure.limb;
-import static com.hazelcast.query.impl.extractor.specification.ComplexDataStructure.person;
-import static com.hazelcast.query.impl.extractor.specification.ComplexDataStructure.tattoos;
+import static com.hazelcast.query.impl.extractor.specification.ComplexTestDataStructure.finger;
+import static com.hazelcast.query.impl.extractor.specification.ComplexTestDataStructure.limb;
+import static com.hazelcast.query.impl.extractor.specification.ComplexTestDataStructure.person;
+import static com.hazelcast.query.impl.extractor.specification.ComplexTestDataStructure.tattoos;
 
 @State(Scope.Thread)
 @BenchmarkMode(Mode.AverageTime)
@@ -50,16 +66,16 @@ public class QueryPerformanceTest extends HazelcastTestSupport {
     private IMap objectMap;
     private IMap objectMapWithExtractor;
 
-    public static class NameExtractor extends ValueExtractor<ComplexDataStructure.Person, Object> {
+    public static class NameExtractor extends ValueExtractor<ComplexTestDataStructure.Person, Object> {
         @Override
-        public void extract(ComplexDataStructure.Person target, Object argument, ValueCollector collector) {
+        public void extract(ComplexTestDataStructure.Person target, Object argument, ValueCollector collector) {
             collector.addObject(target.getName());
         }
     }
 
-    public static class LimbNameExtractor extends ValueExtractor<ComplexDataStructure.Person, Object> {
+    public static class LimbNameExtractor extends ValueExtractor<ComplexTestDataStructure.Person, Object> {
         @Override
-        public void extract(ComplexDataStructure.Person target, Object argument, ValueCollector collector) {
+        public void extract(ComplexTestDataStructure.Person target, Object argument, ValueCollector collector) {
             collector.addObject(target.getFirstLimb().getName());
         }
     }
@@ -132,7 +148,7 @@ public class QueryPerformanceTest extends HazelcastTestSupport {
         objectMapWithExtractor = hz.getMap("objectMapWithExtractor");
         portableMapWithExtractor = hz.getMap("portableMapWithExtractor");
 
-        ComplexDataStructure.Person BOND = person("Bond",
+        ComplexTestDataStructure.Person BOND = person("Bond",
                 limb("left-hand", tattoos(), finger("thumb"), finger(null)),
                 limb("right-hand", tattoos("knife"), finger("middle"), finger("index"))
         );

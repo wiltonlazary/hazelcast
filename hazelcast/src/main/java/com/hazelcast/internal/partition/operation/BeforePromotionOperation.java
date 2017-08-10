@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.hazelcast.internal.partition.operation;
 
+import com.hazelcast.core.MigrationEvent;
+import com.hazelcast.internal.partition.MigrationInfo;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.internal.partition.impl.PartitionStateManager;
 import com.hazelcast.logging.ILogger;
@@ -24,8 +26,11 @@ import com.hazelcast.spi.PartitionMigrationEvent;
 
 import static com.hazelcast.core.MigrationEvent.MigrationStatus.STARTED;
 
-// Runs locally when the node becomes owner of a partition,
-// before applying promotion result to the partition table.
+/**
+ * Runs locally when the node becomes owner of a partition, before applying a promotion result to the partition table.
+ * Sends a {@link MigrationEvent} and notifies all {@link MigrationAwareService}s that the migration is starting.
+ * After completion notifies the {@link #beforePromotionsCallback}.
+ */
 final class BeforePromotionOperation extends AbstractPromotionOperation {
 
     private Runnable beforePromotionsCallback;
@@ -35,11 +40,11 @@ final class BeforePromotionOperation extends AbstractPromotionOperation {
      * coding conventions.
      */
     public BeforePromotionOperation() {
-        super(-1);
+        super(null);
     }
 
-    BeforePromotionOperation(int currentReplicaIndex, Runnable beforePromotionsCallback) {
-        super(currentReplicaIndex);
+    BeforePromotionOperation(MigrationInfo migrationInfo, Runnable beforePromotionsCallback) {
+        super(migrationInfo);
         this.beforePromotionsCallback = beforePromotionsCallback;
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,13 @@ import com.hazelcast.cache.impl.event.CacheWanEventPublisher;
 import com.hazelcast.cache.impl.operation.CacheReplicationOperation;
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataGenerator;
+import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PartitionReplicationEvent;
+import com.hazelcast.spi.ServiceNamespace;
+
+import java.util.Collection;
 
 import static com.hazelcast.spi.partition.MigrationEndpoint.DESTINATION;
 import static com.hazelcast.spi.partition.MigrationEndpoint.SOURCE;
@@ -72,10 +76,43 @@ public class CacheService extends AbstractCacheService {
     }
 
     @Override
+    public Collection<ServiceNamespace> getAllServiceNamespaces(PartitionReplicationEvent event) {
+        CachePartitionSegment segment = segments[event.getPartitionId()];
+        return segment.getAllNamespaces(event.getReplicaIndex());
+    }
+
+    @Override
+    public boolean isKnownServiceNamespace(ServiceNamespace namespace) {
+        return namespace instanceof ObjectNamespace && SERVICE_NAME.equals(namespace.getServiceName());
+    }
+
+    @Override
     public Operation prepareReplicationOperation(PartitionReplicationEvent event) {
         CachePartitionSegment segment = segments[event.getPartitionId()];
-        CacheReplicationOperation op = new CacheReplicationOperation(segment, event.getReplicaIndex());
+        return prepareReplicationOperation(event, segment.getAllNamespaces(event.getReplicaIndex()));
+    }
+
+    @Override
+    public Operation prepareReplicationOperation(PartitionReplicationEvent event,
+            Collection<ServiceNamespace> namespaces) {
+        assert assertAllKnownNamespaces(namespaces);
+
+        CachePartitionSegment segment = segments[event.getPartitionId()];
+        CacheReplicationOperation op = newCacheReplicationOperation();
+        op.prepare(segment, namespaces, event.getReplicaIndex());
         return op.isEmpty() ? null : op;
+    }
+
+    private boolean assertAllKnownNamespaces(Collection<ServiceNamespace> namespaces) {
+        for (ServiceNamespace namespace : namespaces) {
+            assert isKnownServiceNamespace(namespace) : namespace + " is not a CacheService namespace!";
+        }
+        return true;
+    }
+
+
+    protected CacheReplicationOperation newCacheReplicationOperation() {
+        return new CacheReplicationOperation();
     }
 
     @Override
@@ -83,9 +120,11 @@ public class CacheService extends AbstractCacheService {
         super.commitMigration(event);
 
         if (SOURCE == event.getMigrationEndpoint()) {
-            getMetaDataGenerator().resetMetadata(event.getPartitionId());
+            getMetaDataGenerator().removeUuidAndSequence(event.getPartitionId());
         } else if (DESTINATION == event.getMigrationEndpoint()) {
-            getMetaDataGenerator().getOrCreateUuid(event.getPartitionId());
+            if (event.getNewReplicaIndex() != 0) {
+                getMetaDataGenerator().regenerateUuid(event.getPartitionId());
+            }
         }
     }
 
@@ -94,9 +133,7 @@ public class CacheService extends AbstractCacheService {
         super.rollbackMigration(event);
 
         if (DESTINATION == event.getMigrationEndpoint()) {
-            getMetaDataGenerator().resetMetadata(event.getPartitionId());
-        } else if (SOURCE == event.getMigrationEndpoint()) {
-            getMetaDataGenerator().getOrCreateUuid(event.getPartitionId());
+            getMetaDataGenerator().removeUuidAndSequence(event.getPartitionId());
         }
     }
 

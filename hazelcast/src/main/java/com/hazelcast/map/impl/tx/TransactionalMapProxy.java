@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ import com.hazelcast.query.impl.CachedQueryEntry;
 import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.query.impl.getters.Extractors;
 import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.transaction.impl.Transaction;
 import com.hazelcast.util.IterationType;
 
@@ -109,7 +108,7 @@ public class TransactionalMapProxy extends TransactionalMapProxySupport implemen
         if (currentValue != null) {
             return checkIfRemoved(currentValue);
         }
-        return toObjectIfNeeded(getInternal(keyData));
+        return toObjectIfNeeded(getInternal(key, keyData));
     }
 
     @Override
@@ -249,7 +248,7 @@ public class TransactionalMapProxy extends TransactionalMapProxySupport implemen
         Data keyData = mapServiceContext.toData(key, partitionStrategy);
 
         TxnValueWrapper wrapper = txMap.get(keyData);
-        //Wrapper is null which means this entry is not touched by transaction
+        // wrapper is null which means this entry is not touched by transaction
         if (wrapper == null) {
             boolean removed = removeIfSameInternal(keyData, value);
             if (removed) {
@@ -312,13 +311,12 @@ public class TransactionalMapProxy extends TransactionalMapProxySupport implemen
         checkNotInstanceOf(PagingPredicate.class, predicate, "Paging is not supported for Transactional queries!");
 
         MapQueryEngine queryEngine = mapServiceContext.getMapQueryEngine(name);
-        SerializationService serializationService = getNodeEngine().getSerializationService();
 
         Query query = Query.of().mapName(name).predicate(predicate).iterationType(IterationType.KEY).build();
         QueryResult queryResult = queryEngine.execute(query, Target.ALL_NODES);
         Set result = QueryResultUtils.transformToSet(serializationService, queryResult, predicate, IterationType.KEY, true);
 
-        // TODO: Can't we just use the original set?
+        // TODO: can't we just use the original set?
         Set<Object> keySet = new HashSet<Object>(result);
         Extractors extractors = mapServiceContext.getExtractors(name);
         for (Map.Entry<Data, TxnValueWrapper> entry : txMap.entrySet()) {
@@ -357,13 +355,12 @@ public class TransactionalMapProxy extends TransactionalMapProxySupport implemen
         checkNotInstanceOf(PagingPredicate.class, predicate, "Paging is not supported for Transactional queries");
 
         MapQueryEngine queryEngine = mapServiceContext.getMapQueryEngine(name);
-        SerializationService serializationService = getNodeEngine().getSerializationService();
 
         Query query = Query.of().mapName(name).predicate(predicate).iterationType(IterationType.ENTRY).build();
-        QueryResult queryResylt = queryEngine.execute(query, Target.ALL_NODES);
-        Set result = QueryResultUtils.transformToSet(serializationService, queryResylt, predicate, IterationType.ENTRY, true);
+        QueryResult queryResult = queryEngine.execute(query, Target.ALL_NODES);
+        Set result = QueryResultUtils.transformToSet(serializationService, queryResult, predicate, IterationType.ENTRY, true);
 
-        // TODO: Can't we just use the original set?
+        // TODO: can't we just use the original set?
         List<Object> valueSet = new ArrayList<Object>();
         Set<Object> keyWontBeIncluded = new HashSet<Object>();
         Extractors extractors = mapServiceContext.getExtractors(name);

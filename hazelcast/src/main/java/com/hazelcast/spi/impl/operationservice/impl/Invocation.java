@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,8 +58,6 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.logging.Level;
 
-import static com.hazelcast.cluster.ClusterState.FROZEN;
-import static com.hazelcast.cluster.ClusterState.PASSIVE;
 import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_SELECTOR;
 import static com.hazelcast.spi.OperationAccessor.hasActiveInvocation;
 import static com.hazelcast.spi.OperationAccessor.setCallTimeout;
@@ -162,7 +160,9 @@ public abstract class Invocation implements OperationResponseHandler {
     final long tryPauseMillis;
     final long callTimeoutMillis;
 
-    /** Refer to {@link com.hazelcast.spi.InvocationBuilder#setDoneCallback(Runnable)} for an explanation */
+    /**
+     * Refer to {@link com.hazelcast.spi.InvocationBuilder#setDoneCallback(Runnable)} for an explanation
+     */
     private final Runnable taskDoneCallback;
 
     Invocation(Context context, Operation op, Runnable taskDoneCallback, int tryCount, long tryPauseMillis,
@@ -180,7 +180,7 @@ public abstract class Invocation implements OperationResponseHandler {
     public void sendResponse(Operation op, Object response) {
         if (!RESPONSE_RECEIVED.compareAndSet(this, FALSE, TRUE)) {
             throw new ResponseAlreadySentException("NormalResponse already responseReceived for callback: " + this
-                    + ", current-response: : " + response);
+                    + ", current-response: " + response);
         }
 
         if (response instanceof CallTimeoutResponse) {
@@ -522,7 +522,7 @@ public abstract class Invocation implements OperationResponseHandler {
 
     private void doInvokeLocal(boolean isAsync) {
         if (op.getCallerUuid() == null) {
-            op.setCallerUuid(context.localMemberUuid);
+            op.setCallerUuid(context.node.getThisUuid());
         }
 
         responseReceived = FALSE;
@@ -536,7 +536,7 @@ public abstract class Invocation implements OperationResponseHandler {
     }
 
     private void doInvokeRemote() {
-        if (!context.operationService.send(op, invTarget)) {
+        if (!context.outboundOperationHandler.send(op, invTarget)) {
             notifyError(new RetryableIOException("Packet not send to -> " + invTarget));
         }
     }
@@ -578,11 +578,13 @@ public abstract class Invocation implements OperationResponseHandler {
 
     private void notifyWithExceptionWhenTargetIsNull() {
         ClusterState clusterState = context.clusterService.getClusterState();
-        if (clusterState == FROZEN || clusterState == PASSIVE) {
-            notifyError(new IllegalStateException("Partitions can't be assigned since cluster-state: " + clusterState));
+        if (!clusterState.isMigrationAllowed()) {
+            notifyError(new IllegalStateException("Target of invocation cannot be found! Partition owner is null "
+                    + "but partitions can't be assigned in cluster-state: " + clusterState));
         } else if (context.clusterService.getSize(DATA_MEMBER_SELECTOR) == 0) {
             notifyError(new NoDataMemberInClusterException(
-                    "Partitions can't be assigned since all nodes in the cluster are lite members"));
+                    "Target of invocation cannot be found! Partition owner is null "
+                            + "but partitions can't be assigned since all nodes in the cluster are lite members."));
         } else {
             notifyError(new WrongTargetException(context.thisAddress, null, op.getPartitionId(),
                     op.getReplicaIndex(), op.getClass().getName(), op.getServiceName()));
@@ -681,7 +683,7 @@ public abstract class Invocation implements OperationResponseHandler {
             // When a cluster is being merged into another one then local node is marked as not-joined and invocations are
             // notified with MemberLeftException.
             // We do not want to retry them before the node is joined again because partition table is stale at this point.
-            if (!context.node.joined() && !isJoinOperation(op) && !(op instanceof AllowedDuringPassiveState)) {
+            if (!context.clusterService.isJoined() && !isJoinOperation(op) && !(op instanceof AllowedDuringPassiveState)) {
                 if (!engineActive()) {
                     context.invocationRegistry.deregister(Invocation.this);
                     return;
@@ -744,7 +746,6 @@ public abstract class Invocation implements OperationResponseHandler {
         final long defaultCallTimeoutMillis;
         final InvocationRegistry invocationRegistry;
         final InvocationMonitor invocationMonitor;
-        final String localMemberUuid;
         final ILogger logger;
         final Node node;
         final NodeEngine nodeEngine;
@@ -754,26 +755,27 @@ public abstract class Invocation implements OperationResponseHandler {
         final MwCounter retryCount;
         final InternalSerializationService serializationService;
         final Address thisAddress;
+        final OutboundOperationHandler outboundOperationHandler;
 
         @SuppressWarnings("checkstyle:parameternumber")
         Context(ManagedExecutorService asyncExecutor,
-                       ClusterClock clusterClock,
-                       ClusterService clusterService,
-                       ConnectionManager connectionManager,
-                       InternalExecutionService executionService,
-                       long defaultCallTimeoutMillis,
-                       InvocationRegistry invocationRegistry,
-                       InvocationMonitor invocationMonitor,
-                       String localMemberUuid,
-                       ILogger logger,
-                       Node node,
-                       NodeEngine nodeEngine,
-                       InternalPartitionService partitionService,
-                       OperationServiceImpl operationService,
-                       OperationExecutor operationExecutor,
-                       MwCounter retryCount,
-                       InternalSerializationService serializationService,
-                       Address thisAddress) {
+                ClusterClock clusterClock,
+                ClusterService clusterService,
+                ConnectionManager connectionManager,
+                InternalExecutionService executionService,
+                long defaultCallTimeoutMillis,
+                InvocationRegistry invocationRegistry,
+                InvocationMonitor invocationMonitor,
+                ILogger logger,
+                Node node,
+                NodeEngine nodeEngine,
+                InternalPartitionService partitionService,
+                OperationServiceImpl operationService,
+                OperationExecutor operationExecutor,
+                MwCounter retryCount,
+                InternalSerializationService serializationService,
+                Address thisAddress,
+                OutboundOperationHandler outboundOperationHandler) {
             this.asyncExecutor = asyncExecutor;
             this.clusterClock = clusterClock;
             this.clusterService = clusterService;
@@ -782,7 +784,6 @@ public abstract class Invocation implements OperationResponseHandler {
             this.defaultCallTimeoutMillis = defaultCallTimeoutMillis;
             this.invocationRegistry = invocationRegistry;
             this.invocationMonitor = invocationMonitor;
-            this.localMemberUuid = localMemberUuid;
             this.logger = logger;
             this.node = node;
             this.nodeEngine = nodeEngine;
@@ -792,6 +793,7 @@ public abstract class Invocation implements OperationResponseHandler {
             this.retryCount = retryCount;
             this.serializationService = serializationService;
             this.thisAddress = thisAddress;
+            this.outboundOperationHandler = outboundOperationHandler;
         }
     }
 }

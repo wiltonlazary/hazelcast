@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,16 @@ package com.hazelcast.map.impl;
 
 import com.hazelcast.concurrent.lock.LockService;
 import com.hazelcast.config.MapConfig;
+import com.hazelcast.internal.serialization.InternalSerializationService;
+import com.hazelcast.map.impl.query.IndexProvider;
 import com.hazelcast.map.impl.recordstore.RecordStore;
-import com.hazelcast.spi.DefaultObjectNamespace;
+import com.hazelcast.query.impl.Indexes;
+import com.hazelcast.query.impl.getters.Extractors;
+import com.hazelcast.spi.DistributedObjectNamespace;
 import com.hazelcast.spi.ExecutionService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.OperationService;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
@@ -31,6 +36,7 @@ import com.hazelcast.util.ConstructorFunction;
 import com.hazelcast.util.ContextMutexFactory;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -41,6 +47,9 @@ public class PartitionContainer {
     final MapService mapService;
     final int partitionId;
     final ConcurrentMap<String, RecordStore> maps = new ConcurrentHashMap<String, RecordStore>(1000);
+
+    final ConcurrentMap<String, Indexes> indexes = new ConcurrentHashMap<String, Indexes>(10);
+
     final ConstructorFunction<String, RecordStore> recordStoreConstructor
             = new ConstructorFunction<String, RecordStore>() {
 
@@ -109,6 +118,13 @@ public class PartitionContainer {
         keyLoader.setMaxSize(getMaxSizePerNode(mapConfig.getMaxSizeConfig()));
         keyLoader.setHasBackup(mapConfig.getTotalBackupCount() > 0);
         keyLoader.setMapOperationProvider(serviceContext.getMapOperationProvider(name));
+
+        InternalSerializationService ss = (InternalSerializationService) nodeEngine.getSerializationService();
+        IndexProvider indexProvider = serviceContext.getIndexProvider(mapConfig);
+        if (!mapContainer.isGlobalIndexEnabled()) {
+            Indexes indexesForMap = new Indexes(ss, indexProvider, mapContainer.getExtractors(), false);
+            indexes.putIfAbsent(name, indexesForMap);
+        }
         RecordStore recordStore = serviceContext.createRecordStore(mapContainer, partitionId, keyLoader);
         recordStore.init();
         return recordStore;
@@ -118,8 +134,28 @@ public class PartitionContainer {
         return maps;
     }
 
+    public ConcurrentMap<String, Indexes> getIndexes() {
+        return indexes;
+    }
+
     public Collection<RecordStore> getAllRecordStores() {
         return maps.values();
+    }
+
+    public Collection<ServiceNamespace> getAllNamespaces(int replicaIndex) {
+        Collection<ServiceNamespace> namespaces = new HashSet<ServiceNamespace>();
+
+        for (RecordStore recordStore : maps.values()) {
+            MapContainer mapContainer = recordStore.getMapContainer();
+            MapConfig mapConfig = mapContainer.getMapConfig();
+            if (mapConfig.getTotalBackupCount() < replicaIndex) {
+                continue;
+            }
+
+            namespaces.add(mapContainer.getObjectNamespace());
+        }
+
+        return namespaces;
     }
 
     public int getPartitionId() {
@@ -151,6 +187,7 @@ public class PartitionContainer {
         String name = mapContainer.getName();
         RecordStore recordStore = maps.remove(name);
         if (recordStore != null) {
+            // this call also clears and disposes Indexes for that partition
             recordStore.destroy();
         } else {
             // It can be that, map is used only for locking,
@@ -159,6 +196,8 @@ public class PartitionContainer {
             // this IMap partition.
             clearLockStore(name);
         }
+        // getting rid of Indexes object in case it has been initialized
+        indexes.remove(name);
 
         MapServiceContext mapServiceContext = mapService.getMapServiceContext();
         if (mapServiceContext.removeMapContainer(mapContainer)) {
@@ -171,7 +210,7 @@ public class PartitionContainer {
         final NodeEngine nodeEngine = mapService.getMapServiceContext().getNodeEngine();
         final LockService lockService = nodeEngine.getSharedService(LockService.SERVICE_NAME);
         if (lockService != null) {
-            final DefaultObjectNamespace namespace = new DefaultObjectNamespace(MapService.SERVICE_NAME, name);
+            final DistributedObjectNamespace namespace = new DistributedObjectNamespace(MapService.SERVICE_NAME, name);
             lockService.clearLockStore(partitionId, namespace);
         }
     }
@@ -179,6 +218,8 @@ public class PartitionContainer {
     public void clear(boolean onShutdown) {
         for (RecordStore recordStore : maps.values()) {
             recordStore.clearPartition(onShutdown);
+            mapService.getMapServiceContext().getEventJournal().destroy(
+                    recordStore.getMapContainer().getObjectNamespace(), partitionId);
         }
         maps.clear();
     }
@@ -205,6 +246,35 @@ public class PartitionContainer {
 
     public void setLastCleanupTimeCopy(long lastCleanupTimeCopy) {
         this.lastCleanupTimeCopy = lastCleanupTimeCopy;
+    }
+
+    // -------------------------------------------------------------------------------------------------------------
+    // IMPORTANT: never use directly! use MapContainer.getIndex() instead.
+    // There are cases where a global index is used. In this case, the global-index is stored in the MapContainer.
+    // By using this method in the context of global index an exception will be thrown.
+    // -------------------------------------------------------------------------------------------------------------
+    Indexes getIndexes(String name) {
+
+        Indexes ixs = indexes.get(name);
+        if (ixs == null) {
+            MapServiceContext mapServiceContext = mapService.getMapServiceContext();
+            MapContainer mapContainer = mapServiceContext.getMapContainer(name);
+            if (mapContainer.isGlobalIndexEnabled()) {
+                throw new IllegalStateException("Can't use a partitioned-index in the context of a global-index.");
+            }
+
+            InternalSerializationService ss = (InternalSerializationService)
+                    mapServiceContext.getNodeEngine().getSerializationService();
+            Extractors extractors = mapServiceContext.getMapContainer(name).getExtractors();
+            IndexProvider indexProvider = mapServiceContext.getIndexProvider(mapContainer.getMapConfig());
+            Indexes indexesForMap = new Indexes(ss, indexProvider, extractors, false);
+            ixs = indexes.putIfAbsent(name, indexesForMap);
+            if (ixs == null) {
+                ixs = indexesForMap;
+            }
+
+        }
+        return ixs;
     }
 
 }

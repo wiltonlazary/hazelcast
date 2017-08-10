@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import com.hazelcast.core.IFunction;
 import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.core.LifecycleListener;
 import com.hazelcast.core.LifecycleService;
+import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.EventRegistration;
 import com.hazelcast.spi.ExecutionService;
 import com.hazelcast.spi.NodeEngine;
@@ -32,10 +33,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.hazelcast.core.LifecycleEvent.LifecycleState.SHUTTING_DOWN;
 import static com.hazelcast.util.ConcurrencyUtil.getOrPutIfAbsent;
@@ -69,6 +68,7 @@ public class BatchInvalidator extends Invalidator {
     private final int batchSize;
     private final int batchFrequencySeconds;
     private final String nodeShutdownListenerId;
+    private final AtomicBoolean runningBackgroundTask = new AtomicBoolean(false);
 
     public BatchInvalidator(String serviceName, int batchSize, int batchFrequencySeconds,
                             IFunction<EventRegistration, Boolean> eventFilter, NodeEngine nodeEngine) {
@@ -78,7 +78,12 @@ public class BatchInvalidator extends Invalidator {
         this.batchFrequencySeconds = batchFrequencySeconds;
         this.nodeShutdownListenerId = registerNodeShutdownListener();
         this.invalidationExecutorName = serviceName + getClass();
-        startBackgroundBatchProcessor();
+    }
+
+    @Override
+    protected Invalidation newInvalidation(Data key, String dataStructureName, String sourceUuid, int partitionId) {
+        checkBackgroundTaskIsRunning();
+        return super.newInvalidation(key, dataStructureName, sourceUuid, partitionId);
     }
 
     @Override
@@ -113,7 +118,7 @@ public class BatchInvalidator extends Invalidator {
         sendInvalidations(dataStructureName, invalidations);
     }
 
-    private List<Invalidation> pollInvalidations(InvalidationQueue invalidationQueue) {
+    private List<Invalidation> pollInvalidations(InvalidationQueue<Invalidation> invalidationQueue) {
         final int size = invalidationQueue.size();
 
         List<Invalidation> invalidations = new ArrayList<Invalidation>(size);
@@ -167,11 +172,17 @@ public class BatchInvalidator extends Invalidator {
         });
     }
 
-    private void startBackgroundBatchProcessor() {
-        ExecutionService executionService = nodeEngine.getExecutionService();
-        executionService.scheduleWithRepetition(invalidationExecutorName,
-                new BatchInvalidationEventSender(), batchFrequencySeconds, batchFrequencySeconds, SECONDS);
+    private void checkBackgroundTaskIsRunning() {
+        if (runningBackgroundTask.get()) {
+            // return if already started
+            return;
+        }
 
+        if (runningBackgroundTask.compareAndSet(false, true)) {
+            ExecutionService executionService = nodeEngine.getExecutionService();
+            executionService.scheduleWithRepetition(invalidationExecutorName,
+                    new BatchInvalidationEventSender(), batchFrequencySeconds, batchFrequencySeconds, SECONDS);
+        }
     }
 
     /**
@@ -196,10 +207,8 @@ public class BatchInvalidator extends Invalidator {
 
     @Override
     public void destroy(String dataStructureName, String sourceUuid) {
-        InvalidationQueue invalidationQueue = invalidationQueues.remove(dataStructureName);
-        if (invalidationQueue != null) {
-            invalidateInternal(newClearInvalidation(dataStructureName, sourceUuid), dataStructureName.hashCode());
-        }
+        invalidationQueues.remove(dataStructureName);
+        super.destroy(dataStructureName, sourceUuid);
     }
 
     @Override
@@ -212,82 +221,14 @@ public class BatchInvalidator extends Invalidator {
         lifecycleService.removeLifecycleListener(nodeShutdownListenerId);
 
         invalidationQueues.clear();
+
+        super.shutdown();
     }
 
     @Override
     public void reset() {
         invalidationQueues.clear();
-    }
 
-    public static class InvalidationQueue extends ConcurrentLinkedQueue<Invalidation> {
-        private final AtomicInteger elementCount = new AtomicInteger(0);
-        private final AtomicBoolean flushingInProgress = new AtomicBoolean(false);
-
-        @Override
-        public int size() {
-            return elementCount.get();
-        }
-
-        @Override
-        public boolean offer(Invalidation invalidation) {
-            boolean offered = super.offer(invalidation);
-            if (offered) {
-                elementCount.incrementAndGet();
-            }
-            return offered;
-        }
-
-        @Override
-        public Invalidation poll() {
-            Invalidation invalidation = super.poll();
-            if (invalidation != null) {
-                elementCount.decrementAndGet();
-            }
-            return invalidation;
-        }
-
-        public boolean tryAcquire() {
-            return flushingInProgress.compareAndSet(false, true);
-        }
-
-        public void release() {
-            flushingInProgress.set(false);
-        }
-
-        @Override
-        public boolean add(Invalidation invalidation) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Invalidation remove() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public boolean remove(Object o) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public boolean addAll(Collection<? extends Invalidation> c) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public boolean removeAll(Collection<?> c) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public boolean retainAll(Collection<?> c) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void clear() {
-            throw new UnsupportedOperationException();
-        }
-
+        super.reset();
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,12 +23,12 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.concurrent.ConcurrentMap;
 
 public class DuplicateDetectingMultiResult extends AbstractSet<QueryableEntry> implements MultiResultSet {
     private Map<Data, QueryableEntry> records;
 
-    public void addResultSet(ConcurrentMap<Data, QueryableEntry> resultSet) {
+    @Override
+    public void addResultSet(Map<Data, QueryableEntry> resultSet) {
         if (records == null) {
             records = new HashMap<Data, QueryableEntry>(resultSet.size());
         }

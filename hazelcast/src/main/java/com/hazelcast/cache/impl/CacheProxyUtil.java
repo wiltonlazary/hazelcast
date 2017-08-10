@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,8 +36,9 @@ public final class CacheProxyUtil {
 
     public static final int AWAIT_COMPLETION_TIMEOUT_SECONDS = 60;
 
-    private static final String NULL_KEY_IS_NOT_ALLOWED = "Null key is not allowed!";
+    public static final String NULL_KEY_IS_NOT_ALLOWED = "Null key is not allowed!";
     private static final String NULL_VALUE_IS_NOT_ALLOWED = "Null value is not allowed!";
+    private static final String NULL_SET_IS_NOT_ALLOWED = "Null set is not allowed!";
 
     private CacheProxyUtil() {
     }
@@ -105,15 +106,15 @@ public final class CacheProxyUtil {
     }
 
     /**
-     * Validates that none of the keys are null in set.
+     * Validates supplied set is not null.
      *
      * @param keys set of keys to be validated.
      * @param <K>  the type of key.
-     * @throws java.lang.NullPointerException if provided key set contains a null key.
+     * @throws java.lang.NullPointerException if provided key set is null.
      */
     public static <K> void validateNotNull(Set<? extends K> keys) {
-        if (keys == null || keys.contains(null)) {
-            throw new NullPointerException(NULL_KEY_IS_NOT_ALLOWED);
+        if (keys == null) {
+            throw new NullPointerException(NULL_SET_IS_NOT_ALLOWED);
         }
     }
 

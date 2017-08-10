@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,26 +43,26 @@ public interface ClientEndpoint extends Client {
     /**
      * Adds a remove callable to be called when endpoint is destroyed to clean related listener
      * Following line will be called when endpoint destroyed :
-     * eventService.deregisterListener(service, topic, id);
+     * eventService.deregisterListener(service, topic, ID);
      * Note: removeDestroyAction should be called when there is no need to destroy action anymore.
      *
      * @param service name of the related service of listener
      * @param topic   topic name of listener(mostly distributed object name)
-     * @param id      registration id of remove action
+     * @param id      registration ID of remove action
      */
-    void   addListenerDestroyAction(String service, String topic, String id);
+    void addListenerDestroyAction(String service, String topic, String id);
 
     /**
      * Adds a remove callable to be called when endpoint is destroyed
      * Note: removeDestroyAction should be called when there is no need to destroy action anymore.
      *
-     * @param registrationId registration id of destroy action
+     * @param registrationId registration ID of destroy action
      * @param removeAction   callable that will be called when endpoint is destroyed
      */
     void addDestroyAction(String registrationId, Callable<Boolean> removeAction);
 
     /**
-     * @param id registration id of destroy action
+     * @param id registration ID of destroy action
      * @return true if remove is successful
      */
     boolean removeDestroyAction(String id);
@@ -90,28 +90,30 @@ public interface ClientEndpoint extends Client {
 
     void authenticated(ClientPrincipal principal);
 
-    ClientPrincipal getPrincipal();
-
     /**
      * @return true if endpoint is authenticated with valid security credentials, returns false otherwise
      */
     boolean isAuthenticated();
 
     /**
-     *
-     * @return The client version as calculated by {@link com.hazelcast.instance.BuildInfo}
+     * @return the client version as calculated by {@link com.hazelcast.instance.BuildInfo}
      */
     int getClientVersion();
 
     /**
-     *
-     * @param version The version string as obtained from the environment
+     * @param version the version string as obtained from the environment
      */
     void setClientVersion(String version);
 
     /**
+     * Updates to the latest client statistics.
      *
-     * @return true if any listeners are registered or transactions exist for the endpoint
+     * @param stats the latest statistics retrieved from the client
      */
-    boolean resourcesExist();
+    void setClientStatistics(String stats);
+
+    /**
+     * @return statistics string for the client
+     */
+    String getClientStatistics();
 }

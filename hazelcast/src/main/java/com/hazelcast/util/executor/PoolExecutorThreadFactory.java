@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.hazelcast.util.executor;
 
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.util.EmptyStatement;
 
 import java.util.Queue;
@@ -30,14 +29,9 @@ public final class PoolExecutorThreadFactory extends AbstractExecutorThreadFacto
     // to reuse previous thread IDs
     private final Queue<Integer> idQ = new LinkedBlockingQueue<Integer>(1000);
 
-    public PoolExecutorThreadFactory(ThreadGroup threadGroup, String threadNamePrefix, ClassLoader classLoader) {
-        super(threadGroup, classLoader);
+    public PoolExecutorThreadFactory(String threadNamePrefix, ClassLoader classLoader) {
+        super(classLoader);
         this.threadNamePrefix = threadNamePrefix;
-    }
-
-    public PoolExecutorThreadFactory(HazelcastThreadGroup threadGroup, String threadNamePrefix) {
-        super(threadGroup.getInternalThreadGroup(), threadGroup.getClassLoader());
-        this.threadNamePrefix = threadGroup.getThreadPoolNamePrefix(threadNamePrefix);
     }
 
     @Override
@@ -55,7 +49,7 @@ public final class PoolExecutorThreadFactory extends AbstractExecutorThreadFacto
         protected final int id;
 
         public ManagedThread(Runnable target, String name, int id) {
-            super(threadGroup, target, name);
+            super(target, name);
             this.id = id;
         }
 

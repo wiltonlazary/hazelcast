@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.protocol.compatibility;
 
 import com.hazelcast.cache.impl.CacheEventData;
@@ -15,6 +31,7 @@ import com.hazelcast.map.impl.querycache.event.QueryCacheEventData;
 import com.hazelcast.mapreduce.JobPartitionState;
 import com.hazelcast.mapreduce.impl.task.JobPartitionStateImpl;
 import com.hazelcast.nio.Address;
+import com.hazelcast.scheduledexecutor.ScheduledTaskHandler;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.transaction.impl.xa.SerializableXID;
 import com.hazelcast.client.impl.protocol.util.SafeBuffer;
@@ -5186,7 +5203,7 @@ public class ServerCompatibilityTest_1_1 {
      int length = inputStream.readInt();
         byte[] bytes = new byte[length];
         inputStream.read(bytes);
-    EnterpriseMapPublisherCreateWithValueCodec.RequestParameters params = EnterpriseMapPublisherCreateWithValueCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
+    ContinuousQueryPublisherCreateWithValueCodec.RequestParameters params = ContinuousQueryPublisherCreateWithValueCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
                 assertTrue(isEqual(aString, params.mapName));
                 assertTrue(isEqual(aString, params.cacheName));
                 assertTrue(isEqual(aData, params.predicate));
@@ -5197,7 +5214,7 @@ public class ServerCompatibilityTest_1_1 {
                 assertTrue(isEqual(aBoolean, params.coalesce));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapPublisherCreateWithValueCodec.encodeResponse(    aListOfEntry   );
+    ClientMessage clientMessage = ContinuousQueryPublisherCreateWithValueCodec.encodeResponse(    aListOfEntry   );
     int length = inputStream.readInt();
     byte[] bytes = new byte[length];
     inputStream.read(bytes);
@@ -5207,7 +5224,7 @@ public class ServerCompatibilityTest_1_1 {
      int length = inputStream.readInt();
         byte[] bytes = new byte[length];
         inputStream.read(bytes);
-    EnterpriseMapPublisherCreateCodec.RequestParameters params = EnterpriseMapPublisherCreateCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
+    ContinuousQueryPublisherCreateCodec.RequestParameters params = ContinuousQueryPublisherCreateCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
                 assertTrue(isEqual(aString, params.mapName));
                 assertTrue(isEqual(aString, params.cacheName));
                 assertTrue(isEqual(aData, params.predicate));
@@ -5218,7 +5235,7 @@ public class ServerCompatibilityTest_1_1 {
                 assertTrue(isEqual(aBoolean, params.coalesce));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapPublisherCreateCodec.encodeResponse(    datas   );
+    ClientMessage clientMessage = ContinuousQueryPublisherCreateCodec.encodeResponse(    datas   );
     int length = inputStream.readInt();
     byte[] bytes = new byte[length];
     inputStream.read(bytes);
@@ -5228,12 +5245,12 @@ public class ServerCompatibilityTest_1_1 {
      int length = inputStream.readInt();
         byte[] bytes = new byte[length];
         inputStream.read(bytes);
-    EnterpriseMapMadePublishableCodec.RequestParameters params = EnterpriseMapMadePublishableCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
+    ContinuousQueryMadePublishableCodec.RequestParameters params = ContinuousQueryMadePublishableCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
                 assertTrue(isEqual(aString, params.mapName));
                 assertTrue(isEqual(aString, params.cacheName));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapMadePublishableCodec.encodeResponse(    aBoolean   );
+    ClientMessage clientMessage = ContinuousQueryMadePublishableCodec.encodeResponse(    aBoolean   );
     int length = inputStream.readInt();
     byte[] bytes = new byte[length];
     inputStream.read(bytes);
@@ -5243,12 +5260,12 @@ public class ServerCompatibilityTest_1_1 {
      int length = inputStream.readInt();
         byte[] bytes = new byte[length];
         inputStream.read(bytes);
-    EnterpriseMapAddListenerCodec.RequestParameters params = EnterpriseMapAddListenerCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
+    ContinuousQueryAddListenerCodec.RequestParameters params = ContinuousQueryAddListenerCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
                 assertTrue(isEqual(aString, params.listenerName));
                 assertTrue(isEqual(aBoolean, params.localOnly));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeResponse(    aString   );
+    ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeResponse(    aString   );
     int length = inputStream.readInt();
     byte[] bytes = new byte[length];
     inputStream.read(bytes);
@@ -5256,7 +5273,7 @@ public class ServerCompatibilityTest_1_1 {
 }
 {
     {
-        ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeQueryCacheSingleEvent( aQueryCacheEventData   );
+        ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeQueryCacheSingleEvent( aQueryCacheEventData   );
         int length = inputStream.readInt();
 
         byte[] bytes = new byte[length];
@@ -5264,7 +5281,7 @@ public class ServerCompatibilityTest_1_1 {
         assertTrue(isEqual(Arrays.copyOf(clientMessage.buffer().byteArray(), clientMessage.getFrameLength()), bytes));
      }
     {
-        ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeQueryCacheBatchEvent( queryCacheEventDatas ,  aString ,  anInt   );
+        ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeQueryCacheBatchEvent( queryCacheEventDatas ,  aString ,  anInt   );
         int length = inputStream.readInt();
 
         byte[] bytes = new byte[length];
@@ -5276,13 +5293,13 @@ public class ServerCompatibilityTest_1_1 {
      int length = inputStream.readInt();
         byte[] bytes = new byte[length];
         inputStream.read(bytes);
-    EnterpriseMapSetReadCursorCodec.RequestParameters params = EnterpriseMapSetReadCursorCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
+    ContinuousQuerySetReadCursorCodec.RequestParameters params = ContinuousQuerySetReadCursorCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
                 assertTrue(isEqual(aString, params.mapName));
                 assertTrue(isEqual(aString, params.cacheName));
                 assertTrue(isEqual(aLong, params.sequence));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapSetReadCursorCodec.encodeResponse(    aBoolean   );
+    ClientMessage clientMessage = ContinuousQuerySetReadCursorCodec.encodeResponse(    aBoolean   );
     int length = inputStream.readInt();
     byte[] bytes = new byte[length];
     inputStream.read(bytes);
@@ -5292,12 +5309,12 @@ public class ServerCompatibilityTest_1_1 {
      int length = inputStream.readInt();
         byte[] bytes = new byte[length];
         inputStream.read(bytes);
-    EnterpriseMapDestroyCacheCodec.RequestParameters params = EnterpriseMapDestroyCacheCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
+    ContinuousQueryDestroyCacheCodec.RequestParameters params = ContinuousQueryDestroyCacheCodec.decodeRequest(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
                 assertTrue(isEqual(aString, params.mapName));
                 assertTrue(isEqual(aString, params.cacheName));
 }
 {
-    ClientMessage clientMessage = EnterpriseMapDestroyCacheCodec.encodeResponse(    aBoolean   );
+    ClientMessage clientMessage = ContinuousQueryDestroyCacheCodec.encodeResponse(    aBoolean   );
     int length = inputStream.readInt();
     byte[] bytes = new byte[length];
     inputStream.read(bytes);
@@ -5432,11 +5449,16 @@ public class ServerCompatibilityTest_1_1 {
                 assertTrue(isEqual(aData, params.filter));
 }
 {
-    ClientMessage clientMessage = RingbufferReadManyCodec.encodeResponse(    anInt ,    datas   );
+    ClientMessage clientMessage = RingbufferReadManyCodec.encodeResponse(    anInt ,    datas ,    arrLongs   );
     int length = inputStream.readInt();
-    byte[] bytes = new byte[length];
+    // Since the test is generated for protocol version (1.1) which is earlier than latest change in the message
+    // (version 1.5), only the bytes after frame length fields are compared
+    int frameLength = clientMessage.getFrameLength();
+    assertTrue(frameLength >= length);
+    inputStream.skipBytes(FRAME_LEN_FIELD_SIZE);
+    byte[] bytes = new byte[length - FRAME_LEN_FIELD_SIZE];
     inputStream.read(bytes);
-    assertTrue(isEqual(Arrays.copyOf(clientMessage.buffer().byteArray(), clientMessage.getFrameLength()), bytes));
+    assertTrue(isEqual(Arrays.copyOfRange(clientMessage.buffer().byteArray(), FRAME_LEN_FIELD_SIZE, length), bytes));
 }
 {
      int length = inputStream.readInt();

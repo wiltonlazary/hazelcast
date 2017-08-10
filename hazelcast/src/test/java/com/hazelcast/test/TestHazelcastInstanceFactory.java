@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,6 +47,8 @@ import static java.util.Collections.unmodifiableCollection;
 
 public class TestHazelcastInstanceFactory {
 
+    protected final TestNodeRegistry registry;
+
     private static final AtomicInteger PORTS = new AtomicInteger(5000);
 
     private final ConcurrentMap<Integer, Address> addressMap = new ConcurrentHashMap<Integer, Address>();
@@ -54,7 +56,6 @@ public class TestHazelcastInstanceFactory {
     private final AtomicInteger nodeIndex = new AtomicInteger();
 
     private final int count;
-    private final TestNodeRegistry registry;
 
     public TestHazelcastInstanceFactory() {
         this(0);
@@ -141,14 +142,14 @@ public class TestHazelcastInstanceFactory {
     /**
      * Creates a new test Hazelcast instance which is only allowed to connect to specified addresses:
      * <ul>
-     *     <li>{@code blockedAddresses} are blacklisted in its {@code MockJoiner}</li>
-     *     <li>connections to {@code blockedAddresses} are blocked by its {@code FirewallingConnectionManager}</li>
+     * <li>{@code blockedAddresses} are blacklisted in its {@code MockJoiner}</li>
+     * <li>connections to {@code blockedAddresses} are blocked by its {@code FirewallingConnectionManager}</li>
      * </ul>
      * This is handy in split-brain tests, when a new instance should be started on a specific network partition
      * of the split brain.
      *
-     * @param config            the config to use; use {@code null} to get the default config
-     * @param blockedAddresses  addresses to which the new instance is allowed to communicate
+     * @param config           the config to use; use {@code null} to get the default config
+     * @param blockedAddresses addresses to which the new instance is allowed to communicate
      */
     public HazelcastInstance newHazelcastInstance(Config config, Address[] blockedAddresses) {
         return newHazelcastInstance(null, config, blockedAddresses);
@@ -157,15 +158,15 @@ public class TestHazelcastInstanceFactory {
     /**
      * Creates a new test Hazelcast instance which is only allowed to connect to specified addresses:
      * <ul>
-     *     <li>{@code blockedAddresses} are blacklisted in its {@code MockJoiner}</li>
-     *     <li>connections to {@code blockedAddresses} are blocked by its {@code FirewallingConnectionManager}</li>
+     * <li>{@code blockedAddresses} are blacklisted in its {@code MockJoiner}</li>
+     * <li>connections to {@code blockedAddresses} are blocked by its {@code FirewallingConnectionManager}</li>
      * </ul>
      * This is handy in split-brain tests, when a new instance should be started on a specific network partition
      * of the split brain.
      *
-     * @param address           the address to use as Member's address; if {@code null}, then uses the next address
-     * @param config            the config to use; use {@code null} to get the default config
-     * @param blockedAddresses  addresses to which the new instance is allowed to communicate
+     * @param address          the address to use as Member's address; if {@code null}, then uses the next address
+     * @param config           the config to use; use {@code null} to get the default config
+     * @param blockedAddresses addresses to which the new instance is allowed to communicate
      */
     public HazelcastInstance newHazelcastInstance(Address address, Config config, Address[] blockedAddresses) {
         final String instanceName = config != null ? config.getInstanceName() : null;
@@ -321,5 +322,9 @@ public class TestHazelcastInstanceFactory {
         config.setProperty(GroupProperty.PARTITION_BACKUP_SYNC_INTERVAL.getName(), "1");
         config.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
         return config;
+    }
+
+    public int getCount() {
+        return count;
     }
 }

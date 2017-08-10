@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import static com.hazelcast.util.ExceptionUtil.sneakyThrow;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 
 @SuppressWarnings({"checkstyle:methodcount"})
@@ -155,14 +156,22 @@ public final class ScheduledFutureProxy<V>
     @Override
     public V get()
             throws InterruptedException, ExecutionException {
-        return this.get0().join();
+        try {
+            return this.get0().get();
+        } catch (ScheduledTaskResult.ExecutionExceptionDecorator ex) {
+            return sneakyThrow(ex.getCause());
+        }
     }
 
     @Override
     public V get(long timeout, TimeUnit unit)
             throws InterruptedException, ExecutionException, TimeoutException {
         checkNotNull(unit, "Unit is null");
-        return this.get0().get(timeout, unit);
+        try {
+            return this.get0().get(timeout, unit);
+        } catch (ScheduledTaskResult.ExecutionExceptionDecorator ex) {
+            return sneakyThrow(ex.getCause());
+        }
     }
 
     @Override

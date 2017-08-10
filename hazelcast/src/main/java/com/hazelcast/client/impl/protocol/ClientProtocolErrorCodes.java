@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -105,8 +105,16 @@ public final class ClientProtocolErrorCodes {
     public static final int STALE_TASK_ID = 80;
     public static final int DUPLICATE_TASK = 81;
     public static final int STALE_TASK = 82;
-    public static final int CANCELLED_TASK = 83;
-    public static final int REJECTED_TASK = 84;
+    public static final int LOCAL_MEMBER_RESET = 83;
+
+    // These exception codes are reserved to by used by hazelcast-jet project
+    public static final int JET_EXCEPTIONS_RANGE_START = 500;
+    public static final int JET_EXCEPTIONS_RANGE_END = 600;
+
+    /**
+     * These codes onwards are reserved to be used by the end-user
+     */
+    public static final int USER_EXCEPTIONS_RANGE_START = 1000;
 
     private ClientProtocolErrorCodes() {
     }

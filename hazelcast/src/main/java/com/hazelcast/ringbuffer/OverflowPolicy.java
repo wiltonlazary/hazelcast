@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,19 +56,19 @@ public enum OverflowPolicy {
     }
 
     /**
-     * Gets the id for the given OverflowPolicy.
+     * Gets the ID for the given OverflowPolicy.
      *
-     * This reason this id is used instead of an the ordinal value is that the ordinal value is more prone to changes due to
+     * This reason this ID is used instead of an the ordinal value is that the ordinal value is more prone to changes due to
      * reordering.
      *
-     * @return the id.
+     * @return the ID
      */
     public int getId() {
         return id;
     }
 
     /**
-     * Returns the OverflowPolicy for the given id.
+     * Returns the OverflowPolicy for the given ID.
      *
      * @return the OverflowPolicy found or null if not found
      */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,20 +69,20 @@ public class ClientLockTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testLockTtl() throws Exception {
+    public void testTryLockShouldSucceedWhenLockTTLisFinished() throws Exception {
         factory.newHazelcastInstance();
         HazelcastInstance hz = factory.newHazelcastClient();
         final ILock lock = hz.getLock(randomName());
+        final int lockTimeout = 3;
 
-        lock.lock(3, TimeUnit.SECONDS);
-        final CountDownLatch latch = new CountDownLatch(2);
+        lock.lock(lockTimeout, TimeUnit.SECONDS);
+
+        final CountDownLatch latch = new CountDownLatch(1);
         new Thread() {
             public void run() {
-                if (!lock.tryLock()) {
-                    latch.countDown();
-                }
                 try {
-                    if (lock.tryLock(5, TimeUnit.SECONDS)) {
+                    // Allow half the ASSERT_TRUE_EVENTUALLY_TIMEOUT for any possible gc and other pauses
+                    if (lock.tryLock(lockTimeout + ASSERT_TRUE_EVENTUALLY_TIMEOUT / 2, TimeUnit.SECONDS)) {
                         latch.countDown();
                     }
                 } catch (InterruptedException e) {
@@ -90,8 +90,8 @@ public class ClientLockTest extends HazelcastTestSupport {
                 }
             }
         }.start();
-        assertTrue(latch.await(10, TimeUnit.SECONDS));
-        lock.forceUnlock();
+
+        assertOpenEventually(latch);
     }
 
     @Test

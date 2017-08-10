@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,35 +20,37 @@ package com.hazelcast.internal.nearcache.impl.invalidation;
 import com.hazelcast.internal.nearcache.NearCacheRecord;
 
 /**
- * Default implementation of {@link StaleReadDetector}
+ * Default implementation of {@link StaleReadDetector}.
  */
 public class StaleReadDetectorImpl implements StaleReadDetector {
 
     private final RepairingHandler repairingHandler;
     private final MinimalPartitionService partitionService;
 
-    public StaleReadDetectorImpl(RepairingHandler repairingHandler, MinimalPartitionService partitionService) {
+    StaleReadDetectorImpl(RepairingHandler repairingHandler, MinimalPartitionService partitionService) {
         this.repairingHandler = repairingHandler;
         this.partitionService = partitionService;
     }
 
     @Override
     public boolean isStaleRead(Object key, NearCacheRecord record) {
-        MetaDataContainer latestMetaData = repairingHandler.getMetaDataContainer(getPartition(key));
-
-        if (!record.hasSameUuid(latestMetaData.getUuid())) {
-            return true;
-        }
-
-        return record.getInvalidationSequence() < latestMetaData.getStaleSequence();
+        MetaDataContainer latestMetaData = repairingHandler.getMetaDataContainer(record.getPartitionId());
+        return !record.hasSameUuid(latestMetaData.getUuid())
+                || record.getInvalidationSequence() < latestMetaData.getStaleSequence();
     }
 
     @Override
-    public MetaDataContainer getMetaDataContainer(Object key) {
-        return repairingHandler.getMetaDataContainer(getPartition(key));
+    public int getPartitionId(Object key) {
+        return partitionService.getPartitionId(key);
     }
 
-    private int getPartition(Object key) {
-        return partitionService.getPartitionId(key);
+    @Override
+    public MetaDataContainer getMetaDataContainer(int partitionId) {
+        return repairingHandler.getMetaDataContainer(partitionId);
+    }
+
+    @Override
+    public String toString() {
+        return "Default StaleReadDetectorImpl";
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,13 +56,14 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
     private ManagedExecutorServiceMBean clientExecutorMBean;
     private ManagedExecutorServiceMBean queryExecutorMBean;
     private ManagedExecutorServiceMBean ioExecutorMBean;
+    private ManagedExecutorServiceMBean offloadableExecutorMBean;
     private PartitionServiceMBean partitionServiceMBean;
 
     protected InstanceMBean(HazelcastInstanceImpl hazelcastInstance, ManagementService managementService) {
         super(hazelcastInstance, managementService);
         createProperties(hazelcastInstance);
-        config = hazelcastInstance.getConfig();
-        cluster = hazelcastInstance.getCluster();
+        this.config = hazelcastInstance.getConfig();
+        this.cluster = hazelcastInstance.getCluster();
         Node node = hazelcastInstance.node;
         ExecutionService executionService = node.nodeEngine.getExecutionService();
         InternalOperationService operationService = node.nodeEngine.getOperationService();
@@ -72,25 +73,27 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
 
     private void createMBeans(HazelcastInstanceImpl hazelcastInstance, ManagementService managementService, Node node,
                               ExecutionService executionService, InternalOperationService operationService) {
-        nodeMBean = new NodeMBean(hazelcastInstance, node, managementService);
-        connectionManagerMBean = new ConnectionManagerMBean(hazelcastInstance, node.connectionManager, service);
-        eventServiceMBean = new EventServiceMBean(hazelcastInstance, node.nodeEngine.getEventService(), service);
-        operationServiceMBean = new OperationServiceMBean(hazelcastInstance, operationService, service);
-        proxyServiceMBean = new ProxyServiceMBean(hazelcastInstance, node.nodeEngine.getProxyService(), service);
-        partitionServiceMBean = new PartitionServiceMBean(hazelcastInstance, node.partitionService, service);
-        clientEngineMBean = new ClientEngineMBean(hazelcastInstance, node.clientEngine, service);
-        systemExecutorMBean = new ManagedExecutorServiceMBean(
+        this.nodeMBean = new NodeMBean(hazelcastInstance, node, managementService);
+        this.connectionManagerMBean = new ConnectionManagerMBean(hazelcastInstance, node.connectionManager, service);
+        this.eventServiceMBean = new EventServiceMBean(hazelcastInstance, node.nodeEngine.getEventService(), service);
+        this.operationServiceMBean = new OperationServiceMBean(hazelcastInstance, operationService, service);
+        this.proxyServiceMBean = new ProxyServiceMBean(hazelcastInstance, node.nodeEngine.getProxyService(), service);
+        this.partitionServiceMBean = new PartitionServiceMBean(hazelcastInstance, node.partitionService, service);
+        this.clientEngineMBean = new ClientEngineMBean(hazelcastInstance, node.clientEngine, service);
+        this.systemExecutorMBean = new ManagedExecutorServiceMBean(
                 hazelcastInstance, executionService.getExecutor(ExecutionService.SYSTEM_EXECUTOR), service);
-        asyncExecutorMBean = new ManagedExecutorServiceMBean(
+        this.asyncExecutorMBean = new ManagedExecutorServiceMBean(
                 hazelcastInstance, executionService.getExecutor(ExecutionService.ASYNC_EXECUTOR), service);
-        scheduledExecutorMBean = new ManagedExecutorServiceMBean(
+        this.scheduledExecutorMBean = new ManagedExecutorServiceMBean(
                 hazelcastInstance, executionService.getExecutor(ExecutionService.SCHEDULED_EXECUTOR), service);
-        clientExecutorMBean = new ManagedExecutorServiceMBean(
+        this.clientExecutorMBean = new ManagedExecutorServiceMBean(
                 hazelcastInstance, executionService.getExecutor(ExecutionService.CLIENT_EXECUTOR), service);
-        queryExecutorMBean = new ManagedExecutorServiceMBean(
+        this.queryExecutorMBean = new ManagedExecutorServiceMBean(
                 hazelcastInstance, executionService.getExecutor(ExecutionService.QUERY_EXECUTOR), service);
-        ioExecutorMBean = new ManagedExecutorServiceMBean(
+        this.ioExecutorMBean = new ManagedExecutorServiceMBean(
                 hazelcastInstance, executionService.getExecutor(ExecutionService.IO_EXECUTOR), service);
+        this.offloadableExecutorMBean = new ManagedExecutorServiceMBean(
+                hazelcastInstance, executionService.getExecutor(ExecutionService.OFFLOADABLE_EXECUTOR), service);
     }
 
     private void registerMBeans() {
@@ -107,6 +110,7 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
         register(clientExecutorMBean);
         register(queryExecutorMBean);
         register(ioExecutorMBean);
+        register(offloadableExecutorMBean);
     }
 
     private void createProperties(HazelcastInstanceImpl hazelcastInstance) {
@@ -143,6 +147,10 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
 
     public ManagedExecutorServiceMBean getIoExecutorMBean() {
         return ioExecutorMBean;
+    }
+
+    public ManagedExecutorServiceMBean getOffloadableExecutorMBean() {
+        return offloadableExecutorMBean;
     }
 
     public OperationServiceMBean getOperationServiceMBean() {

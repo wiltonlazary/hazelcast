@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,15 @@
 package com.hazelcast.multimap.impl;
 
 import com.hazelcast.concurrent.lock.LockService;
-import com.hazelcast.spi.DefaultObjectNamespace;
+import com.hazelcast.config.MultiMapConfig;
+import com.hazelcast.spi.DistributedObjectNamespace;
 import com.hazelcast.spi.NodeEngine;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
 
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -51,7 +55,7 @@ public class MultiMapPartitionContainer {
         return container;
     }
 
-    public MultiMapContainer getCollectionContainer(String name) {
+    public MultiMapContainer getMultiMapContainer(String name) {
         MultiMapContainer container = containerMap.get(name);
         if (container != null) {
             container.access();
@@ -64,7 +68,7 @@ public class MultiMapPartitionContainer {
         return containerMap.containsKey(name);
     }
 
-    void destroyCollection(String name) {
+    void destroyMultiMap(String name) {
         final MultiMapContainer container = containerMap.remove(name);
         if (container != null) {
             container.destroy();
@@ -81,9 +85,24 @@ public class MultiMapPartitionContainer {
         NodeEngine nodeEngine = service.getNodeEngine();
         LockService lockService = nodeEngine.getSharedService(LockService.SERVICE_NAME);
         if (lockService != null) {
-            DefaultObjectNamespace namespace = new DefaultObjectNamespace(MultiMapService.SERVICE_NAME, name);
+            DistributedObjectNamespace namespace = new DistributedObjectNamespace(MultiMapService.SERVICE_NAME, name);
             lockService.clearLockStore(partitionId, namespace);
         }
+    }
+
+    public Collection<ServiceNamespace> getAllNamespaces(int replicaIndex) {
+        Collection<ServiceNamespace> namespaces = new HashSet<ServiceNamespace>();
+
+        for (MultiMapContainer container : containerMap.values()) {
+            MultiMapConfig mapConfig = container.getConfig();
+            if (mapConfig.getTotalBackupCount() < replicaIndex) {
+                continue;
+            }
+
+            namespaces.add(container.getObjectNamespace());
+        }
+
+        return namespaces;
     }
 
     void destroy() {

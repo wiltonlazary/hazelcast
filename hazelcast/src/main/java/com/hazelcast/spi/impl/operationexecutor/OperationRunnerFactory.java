@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ public interface OperationRunnerFactory {
      * Creates an OperationRunner for a given partition. This OperationRunner will only execute generic operations
      * and operations for that given partition.
      *
-     * @param partitionId the id of the partition.
+     * @param partitionId the ID of the partition.
      * @return the created OperationRunner.
      */
     OperationRunner createPartitionRunner(int partitionId);

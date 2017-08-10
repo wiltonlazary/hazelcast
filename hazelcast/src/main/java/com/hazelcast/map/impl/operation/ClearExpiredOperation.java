@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,11 +49,11 @@ public class ClearExpiredOperation extends AbstractLocalOperation implements Par
 
     @Override
     public void run() throws Exception {
-        final MapService mapService = getService();
+        MapService mapService = getService();
         MapServiceContext mapServiceContext = mapService.getMapServiceContext();
-        final PartitionContainer partitionContainer = mapServiceContext.getPartitionContainer(getPartitionId());
-        final ConcurrentMap<String, RecordStore> recordStores = partitionContainer.getMaps();
-        final boolean backup = !isOwner();
+        PartitionContainer partitionContainer = mapServiceContext.getPartitionContainer(getPartitionId());
+        ConcurrentMap<String, RecordStore> recordStores = partitionContainer.getMaps();
+        boolean backup = !isOwner();
         for (final RecordStore recordStore : recordStores.values()) {
             if (recordStore.size() > 0 && recordStore.isExpirable()) {
                 recordStore.evictExpiredEntries(expirationPercentage, backup);
@@ -69,17 +69,30 @@ public class ClearExpiredOperation extends AbstractLocalOperation implements Par
     }
 
     @Override
+    public void onExecutionFailure(Throwable e) {
+        try {
+            super.onExecutionFailure(e);
+        } finally {
+            prepareForNextCleanup();
+        }
+    }
+
+    @Override
     public void afterRun() throws Exception {
-        final MapService mapService = getService();
+        prepareForNextCleanup();
+    }
+
+    protected void prepareForNextCleanup() {
+        MapService mapService = getService();
         MapServiceContext mapServiceContext = mapService.getMapServiceContext();
-        final PartitionContainer partitionContainer = mapServiceContext.getPartitionContainer(getPartitionId());
+        PartitionContainer partitionContainer = mapServiceContext.getPartitionContainer(getPartitionId());
         partitionContainer.setHasRunningCleanup(false);
         partitionContainer.setLastCleanupTime(Clock.currentTimeMillis());
     }
 
     @Override
     public boolean returnsResponse() {
-        return false;
+        return true;
     }
 
     @Override

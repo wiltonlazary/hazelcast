@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,6 @@ package com.hazelcast.internal.management.request;
 import com.eclipsesource.json.JsonObject;
 import com.hazelcast.internal.management.ManagementCenterService;
 import com.hazelcast.internal.management.operation.ClearWanQueuesOperation;
-
-import java.io.IOException;
 
 import static com.hazelcast.util.JsonUtil.getString;
 
@@ -51,11 +49,6 @@ public class ClearWanQueuesRequest implements ConsoleRequest {
     }
 
     @Override
-    public Object readResponse(JsonObject in) throws IOException {
-        return getString(in, "result", "FAILURE");
-    }
-
-    @Override
     public void writeResponse(ManagementCenterService mcs, JsonObject out) throws Exception {
         ClearWanQueuesOperation operation = new ClearWanQueuesOperation(schemeName, publisherName);
         Object operationResult = mcs.callOnThis(operation);
@@ -69,24 +62,8 @@ public class ClearWanQueuesRequest implements ConsoleRequest {
     }
 
     @Override
-    public JsonObject toJson() {
-        JsonObject root = new JsonObject();
-        root.add("schemeName", schemeName);
-        root.add("publisherName", publisherName);
-        return root;
-    }
-
-    @Override
     public void fromJson(JsonObject json) {
         schemeName = getString(json, "schemeName");
         publisherName = getString(json, "publisherName");
-    }
-
-    public String getSchemeName() {
-        return schemeName;
-    }
-
-    public String getPublisherName() {
-        return publisherName;
     }
 }

@@ -1,4 +1,20 @@
 /*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -55,6 +71,7 @@ import static org.junit.Assert.fail;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
+@Ignore
 @ConfigureParallelRunnerWith(MapReduceParallelRunnerOptions.class)
 public class MapReduceTest extends HazelcastTestSupport {
 
@@ -81,9 +98,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -98,9 +114,9 @@ public class MapReduceTest extends HazelcastTestSupport {
 
             ICompletableFuture<Map<String, List<Integer>>> future =
                     job.mapper(new TestMapper())
-                       .combiner(new FinalizingCombinerFactory())
-                       .reducer(new ListBasedReducerFactory())
-                       .submit();
+                            .combiner(new FinalizingCombinerFactory())
+                            .reducer(new ListBasedReducerFactory())
+                            .submit();
 
             Map<String, List<Integer>> result = future.get();
 
@@ -121,9 +137,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -156,9 +171,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -172,9 +186,9 @@ public class MapReduceTest extends HazelcastTestSupport {
             Job<Integer, Integer> job = tracker.newJob(wrapper);
             ICompletableFuture<Map<String, List<Integer>>> future =
                     job.mapper(new TestMapper())
-                       .combiner(new ListResultingCombinerFactory())
-                       .reducer(new ListBasedReducerFactory())
-                       .submit();
+                            .combiner(new ListResultingCombinerFactory())
+                            .reducer(new ListBasedReducerFactory())
+                            .submit();
 
             Map<String, List<Integer>> result = future.get();
 
@@ -195,9 +209,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -238,9 +251,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -273,9 +285,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -309,9 +320,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -343,9 +353,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -374,9 +383,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -407,9 +415,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -438,9 +445,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -480,9 +486,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -535,9 +540,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -573,9 +577,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -586,7 +589,7 @@ public class MapReduceTest extends HazelcastTestSupport {
             JobTracker tracker = h1.getJobTracker("default");
             Job<Integer, Integer> job = tracker.newJob(integerKvSource(m1));
             ICompletableFuture<Integer> future = job.mapper(new GroupingTestMapper()).reducer(new TestReducerFactory())
-                                                    .submit(new TestCollator());
+                    .submit(new TestCollator());
 
             int result = future.get();
 
@@ -612,9 +615,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -665,9 +667,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -718,9 +719,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
 
@@ -736,7 +736,7 @@ public class MapReduceTest extends HazelcastTestSupport {
             JobTracker tracker = h1.getJobTracker("default");
             Job<Integer, Integer> job = tracker.newJob(integerKvSource(m1));
             ICompletableFuture<Map<String, Integer>> future = job.mapper(new GroupingTestMapper())
-                                                                 .reducer(new TestReducerFactory()).submit();
+                    .reducer(new TestReducerFactory()).submit();
 
             future.andThen(new ExecutionCallback<Map<String, Integer>>() {
                 @Override
@@ -779,9 +779,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -837,9 +836,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -854,7 +852,7 @@ public class MapReduceTest extends HazelcastTestSupport {
             JobTracker tracker = h1.getJobTracker("default");
             Job<Integer, Integer> job = tracker.newJob(integerKvSource(m1));
             ICompletableFuture<Integer> future = job.mapper(new GroupingTestMapper()).reducer(new TestReducerFactory())
-                                                    .submit(new TestCollator());
+                    .submit(new TestCollator());
 
             future.andThen(new ExecutionCallback<Integer>() {
                 @Override
@@ -896,9 +894,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         try {
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
@@ -909,8 +906,8 @@ public class MapReduceTest extends HazelcastTestSupport {
             JobTracker jobTracker = h1.getJobTracker("default");
             Job<Integer, Integer> job = jobTracker.newJob(integerKvSource(m1));
             JobCompletableFuture<Map<String, BigInteger>> future = job.chunkSize(10).mapper(new GroupingTestMapper())
-                                                                      .combiner(new ObjectCombinerFactory())
-                                                                      .reducer(new ObjectReducerFactory()).submit();
+                    .combiner(new ObjectCombinerFactory())
+                    .reducer(new ObjectReducerFactory()).submit();
 
             int[] expectedResults = new int[4];
             for (int i = 0; i < 100; i++) {
@@ -936,9 +933,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
         try {
-            assertClusterSizeEventually(3, h1);
+            assertClusterSize(3, h1, h3);
             assertClusterSizeEventually(3, h2);
-            assertClusterSizeEventually(3, h3);
 
             IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
             for (int i = 0; i < 100; i++) {
@@ -948,8 +944,8 @@ public class MapReduceTest extends HazelcastTestSupport {
             JobTracker jobTracker = h1.getJobTracker("default");
             Job<Integer, Integer> job = jobTracker.newJob(integerKvSource(m1));
             JobCompletableFuture<Map<String, BigInteger>> future = job.chunkSize(10).mapper(new GroupingTestMapper())
-                                                                      .combiner(new ObjectCombinerFactory())
-                                                                      .reducer(new NullReducerFactory()).submit();
+                    .combiner(new ObjectCombinerFactory())
+                    .reducer(new NullReducerFactory()).submit();
 
             Map<String, BigInteger> map = future.get();
             assertEquals(0, map.size());
@@ -966,9 +962,8 @@ public class MapReduceTest extends HazelcastTestSupport {
         HazelcastInstance h2 = nodeFactory.newHazelcastInstance();
         HazelcastInstance h3 = nodeFactory.newHazelcastInstance();
 
-        assertClusterSizeEventually(3, h1);
+        assertClusterSize(3, h1, h3);
         assertClusterSizeEventually(3, h2);
-        assertClusterSizeEventually(3, h3);
 
         IMap<Integer, Integer> m1 = h1.getMap(MAP_NAME);
         for (int i = 0; i < 100; i++) {
@@ -978,9 +973,9 @@ public class MapReduceTest extends HazelcastTestSupport {
         JobTracker jobTracker = h1.getJobTracker("default");
         Job<Integer, Integer> job = jobTracker.newJob(integerKvSource(m1));
         ICompletableFuture<Integer> future = job.mapper(new TestMapper())
-                                                .combiner(new DataSerializableIntermediateCombinerFactory())
-                                                .reducer(new DataSerializableIntermediateReducerFactory())
-                                                .submit(new DataSerializableIntermediateCollator());
+                .combiner(new DataSerializableIntermediateCombinerFactory())
+                .reducer(new DataSerializableIntermediateReducerFactory())
+                .submit(new DataSerializableIntermediateCollator());
 
         // pre-calculate result
         int expectedResult = 0;

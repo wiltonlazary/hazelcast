@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,8 @@ import com.hazelcast.multimap.impl.MultiMapService;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapProxy;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.topic.impl.TopicService;
+import com.hazelcast.topic.impl.reliable.ReliableTopicProxy;
+import com.hazelcast.topic.impl.reliable.ReliableTopicService;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -75,7 +77,6 @@ final class MBeans {
         MBeanFactory mBeanFactory = getMBeanFactory(serviceName);
         return mBeanFactory == null ? null : mBeanFactory.getObjectType();
     }
-
 
     private static MBeanFactory getMBeanFactory(String serviceName) {
         return MBEAN_FACTORY_TYPES_REGISTRY.get(serviceName);
@@ -301,6 +302,23 @@ final class MBeans {
             @Override
             public String getServiceName() {
                 return ReplicatedMapService.SERVICE_NAME;
+            }
+        },
+
+        RELIABLE_TOPIC {
+            @Override
+            public HazelcastMBean createNew(DistributedObject distributedObject, ManagementService managementService) {
+                return new ReliableTopicMBean((ReliableTopicProxy) distributedObject, managementService);
+            }
+
+            @Override
+            public String getObjectType() {
+                return "ReliableTopic";
+            }
+
+            @Override
+            public String getServiceName() {
+                return ReliableTopicService.SERVICE_NAME;
             }
         };
 

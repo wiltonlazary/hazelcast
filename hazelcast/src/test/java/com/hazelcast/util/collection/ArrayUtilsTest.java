@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -155,8 +155,8 @@ public class ArrayUtilsTest extends HazelcastTestSupport {
 
     @Test
     public void concat() {
-        Integer[] first = new Integer[] {1,2,3};
-        Integer[] second = new Integer[] {4};
+        Integer[] first = new Integer[]{1, 2, 3};
+        Integer[] second = new Integer[]{4};
         Integer[] concatenated = new Integer[4];
         ArrayUtils.concat(first, second, concatenated);
         assertEquals(4, concatenated.length);
@@ -169,7 +169,7 @@ public class ArrayUtilsTest extends HazelcastTestSupport {
     @Test(expected = NullPointerException.class)
     public void concat_whenFirstNull() {
         Integer[] first = null;
-        Integer[] second = new Integer[] {4};
+        Integer[] second = new Integer[]{4};
         Integer[] concatenated = new Integer[4];
         ArrayUtils.concat(first, second, concatenated);
         fail();
@@ -177,7 +177,7 @@ public class ArrayUtilsTest extends HazelcastTestSupport {
 
     @Test(expected = NullPointerException.class)
     public void concat_whenSecondNull() {
-        Integer[] first = new Integer[] {1,2,3};
+        Integer[] first = new Integer[]{1, 2, 3};
         Integer[] second = null;
         Integer[] concatenated = new Integer[4];
         ArrayUtils.concat(first, second, concatenated);
@@ -186,8 +186,8 @@ public class ArrayUtilsTest extends HazelcastTestSupport {
 
     @Test(expected = NullPointerException.class)
     public void concat_whenDestNull() {
-        Integer[] first = new Integer[] {1,2,3};
-        Integer[] second = new Integer[] {4};
+        Integer[] first = new Integer[]{1, 2, 3};
+        Integer[] second = new Integer[]{4};
         Integer[] concatenated = null;
         ArrayUtils.concat(first, second, concatenated);
         fail();

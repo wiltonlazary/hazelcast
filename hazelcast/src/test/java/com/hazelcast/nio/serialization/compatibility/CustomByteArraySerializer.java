@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import java.nio.ByteBuffer;
 
 public class CustomByteArraySerializer implements ByteArraySerializer<CustomByteArraySerializable> {
 
-
     @Override
     public int getTypeId() {
         return ReferenceObjects.CUSTOM_BYTE_ARRAY_SERILAZABLE_ID;
@@ -46,6 +45,5 @@ public class CustomByteArraySerializer implements ByteArraySerializer<CustomByte
 
     @Override
     public void destroy() {
-
     }
 }

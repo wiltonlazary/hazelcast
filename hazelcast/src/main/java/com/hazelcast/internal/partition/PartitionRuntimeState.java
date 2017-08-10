@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ import static com.hazelcast.util.StringUtil.LINE_SEPARATOR;
 
 public final class PartitionRuntimeState implements IdentifiedDataSerializable {
 
-    // used for writing state
+    /** Map from address to the replica index of the first partition where the address occurs. Used for writing state. */
     private Map<Address, Integer> addressToIndexes;
 
     // used for reading state
@@ -47,6 +47,7 @@ public final class PartitionRuntimeState implements IdentifiedDataSerializable {
     // used to know ongoing migrations when master changed
     private MigrationInfo activeMigration;
 
+    /** The sender of the operation which changes the partition table, should be the master node */
     private Address endpoint;
 
     public PartitionRuntimeState() {
@@ -78,6 +79,7 @@ public final class PartitionRuntimeState implements IdentifiedDataSerializable {
         return partitionTable;
     }
 
+    /** Create a map from address to the replica index on the first partition where the address is a replica */
     private Map<Address, Integer> createAddressToIndexMap(InternalPartition[] partitions) {
         Map<Address, Integer> map = new HashMap<Address, Integer>();
         int addressIndex = 0;

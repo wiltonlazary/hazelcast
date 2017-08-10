@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,7 +87,7 @@ public class ClientQueryCacheBasicTest extends HazelcastTestSupport {
     // setup a map with 2 query caches, same predicate, one includes values, the other excludes values
     @Before
     public void setup() {
-        Config config = new Config();
+        Config config = getConfig();
 
         ClientConfig clientConfig = new ClientConfig();
         clientConfig.addQueryCacheConfig(TEST_MAP_NAME, new QueryCacheConfig(QUERY_CACHE_NAME)

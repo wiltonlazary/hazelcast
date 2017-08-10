@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,8 +65,8 @@ import static org.junit.Assert.fail;
 @Category({QuickTest.class, ParallelTest.class})
 public class BasicMapTest extends HazelcastTestSupport {
 
-    private static final int INSTANCE_COUNT = 3;
-    private static final Random RANDOM = new Random();
+    static final int INSTANCE_COUNT = 3;
+    static final Random RANDOM = new Random();
 
     HazelcastInstance[] instances;
 
@@ -758,7 +758,7 @@ public class BasicMapTest extends HazelcastTestSupport {
         IMap<Integer, Object> map = getInstance().getMap("testGetPutRemoveAsync");
         Future<Object> future = map.putAsync(1, 1);
         try {
-            assertEquals(null, future.get());
+            assertNull(future.get());
             assertEquals(1, map.putAsync(1, 2).get());
             assertEquals(2, map.getAsync(1).get());
             assertEquals(2, map.removeAsync(1).get());
@@ -993,6 +993,8 @@ public class BasicMapTest extends HazelcastTestSupport {
     }
 
     private static class StartsWithPredicate implements Predicate<Object, Object>, Serializable {
+
+        private static final long serialVersionUID = 4193947125511602220L;
 
         String pref;
 
@@ -1566,6 +1568,8 @@ public class BasicMapTest extends HazelcastTestSupport {
 
     private static class SampleEntryProcessor implements EntryProcessor<Integer, Integer>, EntryBackupProcessor<Integer, Integer>,
             Serializable {
+
+        private static final long serialVersionUID = -5735493325953375570L;
 
         @Override
         public Object process(Map.Entry<Integer, Integer> entry) {

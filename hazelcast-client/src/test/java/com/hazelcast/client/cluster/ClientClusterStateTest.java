@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.cluster;
 
 import com.hazelcast.client.config.ClientConfig;
@@ -7,6 +23,7 @@ import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.core.OperationTimeoutException;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.spi.exception.TargetDisconnectedException;
@@ -90,7 +107,7 @@ public class ClientClusterStateTest {
         factory.newHazelcastClient();
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test(expected = OperationTimeoutException.class)
     public void testClient_canNotExecuteWriteOperations_whenClusterState_passive() {
         warmUpPartitions(instances);
 
@@ -160,8 +177,8 @@ public class ClientClusterStateTest {
                             map.putAll(values);
                             Thread.sleep(100);
                         } catch (IllegalStateException e) {
-                           logger.warning("Expected exception for Map putAll during cluster shutdown:", e);
-                           break;
+                            logger.warning("Expected exception for Map putAll during cluster shutdown:", e);
+                            break;
                         } catch (TargetDisconnectedException e) {
                             logger.warning("Expected exception for Map putAll during cluster shutdown:", e);
                             break;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.internal.serialization.impl;
 
-
+import com.hazelcast.instance.BuildInfoProvider;
 import com.hazelcast.internal.serialization.DataSerializerHook;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.nio.ClassLoaderUtil;
@@ -32,6 +32,7 @@ import com.hazelcast.nio.serialization.TypedStreamDeserializer;
 import com.hazelcast.util.ExceptionUtil;
 import com.hazelcast.util.ServiceLoader;
 import com.hazelcast.util.collection.Int2ObjectHashMap;
+import com.hazelcast.version.Version;
 
 import java.io.IOException;
 import java.util.Iterator;
@@ -51,10 +52,10 @@ final class DataSerializableSerializer implements StreamSerializer<DataSerializa
 
     public static final byte IDS_FLAG = 1 << 0;
     public static final byte EE_FLAG = 1 << 1;
-    public static final byte COMP_FLAG = 1 << 2;
 
     private static final String FACTORY_ID = "com.hazelcast.DataSerializerHook";
 
+    private final Version version = Version.of(BuildInfoProvider.getBuildInfo().getVersion());
     private final Int2ObjectHashMap<DataSerializableFactory> factories = new Int2ObjectHashMap<DataSerializableFactory>();
 
     DataSerializableSerializer(Map<Integer, ? extends DataSerializableFactory> dataSerializableFactories,
@@ -112,6 +113,7 @@ final class DataSerializableSerializer implements StreamSerializer<DataSerializa
 
     private DataSerializable readInternal(ObjectDataInput in, Class aClass)
             throws IOException {
+        setInputVersion(in, version);
         DataSerializable ds = null;
         if (null != aClass) {
             try {
@@ -129,18 +131,17 @@ final class DataSerializableSerializer implements StreamSerializer<DataSerializa
             // If you ever change the way this is serialized think about to change
             // BasicOperationService::extractOperationCallId
             if (isFlagSet(header, IDS_FLAG)) {
-                boolean comp = isFlagSet(header, COMP_FLAG);
-                factoryId = comp ? in.readByte() : in.readInt();
+                factoryId = in.readInt();
                 final DataSerializableFactory dsf = factories.get(factoryId);
                 if (dsf == null) {
                     throw new HazelcastSerializationException("No DataSerializerFactory registered for namespace: " + factoryId);
                 }
-                id = comp ? in.readByte() : in.readInt();
+                id = in.readInt();
                 if (null == aClass) {
                     ds = dsf.create(id);
                     if (ds == null) {
                         throw new HazelcastSerializationException(dsf
-                                + " is not be able to create an instance for id: " + id + " on factoryId: " + factoryId);
+                                + " is not be able to create an instance for ID: " + id + " on factory ID: " + factoryId);
                     }
                 }
             } else {
@@ -150,6 +151,7 @@ final class DataSerializableSerializer implements StreamSerializer<DataSerializa
                 }
             }
             if (isFlagSet(header, EE_FLAG)) {
+                in.readByte();
                 in.readByte();
             }
 
@@ -173,7 +175,7 @@ final class DataSerializableSerializer implements StreamSerializer<DataSerializa
         }
         throw new HazelcastSerializationException("Problem while reading DataSerializable, namespace: "
                 + factoryId
-                + ", id: " + id
+                + ", ID: " + id
                 + ", class: '" + className + "'"
                 + ", exception: " + e.getMessage(), e);
     }
@@ -182,6 +184,7 @@ final class DataSerializableSerializer implements StreamSerializer<DataSerializa
     public void write(ObjectDataOutput out, DataSerializable obj) throws IOException {
         // If you ever change the way this is serialized think about to change
         // BasicOperationService::extractOperationCallId
+        setOutputVersion(out, version);
         final boolean identified = obj instanceof IdentifiedDataSerializable;
         out.writeBoolean(identified);
         if (identified) {
@@ -201,5 +204,13 @@ final class DataSerializableSerializer implements StreamSerializer<DataSerializa
     @Override
     public void destroy() {
         factories.clear();
+    }
+
+    private static void setOutputVersion(ObjectDataOutput out, Version version) {
+        ((VersionedObjectDataOutput) out).setVersion(version);
+    }
+
+    private static void setInputVersion(ObjectDataInput in, Version version) {
+        ((VersionedObjectDataInput) in).setVersion(version);
     }
 }

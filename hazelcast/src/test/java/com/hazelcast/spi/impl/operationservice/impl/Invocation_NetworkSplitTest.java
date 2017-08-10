@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,14 +62,8 @@ public class Invocation_NetworkSplitTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testWaitingInvocations_whenNodePartiallySplitFromCluster_scenario1() throws Exception {
+    public void testWaitingInvocations_whenNodePartiallySplitFromCluster() throws Exception {
         SplitAction action = new PartialSplitAction();
-        testWaitingInvocations_whenNodeSplitFromCluster(action);
-    }
-
-    @Test
-    public void testWaitingInvocations_whenNodePartiallySplitFromCluster_scenario2() throws Exception {
-        SplitAction action = new HalfPartialSplitAction();
         testWaitingInvocations_whenNodeSplitFromCluster(action);
     }
 
@@ -103,9 +97,7 @@ public class Invocation_NetworkSplitTest extends HazelcastTestSupport {
         ClusterServiceImpl clusterService3 = node3.getClusterService();
         clusterService3.merge(node1.address);
 
-        assertClusterSizeEventually(3, hz1);
-        assertClusterSizeEventually(3, hz2);
-        assertClusterSizeEventually(3, hz3);
+        assertClusterSizeEventually(3, hz1, hz2, hz3);
 
         try {
             future.get(1, TimeUnit.MINUTES);
@@ -230,10 +222,10 @@ public class Invocation_NetworkSplitTest extends HazelcastTestSupport {
         @Override
         public void run(final Node node1, final Node node2, final Node node3) {
             // Artificially create a network-split
-            node1.clusterService.removeAddress(node3.address, null);
+            suspectMember(node1, node3);
 
-            node3.clusterService.removeAddress(node1.address, null);
-            node3.clusterService.removeAddress(node2.address, null);
+            suspectMember(node3, node1);
+            suspectMember(node3, node2);
 
             assertTrueEventually(new AssertTask() {
                 @Override
@@ -253,29 +245,7 @@ public class Invocation_NetworkSplitTest extends HazelcastTestSupport {
             // Artificially create a partial network-split;
             // node1 and node2 will be split from node3
             // but node 3 will not be able to detect that.
-            node1.clusterService.removeAddress(node3.address, null);
-
-            assertTrueEventually(new AssertTask() {
-                @Override
-                public void run() throws Exception {
-                    assertEquals(2, node1.getClusterService().getSize());
-                    assertEquals(2, node2.getClusterService().getSize());
-                    assertEquals(1, node3.getClusterService().getSize());
-                }
-            }, 10);
-        }
-    }
-
-    private static class HalfPartialSplitAction implements SplitAction {
-
-        @Override
-        public void run(final Node node1, final Node node2, final Node node3) {
-            // Artificially create a partial network-split;
-            // node1 and node2 will be split from node3
-            // but node 3 will not be able to detect that.
-            node1.clusterService.removeAddress(node3.address, null);
-            node3.clusterService.removeAddress(node1.address, null);
-
+            suspectMember(node1, node3);
             assertTrueEventually(new AssertTask() {
                 @Override
                 public void run() throws Exception {

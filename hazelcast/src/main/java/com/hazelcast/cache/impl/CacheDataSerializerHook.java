@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,11 @@ package com.hazelcast.cache.impl;
 
 import com.hazelcast.cache.HazelcastExpiryPolicy;
 import com.hazelcast.cache.impl.event.CachePartitionLostEventFilter;
+import com.hazelcast.cache.impl.journal.CacheEventJournalReadOperation;
+import com.hazelcast.cache.impl.journal.CacheEventJournalReadResultSetImpl;
+import com.hazelcast.cache.impl.journal.CacheEventJournalSubscribeOperation;
+import com.hazelcast.cache.impl.journal.DeserializingEventJournalCacheEvent;
+import com.hazelcast.cache.impl.journal.InternalEventJournalCacheEvent;
 import com.hazelcast.cache.impl.merge.entry.DefaultCacheEntryView;
 import com.hazelcast.cache.impl.operation.CacheBackupEntryProcessorOperation;
 import com.hazelcast.cache.impl.operation.CacheClearBackupOperation;
@@ -33,6 +38,7 @@ import com.hazelcast.cache.impl.operation.CacheGetAllOperationFactory;
 import com.hazelcast.cache.impl.operation.CacheGetAndRemoveOperation;
 import com.hazelcast.cache.impl.operation.CacheGetAndReplaceOperation;
 import com.hazelcast.cache.impl.operation.CacheGetConfigOperation;
+import com.hazelcast.cache.impl.operation.CacheGetInvalidationMetaDataOperation;
 import com.hazelcast.cache.impl.operation.CacheGetOperation;
 import com.hazelcast.cache.impl.operation.CacheKeyIteratorOperation;
 import com.hazelcast.cache.impl.operation.CacheListenerRegistrationOperation;
@@ -55,8 +61,7 @@ import com.hazelcast.cache.impl.operation.CacheReplaceOperation;
 import com.hazelcast.cache.impl.operation.CacheReplicationOperation;
 import com.hazelcast.cache.impl.operation.CacheSizeOperation;
 import com.hazelcast.cache.impl.operation.CacheSizeOperationFactory;
-import com.hazelcast.cache.impl.operation.CacheGetInvalidationMetaDataOperation;
-import com.hazelcast.cache.impl.operation.PostJoinCacheOperation;
+import com.hazelcast.cache.impl.operation.OnJoinCacheOperation;
 import com.hazelcast.cache.impl.record.CacheDataRecord;
 import com.hazelcast.cache.impl.record.CacheObjectRecord;
 import com.hazelcast.client.impl.protocol.task.cache.CacheAssignAndGetUuidsOperation;
@@ -137,8 +142,13 @@ public final class CacheDataSerializerHook
     public static final short CACHE_ASSIGN_AND_GET_UUIDS_FACTORY = 53;
     public static final short CACHE_NEAR_CACHE_STATE_HOLDER = 54;
     public static final short CACHE_EVENT_LISTENER_ADAPTOR = 55;
+    public static final short EVENT_JOURNAL_SUBSCRIBE_OPERATION = 56;
+    public static final short EVENT_JOURNAL_READ_OPERATION = 57;
+    public static final short EVENT_JOURNAL_DESERIALIZING_CACHE_EVENT = 58;
+    public static final short EVENT_JOURNAL_INTERNAL_CACHE_EVENT = 59;
+    public static final short EVENT_JOURNAL_READ_RESULT_SET = 60;
 
-    private static final int LEN = CACHE_EVENT_LISTENER_ADAPTOR + 1;
+    private static final int LEN = EVENT_JOURNAL_READ_RESULT_SET + 1;
 
     public int getFactoryId() {
         return F_ID;
@@ -366,7 +376,7 @@ public final class CacheDataSerializerHook
         };
         constructors[CACHE_POST_JOIN] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
             public IdentifiedDataSerializable createNew(Integer arg) {
-                return new PostJoinCacheOperation();
+                return new OnJoinCacheOperation();
             }
         };
         constructors[CACHE_DATA_RECORD] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
@@ -412,6 +422,31 @@ public final class CacheDataSerializerHook
         constructors[CACHE_EVENT_LISTENER_ADAPTOR] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
             public IdentifiedDataSerializable createNew(Integer arg) {
                 return new CacheEventListenerAdaptor();
+            }
+        };
+        constructors[EVENT_JOURNAL_SUBSCRIBE_OPERATION] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheEventJournalSubscribeOperation();
+            }
+        };
+        constructors[EVENT_JOURNAL_READ_OPERATION] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheEventJournalReadOperation<Object, Object, Object>();
+            }
+        };
+        constructors[EVENT_JOURNAL_DESERIALIZING_CACHE_EVENT] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new DeserializingEventJournalCacheEvent<Object, Object>();
+            }
+        };
+        constructors[EVENT_JOURNAL_INTERNAL_CACHE_EVENT] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new InternalEventJournalCacheEvent();
+            }
+        };
+        constructors[EVENT_JOURNAL_READ_RESULT_SET] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
+            public IdentifiedDataSerializable createNew(Integer arg) {
+                return new CacheEventJournalReadResultSetImpl<Object, Object, Object>();
             }
         };
 

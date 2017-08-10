@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.map.impl.operation;
 import com.hazelcast.core.EntryView;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.impl.MapEntries;
+import com.hazelcast.map.impl.query.Query;
 import com.hazelcast.map.merge.MapMergePolicy;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.Predicate;
@@ -239,5 +240,20 @@ abstract class MapOperationProviderDelegator implements MapOperationProvider {
     @Override
     public MapOperation createFetchEntriesOperation(String name, int lastTableIndex, int fetchSize) {
         return getDelegate().createFetchEntriesOperation(name, lastTableIndex, fetchSize);
+    }
+
+    @Override
+    public MapOperation createQueryOperation(Query query) {
+        return getDelegate().createQueryOperation(query);
+    }
+
+    @Override
+    public MapOperation createQueryPartitionOperation(Query query) {
+        return getDelegate().createQueryPartitionOperation(query);
+    }
+
+    @Override
+    public MapOperation createFetchWithQueryOperation(String name, int lastTableIndex, int fetchSize, Query query) {
+        return getDelegate().createFetchWithQueryOperation(name, lastTableIndex, fetchSize, query);
     }
 }

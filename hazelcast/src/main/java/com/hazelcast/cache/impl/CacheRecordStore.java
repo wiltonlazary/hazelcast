@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,12 @@ package com.hazelcast.cache.impl;
 import com.hazelcast.cache.CacheEntryView;
 import com.hazelcast.cache.CacheMergePolicy;
 import com.hazelcast.cache.StorageTypeAwareCacheMergePolicy;
-import com.hazelcast.internal.eviction.MaxSizeChecker;
 import com.hazelcast.cache.impl.merge.entry.LazyCacheEntryView;
 import com.hazelcast.cache.impl.record.CacheRecord;
 import com.hazelcast.cache.impl.record.CacheRecordFactory;
 import com.hazelcast.cache.impl.record.CacheRecordHashMap;
 import com.hazelcast.config.EvictionConfig.MaxSizePolicy;
+import com.hazelcast.internal.eviction.EvictionChecker;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.serialization.SerializationService;
@@ -84,7 +84,7 @@ public class CacheRecordStore
      *                                  is null
      */
     @Override
-    protected MaxSizeChecker createCacheMaxSizeChecker(int size, MaxSizePolicy maxSizePolicy) {
+    protected EvictionChecker createCacheEvictionChecker(int size, MaxSizePolicy maxSizePolicy) {
         if (maxSizePolicy == null) {
             throw new IllegalArgumentException("Max-Size policy cannot be null");
         }
@@ -94,7 +94,7 @@ public class CacheRecordStore
                     + '(' + maxSizePolicy + ") for " + getClass().getName() + "! Only "
                     + MaxSizePolicy.ENTRY_COUNT + " is supported.");
         } else {
-            return super.createCacheMaxSizeChecker(size, maxSizePolicy);
+            return super.createCacheEvictionChecker(size, maxSizePolicy);
         }
     }
 

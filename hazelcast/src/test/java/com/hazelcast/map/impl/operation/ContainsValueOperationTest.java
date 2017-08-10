@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 
 package com.hazelcast.map.impl.operation;
-
 
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
@@ -84,6 +83,4 @@ public class ContainsValueOperationTest extends HazelcastTestSupport {
         InternalOperationService operationService = getOperationService(member1);
         return operationService.createInvocationBuilder(MapService.SERVICE_NAME, operation, partitionId).invoke();
     }
-
-
 }

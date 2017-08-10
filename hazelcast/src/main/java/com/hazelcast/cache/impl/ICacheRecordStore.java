@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.hazelcast.cache.impl.record.CacheRecord;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.spi.ObjectNamespace;
 
 import javax.cache.expiry.ExpiryPolicy;
 import javax.cache.processor.EntryProcessor;
@@ -448,4 +449,10 @@ public interface ICacheRecordStore {
      * @return <tt>true</tt> if wan replication is enabled for this record store, <tt>false</tt> otherwise
      */
     boolean isWanReplicationEnabled();
+
+    /**
+     * Returns {@link com.hazelcast.spi.ObjectNamespace} associated with this record store.
+     * @return ObjectNamespace associated with this record store.
+     */
+    ObjectNamespace getObjectNamespace();
 }

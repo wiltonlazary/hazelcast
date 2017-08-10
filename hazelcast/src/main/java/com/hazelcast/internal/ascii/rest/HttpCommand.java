@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,7 @@ public abstract class HttpCommand extends AbstractTextCommand {
 
     protected final String uri;
     protected ByteBuffer response;
+    protected boolean nextLine;
 
 
     public HttpCommand(TextCommandConstants.TextCommandType type, String uri) {
@@ -124,6 +125,22 @@ public abstract class HttpCommand extends AbstractTextCommand {
     public boolean writeTo(ByteBuffer dst) {
         copyToHeapBuffer(response, dst);
         return !response.hasRemaining();
+    }
+
+    @Override
+    public boolean readFrom(ByteBuffer src) {
+        while (src.hasRemaining()) {
+            char c = (char) src.get();
+            if (c == '\n') {
+                if (nextLine) {
+                    return true;
+                }
+                nextLine = true;
+            } else if (c != '\r') {
+                nextLine = false;
+            }
+        }
+        return false;
     }
 
     @Override

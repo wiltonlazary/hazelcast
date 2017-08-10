@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map.impl.nearcache;
 
 import com.hazelcast.config.Config;
@@ -10,7 +26,10 @@ import com.hazelcast.map.EntryBackupProcessor;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.proxy.NearCachedMapProxyImpl;
+import com.hazelcast.monitor.NearCacheStats;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.spi.impl.SerializationServiceSupport;
+import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
@@ -98,11 +117,6 @@ public class NearCacheLiteMemberTest {
     }
 
     @Test
-    public void testReplace() {
-        testReplace(instance, lite, mapName);
-    }
-
-    @Test
     public void testEvict() {
         testEvict(instance, lite, mapName);
     }
@@ -169,16 +183,34 @@ public class NearCacheLiteMemberTest {
 
     public static void testPutAll(HazelcastInstance instance, HazelcastInstance lite, String mapName) {
         IMap<Object, Object> map = instance.getMap(mapName);
+        IMap<Object, Object> liteMap = lite.getMap(mapName);
+        NearCachedMapProxyImpl<Object, Object> proxy = (NearCachedMapProxyImpl<Object, Object>) liteMap;
+        NearCache<Object, Object> liteNearCache = proxy.getNearCache();
+        SerializationService serializationService = ((SerializationServiceSupport) instance).getSerializationService();
+        int count = 100;
+
+        // fill the Near Cache with the same data as below so we can detect when it is emptied
+        for (int i = 0; i < count; i++) {
+            Data keyData = serializationService.toData(i);
+            liteNearCache.put(i, keyData, i);
+        }
+        final NearCacheStats stats = liteNearCache.getNearCacheStats();
+        assertEquals(100, stats.getOwnedEntryCount());
 
         Map<Object, Object> localMap = new HashMap<Object, Object>();
-        int count = 100;
         for (int i = 0; i < count; i++) {
             localMap.put(i, i);
         }
 
         map.putAll(localMap);
 
-        IMap<Object, Object> liteMap = lite.getMap(mapName);
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals(0, stats.getOwnedEntryCount());
+            }
+        });
+
         for (int i = 0; i < count; i++) {
             liteMap.get(i);
         }
@@ -252,18 +284,6 @@ public class NearCacheLiteMemberTest {
         Map<Object, Object> localMap = new HashMap<Object, Object>();
         localMap.put(1, 2);
         map.putAll(localMap);
-
-        assertNullNearCacheEntryEventually(lite, mapName, 1);
-    }
-
-    public static void testReplace(HazelcastInstance instance, HazelcastInstance lite, String mapName) {
-        IMap<Object, Object> map = instance.getMap(mapName);
-        map.put(1, 1);
-
-        IMap<Object, Object> liteMap = lite.getMap(mapName);
-        liteMap.get(1);
-
-        map.replace(1, 2);
 
         assertNullNearCacheEntryEventually(lite, mapName, 1);
     }
@@ -456,13 +476,12 @@ public class NearCacheLiteMemberTest {
         return ((NearCachedMapProxyImpl<Data, Object>) map).getNearCache();
     }
 
-    private static void assertNullNearCacheEntryEventually(final HazelcastInstance instance, String mapName, Object key) {
+    private static void assertNullNearCacheEntryEventually(final HazelcastInstance instance, String mapName, final Object key) {
         final NearCache<Object, Object> nearCache = getNearCache(instance, mapName);
-        final Data keyData = toData(instance, key);
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() {
-                assertNull(toObject(instance, nearCache.get(keyData)));
+                assertNull(toObject(instance, nearCache.get(key)));
             }
         });
     }

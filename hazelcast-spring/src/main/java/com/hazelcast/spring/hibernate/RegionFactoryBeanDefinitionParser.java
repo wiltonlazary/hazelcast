@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,8 +28,7 @@ import org.w3c.dom.Node;
 
 /**
  * Parser for RegionFactory.
- * <p/>
- * <p/>
+ * <p>
  * Sample Spring XML for Hibernate RegionFactory
  * <pre>
  * <code>
@@ -64,9 +63,9 @@ public class RegionFactoryBeanDefinitionParser extends AbstractBeanDefinitionPar
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
         try {
             if ("DISTRIBUTED".equals(mode)) {
-                 clz = ClassLoaderUtil.loadClass(classLoader, CACHE_REGION_FACTORY);
+                clz = ClassLoaderUtil.loadClass(classLoader, CACHE_REGION_FACTORY);
             } else if ("LOCAL".equals(mode)) {
-                 clz = ClassLoaderUtil.loadClass(classLoader, LOCAL_CACHE_REGION_FACTORY);
+                clz = ClassLoaderUtil.loadClass(classLoader, LOCAL_CACHE_REGION_FACTORY);
             } else {
                 throw new IllegalArgumentException("Unknown Hibernate L2 cache mode: " + mode);
             }

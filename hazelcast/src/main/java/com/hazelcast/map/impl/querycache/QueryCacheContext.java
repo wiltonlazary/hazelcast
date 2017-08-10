@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,10 +116,10 @@ public interface QueryCacheContext {
     Address getThisNodesAddress();
 
     /**
-     * Returns partition id of the supplied object.
+     * Returns partition ID of the supplied object.
      *
      * @param object supplied object.
-     * @return partition id
+     * @return partition ID
      */
     int getPartitionId(Object object);
 

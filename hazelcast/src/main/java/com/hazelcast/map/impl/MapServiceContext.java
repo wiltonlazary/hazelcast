@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,12 @@ import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.PartitioningStrategyConfig;
 import com.hazelcast.core.PartitioningStrategy;
+import com.hazelcast.map.impl.journal.MapEventJournal;
 import com.hazelcast.map.impl.event.MapEventPublisher;
 import com.hazelcast.map.impl.eviction.ExpirationManager;
 import com.hazelcast.map.impl.nearcache.MapNearCacheManager;
 import com.hazelcast.map.impl.operation.MapOperationProvider;
+import com.hazelcast.map.impl.query.IndexProvider;
 import com.hazelcast.map.impl.query.MapQueryEngine;
 import com.hazelcast.map.impl.query.PartitionScanRunner;
 import com.hazelcast.map.impl.query.QueryRunner;
@@ -45,16 +47,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Context which is needed by a map service.
- * <p/>
+ * <p>
  * Shared instances, configurations of all maps can be reached over this context.
- * <p/>
+ * <p>
  * Also this context provides some support methods which are used in map operations and {@link RecordStore} implementations.
  * For example all {@link PartitionContainer} and {@link MapContainer} instances
  * can also be reached by using this interface.
- * <p/>
+ * <p>
  * It is also responsible for providing methods which are used by lower layers of
  * Hazelcast and exposed on {@link MapService}.
- * <p/>
  *
  * @see MapManagedService
  */
@@ -78,7 +79,7 @@ public interface MapServiceContext extends MapServiceContextInterceptorSupport, 
      * Clears all map partitions which are expected to have lesser backups
      * than given.
      *
-     * @param partitionId partition id
+     * @param partitionId partition ID
      * @param backupCount backup count
      */
     void clearMapsHavingLesserBackupCountThan(int partitionId, int backupCount);
@@ -90,8 +91,8 @@ public interface MapServiceContext extends MapServiceContextInterceptorSupport, 
     /**
      * Clears all partition based data allocated by MapService.
      *
-     * @param onShutdown true if {@code clearPartitions} is called during MapService shutdown,
-     *                   false otherwise.
+     * @param onShutdown {@code true} if {@code clearPartitions} is called during MapService shutdown,
+     *                   {@code false} otherwise
      */
     void clearPartitions(boolean onShutdown);
 
@@ -104,8 +105,8 @@ public interface MapServiceContext extends MapServiceContextInterceptorSupport, 
     void reset();
 
     /**
-     * Releases internal resources solely managed by Hazelcast. This method is
-     * called when MapService is shutting down.
+     * Releases internal resources solely managed by Hazelcast.
+     * This method is called when MapService is shutting down.
      */
     void shutdown();
 
@@ -133,6 +134,8 @@ public interface MapServiceContext extends MapServiceContextInterceptorSupport, 
 
     MapEventPublisher getMapEventPublisher();
 
+    MapEventJournal getEventJournal();
+
     MapQueryEngine getMapQueryEngine(String name);
 
     QueryRunner getMapQueryRunner(String name);
@@ -144,6 +147,8 @@ public interface MapServiceContext extends MapServiceContextInterceptorSupport, 
     MapOperationProvider getMapOperationProvider(String name);
 
     MapOperationProvider getMapOperationProvider(MapConfig mapConfig);
+
+    IndexProvider getIndexProvider(MapConfig mapConfig);
 
     Extractors getExtractors(String mapName);
 

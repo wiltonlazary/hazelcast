@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.map.impl.operation;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.map.impl.MapServiceContext;
+import com.hazelcast.map.impl.query.Query;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.spi.OperationFactory;
@@ -116,6 +117,18 @@ public class WANAwareOperationProvider extends MapOperationProviderDelegator {
     public MapOperation createEntryOperation(String name, Data dataKey, EntryProcessor entryProcessor) {
         checkWanReplicationQueues(name);
         return getDelegate().createEntryOperation(name, dataKey, entryProcessor);
+    }
+
+    @Override
+    public MapOperation createQueryOperation(Query query) {
+        checkWanReplicationQueues(query.getMapName());
+        return getDelegate().createQueryOperation(query);
+    }
+
+    @Override
+    public MapOperation createQueryPartitionOperation(Query query) {
+        checkWanReplicationQueues(query.getMapName());
+        return getDelegate().createQueryPartitionOperation(query);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -80,6 +80,11 @@ public class NodeQueryCacheEventService implements QueryCacheEventService<EventD
     public String listenPublisher(String mapName, String cacheName, ListenerAdapter listenerAdapter) {
         String listenerName = generateListenerName(mapName, cacheName);
         return mapServiceContext.addListenerAdapter(listenerName, listenerAdapter);
+    }
+
+    @Override
+    public boolean removePublisherListener(String mapName, String listenerId) {
+        return mapServiceContext.removeEventListener(mapName, listenerId);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,9 +62,7 @@ public class HazelcastFactoryTest extends HazelcastTestSupport {
                 touchRandomNode(client1);
                 touchRandomNode(client2);
 
-                assertEquals(3, instance1.getCluster().getMembers().size());
-                assertEquals(3, instance2.getCluster().getMembers().size());
-                assertEquals(3, instance3.getCluster().getMembers().size());
+                assertClusterSize(3, instance1, instance2, instance3);
 
                 assertEquals(2, instance1.getClientService().getConnectedClients().size());
                 assertEquals(2, instance2.getClientService().getConnectedClients().size());
@@ -84,14 +82,7 @@ public class HazelcastFactoryTest extends HazelcastTestSupport {
         final HazelcastInstance client1 = instanceFactory.newHazelcastClient(clientConfig);
         final HazelcastInstance client2 = instanceFactory.newHazelcastClient(clientConfig);
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertEquals(3, instance1.getCluster().getMembers().size());
-                assertEquals(3, instance2.getCluster().getMembers().size());
-                assertEquals(3, instance3.getCluster().getMembers().size());
-            }
-        });
+        assertClusterSizeEventually(3, instance1, instance2, instance3);
 
         assertTrueEventually(new AssertTask() {
             @Override
@@ -106,13 +97,7 @@ public class HazelcastFactoryTest extends HazelcastTestSupport {
             }
         });
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertEquals(3, client1.getCluster().getMembers().size());
-                assertEquals(3, client1.getCluster().getMembers().size());
-            }
-        });
+        assertClusterSizeEventually(3, client1, client2);
     }
 
     private static void touchRandomNode(HazelcastInstance hazelcastInstance) {

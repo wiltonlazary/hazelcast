@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,14 @@
 package com.hazelcast.aggregation.impl;
 
 import com.hazelcast.aggregation.Aggregator;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
-public class IntegerAverageAggregator<I> extends AbstractAggregator<I, Double> {
+import java.io.IOException;
+
+public final class IntegerAverageAggregator<I> extends AbstractAggregator<I, Integer, Double>
+        implements IdentifiedDataSerializable {
 
     private long sum;
 
@@ -33,10 +39,9 @@ public class IntegerAverageAggregator<I> extends AbstractAggregator<I, Double> {
     }
 
     @Override
-    public void accumulate(I entry) {
+    public void accumulateExtracted(Integer value) {
         count++;
-        Integer extractedValue = (Integer) extract(entry);
-        sum += extractedValue;
+        sum += value;
     }
 
     @Override
@@ -52,6 +57,30 @@ public class IntegerAverageAggregator<I> extends AbstractAggregator<I, Double> {
             return null;
         }
         return ((double) sum / (double) count);
+    }
+
+    @Override
+    public int getFactoryId() {
+        return AggregatorDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return AggregatorDataSerializerHook.INT_AVG;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(attributePath);
+        out.writeLong(sum);
+        out.writeLong(count);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        this.attributePath = in.readUTF();
+        this.sum = in.readLong();
+        this.count = in.readLong();
     }
 
 }

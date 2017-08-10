@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,11 @@
 package com.hazelcast.internal.cluster.impl;
 
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
+import com.hazelcast.core.LifecycleEvent.LifecycleState;
 import com.hazelcast.instance.LifecycleServiceImpl;
 import com.hazelcast.instance.Node;
+import com.hazelcast.internal.cluster.ClusterService;
+import com.hazelcast.spi.CoreService;
 import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.SplitBrainHandlerService;
 import com.hazelcast.spi.properties.GroupProperty;
@@ -32,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static com.hazelcast.core.LifecycleEvent.LifecycleState.MERGED;
+import static com.hazelcast.core.LifecycleEvent.LifecycleState.MERGE_FAILED;
 import static com.hazelcast.core.LifecycleEvent.LifecycleState.MERGING;
 import static com.hazelcast.spi.ExecutionService.SYSTEM_EXECUTOR;
 import static com.hazelcast.util.Preconditions.isNotNull;
@@ -55,20 +59,32 @@ class ClusterMergeTask implements Runnable {
     public void run() {
         LifecycleServiceImpl lifecycleService = node.hazelcastInstance.getLifecycleService();
         lifecycleService.fireLifecycleEvent(MERGING);
+        LifecycleState finalLifecycleState = MERGE_FAILED;
 
-        resetState();
+        try {
+            resetState();
 
-        Collection<Runnable> tasks = collectMergeTasks();
+            Collection<Runnable> coreTasks = collectMergeTasks(true);
 
-        resetServices();
+            Collection<Runnable> nonCoreTasks = collectMergeTasks(false);
 
-        rejoin();
+            resetServices();
 
-        executeMergeTasks(tasks);
+            rejoin();
 
-        if (node.isRunning() && node.joined()) {
-            lifecycleService.fireLifecycleEvent(MERGED);
+            finalLifecycleState = getFinalLifecycleState();
+
+            if (finalLifecycleState == MERGED) {
+                executeMergeTasks(coreTasks);
+                executeMergeTasks(nonCoreTasks);
+            }
+        } finally {
+            lifecycleService.fireLifecycleEvent(finalLifecycleState);
         }
+    }
+
+    private LifecycleState getFinalLifecycleState() {
+       return (node.isRunning() && node.getClusterService().isJoined()) ? MERGED : MERGE_FAILED;
     }
 
     private void resetState() {
@@ -85,11 +101,14 @@ class ClusterMergeTask implements Runnable {
         node.nodeEngine.reset();
     }
 
-    private Collection<Runnable> collectMergeTasks() {
+    private Collection<Runnable> collectMergeTasks(boolean coreServices) {
         // gather merge tasks from services
         Collection<SplitBrainHandlerService> services = node.nodeEngine.getServices(SplitBrainHandlerService.class);
         Collection<Runnable> tasks = new LinkedList<Runnable>();
         for (SplitBrainHandlerService service : services) {
+            if (coreServices != isCoreService(service)) {
+                continue;
+            }
             Runnable runnable = service.prepareMergeRunnable();
             if (runnable != null) {
                 tasks.add(runnable);
@@ -98,10 +117,18 @@ class ClusterMergeTask implements Runnable {
         return tasks;
     }
 
+    private boolean isCoreService(SplitBrainHandlerService service) {
+        return service instanceof CoreService;
+    }
+
     private void resetServices() {
         // reset all services to their initial state
         Collection<ManagedService> managedServices = node.nodeEngine.getServices(ManagedService.class);
         for (ManagedService service : managedServices) {
+            if (service instanceof ClusterService) {
+                // ClusterService is already reset in resetState()
+                continue;
+            }
             service.reset();
         }
     }

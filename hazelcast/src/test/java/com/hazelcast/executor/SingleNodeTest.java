@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -135,7 +135,7 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
             future.get(1, TimeUnit.MILLISECONDS);
             fail("Should throw TimeoutException!");
         } catch (TimeoutException expected) {
-            consume(expected);
+            ignore(expected);
         }
         assertFalse(future.isDone());
         assertTrue(future.cancel(true));
@@ -257,11 +257,11 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
             if (i < 2) {
                 assertEquals(futures.get(i).get(), Boolean.TRUE);
             } else {
-                //noinspection EmptyCatchBlock
                 try {
                     futures.get(i).get();
                     fail();
                 } catch (CancellationException expected) {
+                    ignore(expected);
                 }
             }
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.hazelcast.cache.impl;
 
 import com.hazelcast.cache.impl.record.CacheRecord;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.spi.impl.operationexecutor.impl.PartitionOperationThread;
 
 import javax.cache.configuration.Factory;
 import javax.cache.expiry.ExpiryPolicy;
@@ -139,6 +140,11 @@ public class CacheEntryProcessorEntry<K, V, R extends CacheRecord>
                         + cacheRecordStore.cacheConfig.getInMemoryFormat());
         }
         return (V) objValue;
+    }
+
+    public R getRecord() {
+        assert (Thread.currentThread() instanceof PartitionOperationThread);
+        return record;
     }
 
     /**

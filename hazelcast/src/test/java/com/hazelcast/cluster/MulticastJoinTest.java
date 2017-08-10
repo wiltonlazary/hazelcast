@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.cluster;
 
 import com.hazelcast.config.Config;
@@ -96,27 +112,6 @@ public class MulticastJoinTest extends AbstractJoinTest {
     }
 
     @Test
-    public void test_whenSameGroupNamesButDifferentPassword() throws Exception {
-        Config config1 = new Config();
-        config1.setProperty(GroupProperty.WAIT_SECONDS_BEFORE_JOIN.getName(), "0");
-        config1.setProperty(GroupProperty.MAX_JOIN_SECONDS.getName(), "3");
-        config1.getGroupConfig().setName("group").setPassword("password1");
-        config1.getNetworkConfig().getJoin().getMulticastConfig()
-                .setEnabled(true).setMulticastTimeoutSeconds(3);
-        config1.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
-
-        Config config2 = new Config();
-        config2.setProperty(GroupProperty.WAIT_SECONDS_BEFORE_JOIN.getName(), "0");
-        config2.setProperty(GroupProperty.MAX_JOIN_SECONDS.getName(), "3");
-        config2.getGroupConfig().setName("group").setPassword("password2");
-        config2.getNetworkConfig().getJoin().getMulticastConfig()
-                .setEnabled(true).setMulticastTimeoutSeconds(3);
-        config2.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
-
-        assertIncompatible(config1, config2);
-    }
-
-    @Test
     public void test_whenIncompatiblePartitionGroups() throws Exception {
         Config config1 = new Config();
         config1.setProperty(GroupProperty.WAIT_SECONDS_BEFORE_JOIN.getName(), "0");
@@ -169,8 +164,8 @@ public class MulticastJoinTest extends AbstractJoinTest {
         HazelcastInstance h2 = Hazelcast.newHazelcastInstance(c2);
 
         // First two nodes are up. All should be in separate clusters.
-        assertEquals(1, h1.getCluster().getMembers().size());
-        assertEquals(1, h2.getCluster().getMembers().size());
+        assertClusterSize(1, h1);
+        assertClusterSize(1, h2);
 
         HazelcastInstance h3 = Hazelcast.newHazelcastInstance(c3);
 

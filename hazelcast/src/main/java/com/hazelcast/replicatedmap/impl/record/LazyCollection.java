@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
 
-class LazyCollection<K, V>
-        implements Collection<V> {
+class LazyCollection<K, V> implements Collection<V> {
 
     private final InternalReplicatedMapStorage<K, V> storage;
     private final IteratorFactory<K, V, V> iteratorFactory;

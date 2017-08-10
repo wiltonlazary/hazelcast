@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,16 @@ package com.hazelcast.client.cache.impl.nearcache.invalidation;
 
 import com.hazelcast.cache.impl.CacheEventHandler;
 import com.hazelcast.cache.impl.CacheService;
-import com.hazelcast.client.cache.impl.ClientCacheProxy;
 import com.hazelcast.client.cache.impl.HazelcastClientCachingProvider;
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.impl.HazelcastClientProxy;
 import com.hazelcast.client.spi.ClientContext;
+import com.hazelcast.client.spi.ClientProxy;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataContainer;
 import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataFetcher;
 import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataGenerator;
 import com.hazelcast.internal.nearcache.impl.invalidation.RepairingHandler;
@@ -68,16 +69,18 @@ public class ClientCacheMetaDataFetcherTest extends HazelcastTestSupport {
         String cacheName = "test";
         int partition = 1;
         long givenSequence = getInt(1, MAX_VALUE);
-        UUID givenUuid = UuidUtil.newSecureUUID();
+        UUID givenUuid = UuidUtil.newUnsecureUUID();
 
         RepairingTask repairingTask = getRepairingTask(cacheName, partition, givenSequence, givenUuid);
         MetaDataFetcher metaDataFetcher = repairingTask.getMetaDataFetcher();
         ConcurrentMap<String, RepairingHandler> handlers = repairingTask.getHandlers();
         metaDataFetcher.fetchMetadata(handlers);
 
-        UUID foundUuid = repairingTask.getPartitionUuids().get(partition);
         RepairingHandler repairingHandler = handlers.get(getPrefixedName(cacheName));
-        long foundSequence = repairingHandler.getMetaDataContainer(partition).getSequence();
+        MetaDataContainer metaDataContainer = repairingHandler.getMetaDataContainer(partition);
+
+        UUID foundUuid = metaDataContainer.getUuid();
+        long foundSequence = metaDataContainer.getSequence();
 
         assertEquals(givenSequence, foundSequence);
         assertEquals(givenUuid, foundUuid);
@@ -93,7 +96,7 @@ public class ClientCacheMetaDataFetcherTest extends HazelcastTestSupport {
         CachingProvider clientCachingProvider = HazelcastClientCachingProvider.createCachingProvider(client);
         Cache<Integer, Integer> clientCache = clientCachingProvider.getCacheManager().createCache(cacheName, newCacheConfig());
 
-        ClientContext clientContext = ((ClientCacheProxy) clientCache).getClientContext();
+        ClientContext clientContext = ((ClientProxy) clientCache).getContext();
         return clientContext.getRepairingTask(SERVICE_NAME);
     }
 
@@ -124,5 +127,4 @@ public class ClientCacheMetaDataFetcherTest extends HazelcastTestSupport {
     private String getPrefixedName(String cacheName) {
         return "/hz/" + cacheName;
     }
-
 }

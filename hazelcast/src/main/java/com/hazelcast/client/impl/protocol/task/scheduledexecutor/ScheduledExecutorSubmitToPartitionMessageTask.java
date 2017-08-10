@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ import com.hazelcast.security.permission.ScheduledExecutorPermission;
 import com.hazelcast.spi.Operation;
 
 import java.security.Permission;
+import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
 
 public class ScheduledExecutorSubmitToPartitionMessageTask
         extends AbstractPartitionMessageTask<ScheduledExecutorSubmitToPartitionCodec.RequestParameters> {
@@ -39,10 +41,11 @@ public class ScheduledExecutorSubmitToPartitionMessageTask
 
     @Override
     protected Operation prepareOperation() {
-        TaskDefinition def = serializationService.toObject(parameters.taskDefinition);
-        Operation op = new ScheduleTaskOperation(parameters.schedulerName, def);
-        op.setPartitionId(getPartitionId());
-        return op;
+        Callable callable = serializationService.toObject(parameters.task);
+        TaskDefinition def = new TaskDefinition(TaskDefinition.Type.getById(parameters.type),
+                parameters.taskName, callable, parameters.initialDelayInMillis, parameters.periodInMillis,
+                TimeUnit.MILLISECONDS);
+        return new ScheduleTaskOperation(parameters.schedulerName, def);
     }
 
     @Override
@@ -77,6 +80,10 @@ public class ScheduledExecutorSubmitToPartitionMessageTask
 
     @Override
     public Object[] getParameters() {
-        return new Object[] { parameters.schedulerName, parameters.taskDefinition };
+        Callable callable = serializationService.toObject(parameters.task);
+        TaskDefinition def = new TaskDefinition(TaskDefinition.Type.getById(parameters.type),
+                parameters.taskName, callable, parameters.initialDelayInMillis, parameters.periodInMillis,
+                TimeUnit.MILLISECONDS);
+        return new Object[] { parameters.schedulerName, def };
     }
 }

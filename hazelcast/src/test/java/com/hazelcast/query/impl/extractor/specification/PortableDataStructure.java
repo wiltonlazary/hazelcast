@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.query.impl.extractor.specification;
 
 import com.hazelcast.nio.serialization.Portable;
@@ -11,8 +27,9 @@ import java.util.Arrays;
 public class PortableDataStructure {
 
     static class CarPortable implements Portable {
-        final static int FACTORY_ID = 1;
-        final static int ID = 5;
+
+        static final int FACTORY_ID = 1;
+        static final int ID = 5;
 
         public String name;
         public EnginePortable engine;
@@ -61,10 +78,16 @@ public class PortableDataStructure {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             CarPortable that = (CarPortable) o;
-            if (name != null ? !name.equals(that.name) : that.name != null) return false;
+            if (name != null ? !name.equals(that.name) : that.name != null) {
+                return false;
+            }
             return engine != null ? engine.equals(that.engine) : that.engine == null;
 
         }
@@ -78,8 +101,8 @@ public class PortableDataStructure {
     }
 
     static class EnginePortable implements Portable, Comparable<EnginePortable> {
-        final static int FACTORY_ID = 1;
-        final static int ID = 8;
+        static final int FACTORY_ID = 1;
+        static final int ID = 8;
         public Integer power;
         public ChipPortable chip;
 
@@ -112,8 +135,12 @@ public class PortableDataStructure {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             EnginePortable that = (EnginePortable) o;
             return power.equals(that.power);
 
@@ -131,8 +158,8 @@ public class PortableDataStructure {
     }
 
     static class ChipPortable implements Portable, Comparable<ChipPortable> {
-        final static int FACTORY_ID = 1;
-        final static int ID = 6;
+        static final int FACTORY_ID = 1;
+        static final int ID = 6;
         public Integer power;
 
         public ChipPortable(int power) {
@@ -161,8 +188,12 @@ public class PortableDataStructure {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             ChipPortable that = (ChipPortable) o;
             return power.equals(that.power);
 
@@ -180,8 +211,8 @@ public class PortableDataStructure {
     }
 
     static class WheelPortable implements Portable, Comparable<WheelPortable> {
-        final static int FACTORY_ID = 1;
-        final static int ID = 7;
+        static final int FACTORY_ID = 1;
+        static final int ID = 7;
         public String name;
         public ChipPortable chip;
         public Portable chips[];
@@ -225,8 +256,12 @@ public class PortableDataStructure {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             WheelPortable that = (WheelPortable) o;
             return name != null ? name.equals(that.name) : that.name == null;
         }
@@ -243,8 +278,8 @@ public class PortableDataStructure {
     }
 
     static class XPortable implements Portable, Comparable<XPortable> {
-        final static int FACTORY_ID = 1;
-        final static int ID = 10;
+        static final int FACTORY_ID = 1;
+        static final int ID = 10;
         public Portable chips[];
 
         public XPortable() {
@@ -284,8 +319,8 @@ public class PortableDataStructure {
     }
 
     static class YPortable implements Portable, Comparable<YPortable> {
-        final static int FACTORY_ID = 1;
-        final static int ID = 9;
+        static final int FACTORY_ID = 1;
+        static final int ID = 9;
         public int serial[];
 
         public YPortable() {
@@ -325,24 +360,25 @@ public class PortableDataStructure {
     }
 
     static class CarPortableFactory implements PortableFactory {
-        final static int ID = 1;
+        static final int ID = 1;
 
         @Override
         public Portable create(int classId) {
-            if (CarPortable.ID == classId)
+            if (CarPortable.ID == classId) {
                 return new CarPortable();
-            else if (EnginePortable.ID == classId)
+            } else if (EnginePortable.ID == classId) {
                 return new EnginePortable();
-            else if (WheelPortable.ID == classId)
+            } else if (WheelPortable.ID == classId) {
                 return new WheelPortable();
-            else if (ChipPortable.ID == classId)
+            } else if (ChipPortable.ID == classId) {
                 return new ChipPortable();
-            else if (XPortable.ID == classId)
+            } else if (XPortable.ID == classId) {
                 return new XPortable();
-            else if (YPortable.ID == classId)
+            } else if (YPortable.ID == classId) {
                 return new YPortable();
-            else
+            } else {
                 return null;
+            }
         }
     }
 

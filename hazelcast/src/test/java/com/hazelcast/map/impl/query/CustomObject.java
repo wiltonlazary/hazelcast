@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,14 +46,24 @@ public class CustomObject implements Serializable {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         CustomObject that = (CustomObject) o;
 
-        if (attribute != null ? !attribute.equals(that.attribute) : that.attribute != null) return false;
-        if (name != null ? !name.equals(that.name) : that.name != null) return false;
-        if (uuid != null ? !uuid.equals(that.uuid) : that.uuid != null) return false;
+        if (attribute != null ? !attribute.equals(that.attribute) : that.attribute != null) {
+            return false;
+        }
+        if (name != null ? !name.equals(that.name) : that.name != null) {
+            return false;
+        }
+        if (uuid != null ? !uuid.equals(that.uuid) : that.uuid != null) {
+            return false;
+        }
 
         return true;
     }

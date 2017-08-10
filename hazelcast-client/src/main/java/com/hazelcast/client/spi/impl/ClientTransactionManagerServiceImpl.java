@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -93,7 +93,6 @@ public class ClientTransactionManagerServiceImpl implements ClientTransactionMan
         return new XATransactionContextProxy(this, xid, timeoutInSeconds);
     }
 
-    @Override
     public void shutdown() {
     }
 
@@ -112,7 +111,7 @@ public class ClientTransactionManagerServiceImpl implements ClientTransactionMan
         while (count < RETRY_COUNT) {
             try {
                 final Address randomAddress = getRandomAddress();
-                return (ClientConnection) client.getConnectionManager().getOrConnect(randomAddress, false);
+                return (ClientConnection) client.getConnectionManager().getOrConnect(randomAddress);
             } catch (Exception e) {
                 lastError = e;
             }

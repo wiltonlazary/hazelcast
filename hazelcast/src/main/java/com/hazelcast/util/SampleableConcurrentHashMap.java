@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@
 package com.hazelcast.util;
 
 import com.hazelcast.internal.eviction.Expirable;
+import com.hazelcast.internal.util.ThreadLocalRandomProvider;
+import com.hazelcast.nio.serialization.SerializableByConvention;
 
 import java.util.AbstractMap;
 import java.util.Collections;
@@ -25,7 +27,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Random;
 
 /**
  * ConcurrentHashMap to extend iterator capability.
@@ -33,19 +34,10 @@ import java.util.Random;
  * @param <K> Type of the key
  * @param <V> Type of the value
  */
+@SerializableByConvention
 public class SampleableConcurrentHashMap<K, V> extends ConcurrentReferenceHashMap<K, V> {
 
     private static final float LOAD_FACTOR = 0.91f;
-
-    // Because of JDK6 compatibility,
-    // we cannot use "java.util.concurrent.ThreadLocalRandom" (valid for JDK7+ versions).
-    private static final ThreadLocal<Random> THREAD_LOCAL_RANDOM =
-        new ThreadLocal<Random>() {
-            @Override
-            protected Random initialValue() {
-                return new Random();
-            }
-        };
 
     public SampleableConcurrentHashMap(int initialCapacity) {
         // Concurrency level 1 is important for fetch-method to function properly.
@@ -62,10 +54,9 @@ public class SampleableConcurrentHashMap<K, V> extends ConcurrentReferenceHashMa
      * Fetches keys from given <code>tableIndex</code> as <code>size</code>
      * and puts them into <code>keys</code> list.
      *
-     * @param tableIndex    Index (checkpoint) for starting point of fetch operation
-     * @param size          Count of how many keys will be fetched
-     * @param keys          List that fetched keys will be put into
-     *
+     * @param tableIndex Index (checkpoint) for starting point of fetch operation
+     * @param size       Count of how many keys will be fetched
+     * @param keys       List that fetched keys will be put into
      * @return the next index (checkpoint) for later fetches
      */
     public int fetchKeys(int tableIndex, int size, List<K> keys) {
@@ -99,9 +90,9 @@ public class SampleableConcurrentHashMap<K, V> extends ConcurrentReferenceHashMa
      * Fetches entries from given <code>tableIndex</code> as <code>size</code>
      * and puts them into <code>entries</code> list.
      *
-     * @param tableIndex           Index (checkpoint) for starting point of fetch operation
-     * @param size                 Count of how many entries will be fetched
-     * @param entries              List that fetched entries will be put into
+     * @param tableIndex Index (checkpoint) for starting point of fetch operation
+     * @param size       Count of how many entries will be fetched
+     * @param entries    List that fetched entries will be put into
      * @return the next index (checkpoint) for later fetches
      */
     public int fetchEntries(int tableIndex, int size, List<Map.Entry<K, V>> entries) {
@@ -183,7 +174,6 @@ public class SampleableConcurrentHashMap<K, V> extends ConcurrentReferenceHashMa
         public String toString() {
             return key + "=" + value;
         }
-
     }
 
     protected <E extends SamplingEntry> E createSamplingEntry(K key, V value) {
@@ -203,7 +193,6 @@ public class SampleableConcurrentHashMap<K, V> extends ConcurrentReferenceHashMa
         if (sampleCount == 0 || size() == 0) {
             return Collections.EMPTY_LIST;
         }
-
         return new LazySamplingEntryIterableIterator<E>(sampleCount);
     }
 
@@ -213,8 +202,7 @@ public class SampleableConcurrentHashMap<K, V> extends ConcurrentReferenceHashMa
      *
      * NOTE: Assumed that it is not accessed by multiple threads. So there is no synchronization.
      */
-    private final class LazySamplingEntryIterableIterator<E extends SamplingEntry>
-            implements Iterable<E>, Iterator<E> {
+    private final class LazySamplingEntryIterableIterator<E extends SamplingEntry> implements Iterable<E>, Iterator<E> {
 
         private final int maxEntryCount;
         private final int randomNumber;
@@ -228,7 +216,7 @@ public class SampleableConcurrentHashMap<K, V> extends ConcurrentReferenceHashMa
 
         private LazySamplingEntryIterableIterator(int maxEntryCount) {
             this.maxEntryCount = maxEntryCount;
-            this.randomNumber = THREAD_LOCAL_RANDOM.get().nextInt(Integer.MAX_VALUE);
+            this.randomNumber = ThreadLocalRandomProvider.get().nextInt(Integer.MAX_VALUE);
             this.firstSegmentIndex = randomNumber % segments.length;
             this.currentSegmentIndex = firstSegmentIndex;
             this.currentBucketIndex = -1;
@@ -318,7 +306,6 @@ public class SampleableConcurrentHashMap<K, V> extends ConcurrentReferenceHashMa
         public void remove() {
             throw new UnsupportedOperationException("Removing is not supported");
         }
-
     }
 
     protected boolean isValidForSampling(V value) {

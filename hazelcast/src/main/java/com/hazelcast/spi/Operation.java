@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@ import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
-import com.hazelcast.quorum.QuorumException;
 import com.hazelcast.spi.exception.RetryableException;
+import com.hazelcast.spi.exception.SilentException;
 import com.hazelcast.spi.properties.GroupProperty;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -45,7 +45,9 @@ import static com.hazelcast.util.StringUtil.timeToString;
  */
 public abstract class Operation implements DataSerializable {
 
-    /** Marks an {@link Operation} as non-partition-specific. */
+    /**
+     * Marks an {@link Operation} as non-partition-specific.
+     */
     public static final int GENERIC_PARTITION_ID = -1;
 
     static final int BITMASK_VALIDATE_TARGET = 1;
@@ -133,18 +135,18 @@ public abstract class Operation implements DataSerializable {
     }
 
     /**
-     * Returns the id of the partition that this Operation will be executed upon.
+     * Returns the ID of the partition that this Operation will be executed upon.
      *
      * If the partitionId is equal or larger than 0, it means that it is tied to a specific partition: for example,
      * a map.get('foo'). If it is smaller than 0, than it means that it isn't bound to a particular partition.
      *
      * The partitionId should never be equal or larger than the total number of partitions. For example, if there are 271
-     * partitions, the maximum partitionId is 270.
+     * partitions, the maximum partition ID is 270.
      *
      * The partitionId is used by the OperationService to figure out which member owns a specific partition, and to send
      * the operation to that member.
      *
-     * @return the id of the partition.
+     * @return the ID of the partition.
      * @see #setPartitionId(int)
      */
     public final int getPartitionId() {
@@ -152,9 +154,9 @@ public abstract class Operation implements DataSerializable {
     }
 
     /**
-     * Sets the partition id.
+     * Sets the partition ID.
      *
-     * @param partitionId the id of the partition.
+     * @param partitionId the ID of the partition.
      * @return the updated Operation.
      * @see #getPartitionId()
      */
@@ -183,12 +185,13 @@ public abstract class Operation implements DataSerializable {
      * Gets the call ID of this operation. The call ID is used to associate the invocation of an operation
      * on a remote system with the response from the execution of that operation.
      * <ul>
-     *     <li>Initially the call ID is zero.</li>
-     *     <li>When an Invocation of the operation is created, call ID is assigned a positive value.</li>
-     *     <li>When the invocation ends, the operation is {@link #deactivate()}d, but the call ID is preserved.</li>
-     *     <li>The same operation may be involved in a further invocation (retrying); this will assign a
-     *     new call ID and reactivate the operation.</li>
+     * <li>Initially the call ID is zero.</li>
+     * <li>When an Invocation of the operation is created, call ID is assigned a positive value.</li>
+     * <li>When the invocation ends, the operation is {@link #deactivate()}d, but the call ID is preserved.</li>
+     * <li>The same operation may be involved in a further invocation (retrying); this will assign a
+     * new call ID and reactivate the operation.</li>
      * </ul>
+     *
      * @return the call ID
      */
     public final long getCallId() {
@@ -198,6 +201,7 @@ public abstract class Operation implements DataSerializable {
     /**
      * Tells whether this operation is involved in an ongoing invocation. Such an operation always has a
      * positive call ID.
+     *
      * @return {@code true} if the operation's invocation is active; {@code false} otherwise
      */
     final boolean isActive() {
@@ -206,6 +210,7 @@ public abstract class Operation implements DataSerializable {
 
     /**
      * Marks this operation as "not involved in an ongoing invocation".
+     *
      * @return {@code true} if this call deactivated the operation; {@code false} if it was already inactive
      */
     final boolean deactivate() {
@@ -224,9 +229,10 @@ public abstract class Operation implements DataSerializable {
 
     /**
      * Atomically ensures that the operation is not already involved in an invocation and sets the supplied call ID.
+     *
      * @param newId the requested call ID, must be positive
      * @throws IllegalArgumentException if the supplied call ID is non-positive
-     * @throws IllegalStateException if the operation already has an ongoing invocation
+     * @throws IllegalStateException    if the operation already has an ongoing invocation
      */
     // Accessed using OperationAccessor
     final void setCallId(long newId) {
@@ -256,6 +262,7 @@ public abstract class Operation implements DataSerializable {
      * <p>
      * For example an operation can distinguish the first invocation and invocation retries by keeping
      * the initial <tt>callId</tt>.
+     *
      * @param callId the new call ID that was set on the operation
      */
     protected void onSetCallId(long callId) {
@@ -334,8 +341,8 @@ public abstract class Operation implements DataSerializable {
     }
 
     public final void sendResponse(Object value) {
-        OperationResponseHandler operationResponseHandler = getOperationResponseHandler();
-        operationResponseHandler.sendResponse(this, value);
+        OperationResponseHandler responseHandler = getOperationResponseHandler();
+        responseHandler.sendResponse(this, value);
     }
 
     /**
@@ -393,9 +400,9 @@ public abstract class Operation implements DataSerializable {
      *
      * Examples:
      * <ol>
-     *     <li>in case of ILock.tryLock(10, ms), the wait timeout is 10 ms</li>
-     *     <li>in case of ILock.lock(), the wait timeout is -1</li>
-     *     <li>in case of ILock.tryLock(), the wait timeout is 0.</li>
+     * <li>in case of ILock.tryLock(10, ms), the wait timeout is 10 ms</li>
+     * <li>in case of ILock.lock(), the wait timeout is -1</li>
+     * <li>in case of ILock.tryLock(), the wait timeout is 0.</li>
      * </ol>
      *
      * The waitTimeout only has meaning for blocking operations. For non blocking operations the value is undefined.
@@ -486,19 +493,19 @@ public abstract class Operation implements DataSerializable {
      */
     public void logError(Throwable e) {
         final ILogger logger = getLogger();
-        if (e instanceof RetryableException) {
+        if (e instanceof SilentException) {
+            logger.finest(e.getMessage(), e);
+        } else if (e instanceof RetryableException) {
             final Level level = returnsResponse() ? Level.FINEST : Level.WARNING;
             if (logger.isLoggable(level)) {
                 logger.log(level, e.getClass().getName() + ": " + e.getMessage());
             }
         } else if (e instanceof OutOfMemoryError) {
             try {
-                logger.log(Level.SEVERE, e.getMessage(), e);
+                logger.severe(e.getMessage(), e);
             } catch (Throwable ignored) {
                 ignore(ignored);
             }
-        } else if (e instanceof QuorumException) {
-            logger.log(Level.WARNING, e.getMessage());
         } else {
             final Level level = nodeEngine != null && nodeEngine.isRunning() ? Level.SEVERE : Level.FINEST;
             if (logger.isLoggable(level)) {

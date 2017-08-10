@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,12 @@ import com.hazelcast.cache.HazelcastCachingProvider;
 import com.hazelcast.cache.impl.AbstractHazelcastCacheManager;
 import com.hazelcast.cache.impl.ICacheInternal;
 import com.hazelcast.cache.impl.ICacheService;
-import com.hazelcast.internal.nearcache.NearCacheManager;
+import com.hazelcast.client.impl.ClientICacheManager;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.client.impl.HazelcastClientProxy;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.internal.nearcache.NearCacheManager;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.net.URI;
@@ -35,11 +35,12 @@ import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import static com.hazelcast.util.ExceptionUtil.rethrow;
 import static com.hazelcast.util.Preconditions.checkNotNull;
 
 /**
  * {@link javax.cache.CacheManager} implementation for client side.
- *
+ * <p>
  * Provides client side CacheManager functionality.
  */
 public final class HazelcastClientCacheManager extends AbstractHazelcastCacheManager {
@@ -53,12 +54,12 @@ public final class HazelcastClientCacheManager extends AbstractHazelcastCacheMan
         super(cachingProvider, hazelcastInstance, uri, classLoader, properties);
 
         /*
-         * TODO
+         * TODO:
          *
          * A new interface, such as `InternalHazelcastInstance` (has `getOriginalInstance()` method),
          * might be introduced. Then underlying actual (original) Hazelcast instance is retrieved through this.
          *
-         * Original Hazelcast instance is used for getting `NearCacheManager` and .
+         * Original Hazelcast instance is used for getting `NearCacheManager` and
          * passing full cache name directly by this cache manager itself.
          */
         if (hazelcastInstance instanceof HazelcastClientProxy) {
@@ -110,14 +111,14 @@ public final class HazelcastClientCacheManager extends AbstractHazelcastCacheMan
     protected <K, V> ICacheInternal<K, V> createCacheProxy(CacheConfig<K, V> cacheConfig) {
         clientCacheProxyFactory.addCacheConfig(cacheConfig.getNameWithPrefix(), cacheConfig);
         try {
-            ClientCacheProxy<K, V> clientCacheProxy =
-                    (ClientCacheProxy<K, V>) client.getCacheManager()
-                            .getCacheByFullName(cacheConfig.getNameWithPrefix());
-            clientCacheProxy.setCacheManager(this);
-            return clientCacheProxy;
+            ClientICacheManager cacheManager = client.getCacheManager();
+            String nameWithPrefix = cacheConfig.getNameWithPrefix();
+            ICacheInternal<K, V> cache = (ICacheInternal<K, V>) cacheManager.getCacheByFullName(nameWithPrefix);
+            cache.setCacheManager(this);
+            return cache;
         } catch (Throwable t) {
             clientCacheProxyFactory.removeCacheConfig(cacheConfig.getNameWithPrefix());
-            throw ExceptionUtil.rethrow(t);
+            throw rethrow(t);
         }
     }
 
@@ -126,10 +127,10 @@ public final class HazelcastClientCacheManager extends AbstractHazelcastCacheMan
                                                        boolean syncCreate) {
         CacheConfig<K, V> config = configs.get(cacheName);
         if (config == null) {
-            // If cache config not found, try to find it from partition
+            // if cache config not found, try to find it from partition
             config = getCacheConfig(cacheName, simpleCacheName);
             if (config != null) {
-                // Cache config possibly is not exist on other nodes, so create also on them if absent
+                // cache config possibly is not exist on other nodes, so create also on them if absent
                 createCacheConfig(cacheName, config, createAlsoOnOthers, syncCreate);
             }
         }

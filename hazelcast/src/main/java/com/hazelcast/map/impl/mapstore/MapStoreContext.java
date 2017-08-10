@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,12 +24,13 @@ import com.hazelcast.spi.serialization.SerializationService;
 
 /**
  * A context which provides/initializes map store specific functionality.
- * <p/>
- * Specifically,
- * <p/>
- * <li>creates map store implementation from map store configuration.</li>
+ * <p>
+ * Specifically:
+ * <ul>
+ * <li>creates map store implementation from map store configuration</li>
  * <li>creates map store manager according to write-behind or write-through store configuration</li>
- * <li>loads initial keys if a loader defined.</li>
+ * <li>loads initial keys if a loader defined</li>
+ * </ul>
  */
 public interface MapStoreContext {
 
@@ -56,7 +57,7 @@ public interface MapStoreContext {
     Iterable<Object> loadAllKeys();
 
     /**
-     * @return true if MapLoader or MapStore is defined
+     * @return {@code true} if MapLoader or MapStore is defined
      */
     boolean isMapLoader();
 }

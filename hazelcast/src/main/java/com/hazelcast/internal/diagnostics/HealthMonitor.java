@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,12 +25,12 @@ import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.memory.MemoryStats;
 import com.hazelcast.spi.properties.GroupProperty;
-
-import java.util.logging.Level;
+import com.hazelcast.util.EmptyStatement;
 
 import static com.hazelcast.internal.diagnostics.HealthMonitorLevel.OFF;
 import static com.hazelcast.internal.diagnostics.HealthMonitorLevel.valueOf;
 import static com.hazelcast.util.StringUtil.LINE_SEPARATOR;
+import static com.hazelcast.util.ThreadUtil.createThreadName;
 import static java.lang.String.format;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -105,6 +105,21 @@ public class HealthMonitor {
         return this;
     }
 
+    public void stop() {
+        if (monitorLevel == OFF) {
+            return;
+        }
+
+        monitorThread.interrupt();
+        try {
+            monitorThread.join();
+        } catch (InterruptedException e) {
+            EmptyStatement.ignore(e);
+        }
+        logger.finest("HealthMonitor stopped");
+        return;
+    }
+
     private HealthMonitorLevel getHealthMonitorLevel() {
         String healthMonitorLevel = node.getProperties().getString(GroupProperty.HEALTH_MONITORING_LEVEL);
         return valueOf(healthMonitorLevel);
@@ -115,8 +130,7 @@ public class HealthMonitor {
         private boolean performanceLogHint;
 
         private HealthMonitorThread(int delaySeconds) {
-            super(node.getHazelcastThreadGroup().getInternalThreadGroup(),
-                    node.getHazelcastThreadGroup().getThreadNamePrefix("HealthMonitor"));
+            super(createThreadName(node.hazelcastInstance.getName(), "HealthMonitor"));
             setDaemon(true);
             this.delaySeconds = delaySeconds;
             this.performanceLogHint = node.getProperties().getBoolean(Diagnostics.ENABLED);
@@ -133,12 +147,12 @@ public class HealthMonitor {
                             if (healthMetrics.exceedsThreshold()) {
                                 logDiagnosticsHint();
                             }
-                            logger.log(Level.INFO, healthMetrics.render());
+                            logger.info(healthMetrics.render());
                             break;
                         case SILENT:
                             if (healthMetrics.exceedsThreshold()) {
                                 logDiagnosticsHint();
-                                logger.log(Level.INFO, healthMetrics.render());
+                                logger.info(healthMetrics.render());
                             }
                             break;
                         default:

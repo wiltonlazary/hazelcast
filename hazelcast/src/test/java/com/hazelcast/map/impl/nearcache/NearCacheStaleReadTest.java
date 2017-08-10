@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map.impl.nearcache;
 
 import com.hazelcast.config.Config;
@@ -5,12 +21,14 @@ import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.logging.ILogger;
+import com.hazelcast.logging.Logger;
 import com.hazelcast.map.impl.proxy.NearCachedMapProxyImpl;
-import com.hazelcast.test.HazelcastSerialClassRunner;
+import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
+import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import org.apache.log4j.Logger;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -35,15 +53,15 @@ import static org.junit.Assert.fail;
  * <p>
  * Thansk Lukas Blunschi for this test (https://github.com/lukasblu).
  */
-@RunWith(HazelcastSerialClassRunner.class)
-@Category(QuickTest.class)
+@RunWith(HazelcastParallelClassRunner.class)
+@Category({QuickTest.class, ParallelTest.class})
 public class NearCacheStaleReadTest extends HazelcastTestSupport {
 
     private static final int NUM_GETTERS = 7;
     private static final int MAX_RUNTIME = 30;
     private static final String KEY = "key123";
     private static final String MAP_NAME = "testMap" + NearCacheStaleReadTest.class.getSimpleName();
-    private static final Logger LOGGER = Logger.getLogger(NearCacheStaleReadTest.class);
+    private static final ILogger LOGGER = Logger.getLogger(NearCacheStaleReadTest.class);
 
     private IMap<String, String> map;
     private AtomicInteger valuePut;
@@ -62,7 +80,6 @@ public class NearCacheStaleReadTest extends HazelcastTestSupport {
         // create hazelcast config
         Config config = getConfig();
         config.setProperty("hazelcast.invalidation.max.tolerated.miss.count", "0");
-        config.setProperty("hazelcast.logging.type", "log4j");
         config.setProperty(MAP_INVALIDATION_MESSAGE_BATCH_FREQUENCY_SECONDS.getName(), "2");
         // configure Near Cache
         NearCacheConfig nearCacheConfig = getNearCacheConfig();
@@ -86,12 +103,19 @@ public class NearCacheStaleReadTest extends HazelcastTestSupport {
         testNoLostInvalidations(false);
     }
 
+    @Test
+    public void testNoLostInvalidationsStrict() throws Exception {
+        testNoLostInvalidations(true);
+    }
+
     private void testNoLostInvalidations(boolean strict) throws Exception {
         // run test
         runTestInternal();
 
-        // test eventually consistent
-        Thread.sleep(5000);
+        if (strict) {
+            // test eventually consistent
+            sleepSeconds(2);
+        }
         int valuePutLast = valuePut.get();
         String valueMapStr = map.get(KEY);
         int valueMap = parseInt(valueMapStr);
@@ -120,14 +144,14 @@ public class NearCacheStaleReadTest extends HazelcastTestSupport {
 
         // fail after stopping hazelcast instance
         if (msg != null) {
-            LOGGER.warn(msg);
+            LOGGER.warning(msg);
             fail(msg);
         }
 
         // fail if strict is required and assertion was violated
         if (strict && assertionViolationCount.get() > 0) {
             msg = "Assertion violated " + assertionViolationCount.get() + " times.";
-            LOGGER.warn(msg);
+            LOGGER.warning(msg);
             fail(msg);
         }
     }
@@ -190,26 +214,23 @@ public class NearCacheStaleReadTest extends HazelcastTestSupport {
 
                 // check if we see our last update
                 String valueMapStr = map.get(KEY);
-                if (valueMapStr == null) {
-                    continue;
-                }
                 int valueMap = parseInt(valueMapStr);
                 if (valueMap != i) {
                     assertionViolationCount.incrementAndGet();
-                    LOGGER.warn("Assertion violated! (valueMap = " + valueMap + ", i = " + i + ")");
+                    LOGGER.warning("Assertion violated! (valueMap = " + valueMap + ", i = " + i + ")");
 
                     // sleep to ensure Near Cache invalidation is really lost
                     try {
                         Thread.sleep(100);
                     } catch (InterruptedException e) {
-                        LOGGER.warn("Interrupted: " + e.getMessage());
+                        LOGGER.warning("Interrupted: " + e.getMessage());
                     }
 
                     // test again and stop if really lost
                     valueMapStr = map.get(KEY);
                     valueMap = parseInt(valueMapStr);
                     if (valueMap != i) {
-                        LOGGER.warn("Near Cache invalidation lost! (valueMap = " + valueMap + ", i = " + i + ")");
+                        LOGGER.warning("Near Cache invalidation lost! (valueMap = " + valueMap + ", i = " + i + ")");
                         failed.set(true);
                         stop.set(true);
                     }

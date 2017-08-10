@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -103,7 +103,7 @@ public class CacheEventHandler {
                 break;
             default:
                 throw new IllegalArgumentException(
-                        "Event Type not defined to create an eventData during publish : " + eventType.name());
+                        "Event Type not defined to create an eventData during publish: " + eventType.name());
         }
         eventService.publishEvent(SERVICE_NAME, candidates,
                 eventData, cacheEventContext.getOrderKey());
@@ -125,6 +125,10 @@ public class CacheEventHandler {
         } else {
             invalidator.invalidateKey(key, name, sourceUuid);
         }
+    }
+
+    public void destroy(String name, String sourceUuid) {
+        invalidator.destroy(name, sourceUuid);
     }
 
     void shutdown() {

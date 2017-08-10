@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,25 +24,36 @@ import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.query.Predicate;
 import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.PartitionAwareOperation;
+import com.hazelcast.spi.impl.MutatingOperation;
 import com.hazelcast.spi.serialization.SerializationService;
 
 import java.io.IOException;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
-public class MultipleEntryOperation extends AbstractMultipleEntryOperation implements BackupAwareOperation {
+import static com.hazelcast.map.impl.operation.EntryOperator.operator;
+
+
+public class MultipleEntryOperation extends MapOperation
+        implements MutatingOperation, PartitionAwareOperation, BackupAwareOperation {
 
     protected Set<Data> keys;
+    protected MapEntries responses;
+    protected EntryProcessor entryProcessor;
+
+    protected transient EntryOperator operator;
 
     public MultipleEntryOperation() {
     }
 
     public MultipleEntryOperation(String name, Set<Data> keys, EntryProcessor entryProcessor) {
-        super(name, entryProcessor);
+        super(name);
         this.keys = keys;
+        this.entryProcessor = entryProcessor;
     }
 
     @Override
@@ -55,38 +66,21 @@ public class MultipleEntryOperation extends AbstractMultipleEntryOperation imple
     }
 
     @Override
+    @SuppressWarnings("checkstyle:npathcomplexity")
     public void run() throws Exception {
-        long now = getNow();
         responses = new MapEntries(keys.size());
+
+        operator = operator(this, entryProcessor, getPredicate(), true);
         for (Data key : keys) {
-            if (!isKeyProcessable(key)) {
-                continue;
-            }
-
-            Object value = recordStore.get(key, false);
-
-            Map.Entry entry = createMapEntry(key, value);
-            if (!isEntryProcessable(entry)) {
-                continue;
-            }
-
-            Data response = process(entry);
+            Data response = operator.operateOnKey(key).doPostOperateOps().getResult();
             if (response != null) {
                 responses.add(key, response);
             }
-
-            // first call noOp, other if checks below depends on it.
-            if (noOp(entry, value, now)) {
-                continue;
-            }
-            if (entryRemoved(entry, key, value, now)) {
-                continue;
-            }
-
-            entryAddedOrUpdated(entry, key, value, now);
-
-            evict(key);
         }
+    }
+
+    protected Predicate getPredicate() {
+        return null;
     }
 
     @Override
@@ -115,7 +109,7 @@ public class MultipleEntryOperation extends AbstractMultipleEntryOperation imple
         MultipleEntryBackupOperation backupOperation = null;
         if (backupProcessor != null) {
             backupOperation = new MultipleEntryBackupOperation(name, keys, backupProcessor);
-            backupOperation.setWanEventList(wanEventList);
+            backupOperation.setWanEventList(operator.getWanEventList());
         }
         return backupOperation;
     }

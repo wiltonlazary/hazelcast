@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -403,7 +403,7 @@ public class JobSupervisor {
     private void asyncCancelRemoteOperations(final Set<Address> addresses) {
         final NodeEngine nodeEngine = mapReduceService.getNodeEngine();
         TaskScheduler taskScheduler = nodeEngine.getExecutionService().getGlobalTaskScheduler();
-        taskScheduler.submit(new Runnable() {
+        taskScheduler.execute(new Runnable() {
 
             @Override
             public void run() {

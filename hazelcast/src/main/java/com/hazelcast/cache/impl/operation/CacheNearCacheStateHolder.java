@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,23 +21,24 @@ import com.hazelcast.cache.impl.CacheDataSerializerHook;
 import com.hazelcast.cache.impl.CacheEventHandler;
 import com.hazelcast.cache.impl.CachePartitionSegment;
 import com.hazelcast.cache.impl.CacheService;
-import com.hazelcast.cache.impl.ICacheRecordStore;
 import com.hazelcast.cache.impl.ICacheService;
 import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataGenerator;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.spi.ObjectNamespace;
+import com.hazelcast.spi.ServiceNamespace;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Iterator;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 import static java.util.Collections.emptyList;
 
 /**
- * Holder for near-cache metadata
+ * Holder for Near Cache metadata.
  */
 public class CacheNearCacheStateHolder implements IdentifiedDataSerializable {
 
@@ -52,18 +53,17 @@ public class CacheNearCacheStateHolder implements IdentifiedDataSerializable {
         this.cacheReplicationOperation = cacheReplicationOperation;
     }
 
-    void prepare(CachePartitionSegment segment) {
+    void prepare(CachePartitionSegment segment, Collection<ServiceNamespace> namespaces) {
         ICacheService cacheService = segment.getCacheService();
         MetaDataGenerator metaData = getPartitionMetaDataGenerator(cacheService);
 
         int partitionId = segment.getPartitionId();
         partitionUuid = metaData.getUuidOrNull(partitionId);
 
-        cacheNameSequencePairs = new ArrayList(segment.getCacheConfigs().size());
-        Iterator<ICacheRecordStore> iter = segment.recordStoreIterator();
-        while (iter.hasNext()) {
-            ICacheRecordStore cacheRecordStore = iter.next();
-            String cacheName = cacheRecordStore.getName();
+        cacheNameSequencePairs = new ArrayList(namespaces.size());
+        for (ServiceNamespace namespace : namespaces) {
+            ObjectNamespace ns = (ObjectNamespace) namespace;
+            String cacheName = ns.getObjectName();
 
             cacheNameSequencePairs.add(cacheName);
             cacheNameSequencePairs.add(metaData.currentSequence(cacheName, partitionId));
@@ -75,7 +75,7 @@ public class CacheNearCacheStateHolder implements IdentifiedDataSerializable {
         return cacheEventHandler.getMetaDataGenerator();
     }
 
-    void applyState() {
+    public void applyState() {
         CacheService cacheService = cacheReplicationOperation.getService();
         MetaDataGenerator metaDataGenerator = getPartitionMetaDataGenerator(cacheService);
 

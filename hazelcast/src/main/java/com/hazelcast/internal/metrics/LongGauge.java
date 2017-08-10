@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,12 @@
 package com.hazelcast.internal.metrics;
 
 /**
- * A LongGauge is {@link Metric} where a particular long value is read instantaneous. E.g. the current size of the
+ * A LongGauge is {@link Gauge} where a particular long value is read instantaneous. E.g. the current size of the
  * pending operations queue.
  *
  * {@link DoubleGauge}
  */
-public interface LongGauge extends Metric {
+public interface LongGauge extends Gauge {
 
     /**
      * Reads the current available value as a long.

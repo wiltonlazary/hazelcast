@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,10 +69,10 @@ public class TopicConfigTest {
         TopicConfig topicConfig = new TopicConfig().setGlobalOrderingEnabled(true);
         assertTrue(topicConfig.isGlobalOrderingEnabled());
         try {
-        	topicConfig.setMultiThreadingEnabled(true);
-        	assertTrue("multi-threading must be disabled when global-ordering is enabled", false);
+            topicConfig.setMultiThreadingEnabled(true);
+            assertTrue("multi-threading must be disabled when global-ordering is enabled", false);
         } catch (IllegalArgumentException e) {
-        	// anticipated..
+            // anticipated..
         }
         assertFalse(topicConfig.isMultiThreadingEnabled());
     }
@@ -95,10 +95,10 @@ public class TopicConfigTest {
         topicConfig.setMultiThreadingEnabled(true);
         assertTrue(topicConfig.isMultiThreadingEnabled());
         try {
-        	topicConfig.setGlobalOrderingEnabled(true);
-        	assertTrue("global-ordering must be disabled when multi-threading is enabled", false);
+            topicConfig.setGlobalOrderingEnabled(true);
+            assertTrue("global-ordering must be disabled when multi-threading is enabled", false);
         } catch (IllegalArgumentException e) {
-        	// anticipated..
+            // anticipated..
         }
         assertFalse(topicConfig.isGlobalOrderingEnabled());
     }

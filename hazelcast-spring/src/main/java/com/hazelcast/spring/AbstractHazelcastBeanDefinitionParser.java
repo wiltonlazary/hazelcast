@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import com.hazelcast.config.EvictionConfig;
 import com.hazelcast.config.EvictionPolicy;
 import com.hazelcast.config.GlobalSerializerConfig;
 import com.hazelcast.config.InvalidConfigurationException;
+import com.hazelcast.config.NearCachePreloaderConfig;
 import com.hazelcast.config.SerializationConfig;
 import com.hazelcast.config.SerializerConfig;
 import com.hazelcast.config.SocketInterceptorConfig;
@@ -413,6 +414,40 @@ public abstract class AbstractHazelcastBeanDefinitionParser extends AbstractBean
             }
 
             return evictionConfigBuilder.getBeanDefinition();
+        }
+
+        protected BeanDefinition getPreloaderConfig(final Node node) {
+            Node enabled = node.getAttributes().getNamedItem("enabled");
+            Node directory = node.getAttributes().getNamedItem("directory");
+            Node storeInitialDelaySeconds = node.getAttributes().getNamedItem("store-initial-delay-seconds");
+            Node storeIntervalSeconds = node.getAttributes().getNamedItem("store-interval-seconds");
+
+            BeanDefinitionBuilder nearCachePreloaderConfigBuilder = createBeanBuilder(NearCachePreloaderConfig.class);
+
+            Boolean enabledValue = Boolean.FALSE;
+            String directoryValue = "";
+            Integer storeInitialDelaySecondsValue = NearCachePreloaderConfig.DEFAULT_STORE_INITIAL_DELAY_SECONDS;
+            Integer storeIntervalSecondsValue = NearCachePreloaderConfig.DEFAULT_STORE_INTERVAL_SECONDS;
+
+            if (enabled != null) {
+                enabledValue = Boolean.parseBoolean(getTextContent(enabled));
+            }
+            if (directory != null) {
+                directoryValue =  getTextContent(directory);
+            }
+            if (storeInitialDelaySeconds != null) {
+                storeInitialDelaySecondsValue = Integer.parseInt(getTextContent(storeInitialDelaySeconds));
+            }
+            if (storeIntervalSeconds != null) {
+                storeIntervalSecondsValue = Integer.parseInt(getTextContent(storeIntervalSeconds));
+            }
+
+            nearCachePreloaderConfigBuilder.addPropertyValue("enabled", enabledValue);
+            nearCachePreloaderConfigBuilder.addPropertyValue("directory", directoryValue);
+            nearCachePreloaderConfigBuilder.addPropertyValue("storeInitialDelaySeconds", storeInitialDelaySecondsValue);
+            nearCachePreloaderConfigBuilder.addPropertyValue("storeIntervalSeconds", storeIntervalSecondsValue);
+
+            return nearCachePreloaderConfigBuilder.getBeanDefinition();
         }
 
         protected void handleDiscoveryStrategies(Node node, BeanDefinitionBuilder joinConfigBuilder) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentMap;
 
 import static com.hazelcast.query.impl.TypeConverters.NULL_CONVERTER;
 
@@ -38,21 +37,25 @@ public class IndexImpl implements Index {
 
     public static final NullObject NULL = new NullObject();
 
-    private final IndexStore indexStore;
-    private final String attributeName;
-    private final boolean ordered;
+    protected final InternalSerializationService ss;
+    protected final IndexStore indexStore;
 
     private volatile TypeConverter converter;
 
-    private final InternalSerializationService ss;
+    private final String attributeName;
+    private final boolean ordered;
     private final Extractors extractors;
 
     public IndexImpl(String attributeName, boolean ordered, InternalSerializationService ss, Extractors extractors) {
         this.attributeName = attributeName;
         this.ordered = ordered;
         this.ss = ss;
-        this.indexStore = ordered ? new SortedIndexStore() : new UnsortedIndexStore();
+        this.indexStore = createIndexStore(ordered);
         this.extractors = extractors;
+    }
+
+    public IndexStore createIndexStore(boolean ordered) {
+        return ordered ? new SortedIndexStore() : new UnsortedIndexStore();
     }
 
     @Override
@@ -68,7 +71,7 @@ public class IndexImpl implements Index {
             converter = entry.getConverter(attributeName);
         }
 
-        Object newAttributeValue = extractAttributeValue(entry.getKeyData(), entry.getValue());
+        Object newAttributeValue = extractAttributeValue(entry.getKeyData(), entry.getTargetObject(false));
         if (oldRecordValue == null) {
             indexStore.newIndex(newAttributeValue, entry);
         } else {
@@ -153,6 +156,11 @@ public class IndexImpl implements Index {
     }
 
     @Override
+    public void destroy() {
+        // NOOP
+    }
+
+    @Override
     public String getAttributeName() {
         return attributeName;
     }
@@ -160,10 +168,6 @@ public class IndexImpl implements Index {
     @Override
     public boolean isOrdered() {
         return ordered;
-    }
-
-    ConcurrentMap<Data, QueryableEntry> getRecordMap(Comparable indexValue) {
-        return indexStore.getRecordMap(indexValue);
     }
 
     public static final class NullObject implements Comparable, IdentifiedDataSerializable {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.map.impl.operation;
 import com.hazelcast.core.EntryView;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.impl.MapEntries;
+import com.hazelcast.map.impl.query.Query;
 import com.hazelcast.map.merge.MapMergePolicy;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.Predicate;
@@ -69,6 +70,10 @@ public interface MapOperationProvider {
 
     MapOperation createGetOperation(String name, Data dataKey);
 
+    MapOperation createQueryOperation(Query query);
+
+    MapOperation createQueryPartitionOperation(Query query);
+
     MapOperation createLoadAllOperation(String name, List<Data> keys, boolean replaceExistingValues);
 
     MapOperation createPutAllOperation(String name, MapEntries mapEntries);
@@ -92,6 +97,14 @@ public interface MapOperationProvider {
     MapOperation createFetchKeysOperation(String name, int lastTableIndex, int fetchSize);
 
     MapOperation createFetchEntriesOperation(String name, int lastTableIndex, int fetchSize);
+
+    /**
+     * Creates an operation for fetching a segment of a query result from a single partition.
+     *
+     * @see com.hazelcast.map.impl.proxy.MapProxyImpl#iterator(int, int, com.hazelcast.projection.Projection, Predicate)
+     * @since 3.9
+     */
+    MapOperation createFetchWithQueryOperation(String name, int lastTableIndex, int fetchSize, Query query);
 
     OperationFactory createPartitionWideEntryOperationFactory(String name, EntryProcessor entryProcessor);
 

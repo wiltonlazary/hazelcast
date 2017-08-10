@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
   ~ limitations under the License.
   -->
 
-<hazelcast-client xsi:schemaLocation="http://www.hazelcast.com/schema/client-config hazelcast-client-config-3.6.xsd"
+<hazelcast-client xsi:schemaLocation="http://www.hazelcast.com/schema/client-config hazelcast-client-config-3.9.xsd"
                   xmlns="http://www.hazelcast.com/schema/client-config"
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 
@@ -49,7 +49,7 @@
             <reuse-address>true</reuse-address>
             <linger-seconds>3</linger-seconds>
             <timeout>-1</timeout>
-            <buffer-size>32</buffer-size>
+            <buffer-size>128</buffer-size>
         </socket-options>
         <socket-interceptor enabled="true">
             <class-name>com.hazelcast.examples.MySocketInterceptor</class-name>
@@ -102,7 +102,8 @@
             <portable-factory factory-id="2">com.hazelcast.examples.PortableFactory</portable-factory>
         </portable-factories>
         <serializers>
-            <global-serializer>com.hazelcast.examples.GlobalSerializerFactory</global-serializer>
+            <global-serializer override-java-serialization="true">com.hazelcast.examples.GlobalSerializerFactory
+            </global-serializer>
             <serializer type-class="com.hazelcast.examples.DummyType"
                         class-name="com.hazelcast.examples.SerializerFactory"/>
         </serializers>
@@ -110,7 +111,7 @@
     </serialization>
 
     <native-memory enabled="false" allocator-type="POOLED">
-        <size unit="MEGABYTES" value="128" />
+        <size unit="MEGABYTES" value="128"/>
         <min-block-size>1</min-block-size>
         <page-size>1</page-size>
         <metadata-space-percentage>40.5</metadata-space-percentage>
@@ -136,6 +137,7 @@
         <eviction-policy>LFU</eviction-policy>
         <invalidate-on-change>true</invalidate-on-change>
         <in-memory-format>OBJECT</in-memory-format>
+        <serialize-keys>true</serialize-keys>
         <local-update-policy>INVALIDATE</local-update-policy>
     </near-cache>
 
@@ -159,5 +161,17 @@
         </query-cache>
     </query-caches>
 
+    <connection-strategy async-start="true" reconnect-mode="ASYNC"/>
+
+    <user-code-deployment enabled="true">
+        <jarPaths>
+            <jarPath>/User/test/sample.jar</jarPath>
+            <jarPath>https://hazelcast.com/</jarPath>
+            <jarPath>file://User/test/sample.jar</jarPath>
+        </jarPaths>
+        <classNames>
+            <className>test.sampleClassName</className>
+        </classNames>
+    </user-code-deployment>
 
 </hazelcast-client>

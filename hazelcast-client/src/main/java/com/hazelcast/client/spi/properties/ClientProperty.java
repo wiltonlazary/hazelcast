@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,7 +61,14 @@ public final class ClientProperty {
             = new HazelcastProperty("hazelcast.client.event.queue.capacity", 1000000);
 
     /**
-     * Time to give up on invocation when a member in the member list is not reachable.
+     * When an invocation gets an exception because :
+     * - Member throws an exception.
+     * - Connection between the client and member is closed.
+     * - Client's heartbeat requests are timed out.
+     * Time passed since invocation started is compared with this property.
+     * If the time is already passed, then the exception is delegated to the user. If not, the invocation is retried.
+     * Note that, if invocation gets no exception and it is a long running one, then it will not get any exception,
+     * no matter how small this timeout is set.
      */
     public static final HazelcastProperty INVOCATION_TIMEOUT_SECONDS
             = new HazelcastProperty("hazelcast.client.invocation.timeout.seconds", 120, SECONDS);
@@ -77,6 +84,20 @@ public final class ClientProperty {
      */
     public static final HazelcastProperty MAX_CONCURRENT_INVOCATIONS
             = new HazelcastProperty("hazelcast.client.max.concurrent.invocations", Integer.MAX_VALUE);
+
+    /**
+     * Control the maximum timeout in millis to wait for an invocation space to be available.
+     * <p/>
+     * If an invocation can't be made because there are too many pending invocations, then an exponential backoff is done
+     * to give the system time to deal with the backlog of invocations. This property controls how long an invocation is
+     * allowed to wait before getting a {@link com.hazelcast.core.HazelcastOverloadException}.
+     * <p/>
+     * <p>
+     * When set to -1 then <code>HazelcastOverloadException</code> is thrown immediately without any waiting.
+     * </p>
+     */
+    public static final HazelcastProperty BACKPRESSURE_BACKOFF_TIMEOUT_MILLIS
+            = new HazelcastProperty("hazelcast.client.invocation.backoff.timeout.millis", -1, MILLISECONDS);
 
     /**
      * <p>Enables the Discovery SPI lookup over the old native implementations. This property is temporary and will
@@ -121,10 +142,10 @@ public final class ClientProperty {
             = new HazelcastProperty("hazelcast.client.io.output.thread.count", -1);
 
     /**
-     * The interval in seconds between {@link com.hazelcast.internal.networking.nonblocking.iobalancer.IOBalancer IOBalancer}
+     * The interval in seconds between {@link com.hazelcast.internal.networking.nio.iobalancer.IOBalancer IOBalancer}
      * executions. The shorter intervals will catch I/O Imbalance faster, but they will cause higher overhead.
      * <p/>
-     * Please see the documentation of {@link com.hazelcast.internal.networking.nonblocking.iobalancer.IOBalancer IOBalancer}
+     * Please see the documentation of {@link com.hazelcast.internal.networking.nio.iobalancer.IOBalancer IOBalancer}
      * for a detailed explanation of the problem.
      * <p/>
      * The default is 20 seconds. A value smaller than 1 disables the balancer.

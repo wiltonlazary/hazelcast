@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2015, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -84,7 +84,7 @@ public class BinaryCompatibilityTest {
         }
     }
 
-    @Parameterized.Parameters(name = "allowUnsafe:{0} , {index}, isBigEndian:{2}, version:{3}")
+    @Parameterized.Parameters(name = "allowUnsafe:{0}, {index}, isBigEndian:{2}, version:{3}")
     public static Iterable<Object[]> parameters() {
 
 
@@ -145,7 +145,7 @@ public class BinaryCompatibilityTest {
         Object readObject = serializationService.toObject(dataMap.get(key));
         boolean equals = equals(object, readObject);
         if (!equals) {
-            System.out.println(object.getClass().getSimpleName() + " : " + object + " != " + readObject);
+            System.out.println(object.getClass().getSimpleName() + ": " + object + " != " + readObject);
         }
         assertTrue(equals);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package com.hazelcast.spi.impl.operationparker.impl;
 
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.metrics.MetricsProvider;
@@ -50,6 +49,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static com.hazelcast.util.ConcurrencyUtil.getOrPutIfAbsent;
+import static com.hazelcast.util.ThreadUtil.createThreadName;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 public class OperationParkerImpl implements OperationParker, LiveOperationsTracker, MetricsProvider {
@@ -78,11 +78,9 @@ public class OperationParkerImpl implements OperationParker, LiveOperationsTrack
         Node node = nodeEngine.getNode();
         this.logger = node.getLogger(OperationParker.class.getName());
 
-        HazelcastThreadGroup threadGroup = node.getHazelcastThreadGroup();
         this.expirationExecutor = Executors.newSingleThreadExecutor(
-                new SingleExecutorThreadFactory(threadGroup.getInternalThreadGroup(),
-                        threadGroup.getClassLoader(),
-                        threadGroup.getThreadNamePrefix("operation-parker")));
+                new SingleExecutorThreadFactory(node.getConfigClassLoader(),
+                        createThreadName(nodeEngine.getHazelcastInstance().getName(), "operation-parker")));
 
         this.expirationTaskFuture = expirationExecutor.submit(new ExpirationTask());
     }
@@ -216,7 +214,11 @@ public class OperationParkerImpl implements OperationParker, LiveOperationsTrack
         }
     }
 
-    // This is executed under partition migration lock!
+    /**
+     * Invalidates all parked operations for the migrated partition and sends a {@link PartitionMigratingException} as a
+     * response.
+     * Invoked on the migration destination. This is executed under partition migration lock!
+     */
     public void onPartitionMigrate(Address thisAddress, MigrationInfo migrationInfo) {
         if (!thisAddress.equals(migrationInfo.getSource())) {
             return;

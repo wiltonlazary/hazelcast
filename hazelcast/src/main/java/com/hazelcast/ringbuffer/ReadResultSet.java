@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,4 +46,26 @@ public interface ReadResultSet<E> extends Iterable<E> {
      * @throws IllegalArgumentException if index out of bounds.
      */
     E get(int index);
+
+    /**
+     * Return the sequence number for the item at the given index.
+     * The method may throw a {@link UnsupportedOperationException} if there are no
+     * sequences available. This can happen when the cluster version is
+     * {@link com.hazelcast.internal.cluster.Versions#V3_8} or lower.
+     *
+     * @param index the index
+     * @return the sequence number for the ringbuffer item
+     * @throws UnsupportedOperationException if the sequence IDs are not available
+     * @see com.hazelcast.internal.cluster.ClusterService#getClusterVersion()
+     * @since 3.9
+     */
+    long getSequence(int index);
+
+    /**
+     * Return the result set size.
+     *
+     * @return the result set size
+     * @since 3.9
+     */
+    int size();
 }

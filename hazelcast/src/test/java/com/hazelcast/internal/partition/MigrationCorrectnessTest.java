@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,12 +32,14 @@ import java.util.Collection;
 // related issue https://github.com/hazelcast/hazelcast/issues/5444
 public class MigrationCorrectnessTest extends AbstractMigrationCorrectnessTest {
 
-    @Parameterized.Parameters(name = "backups:{0},nodes:{1}")
+    @Parameterized.Parameters(name = "backups:{0},nodes:{1},fragmented:{2}")
     public static Collection<Object[]> parameters() {
-        return Arrays.asList(new Object[][] {
-                {1, 2},
-                {2, 3},
-                {3, 4},
+        return Arrays.asList(new Object[][]{
+                {1, 2, true},
+                {1, 2, false},
+                {2, 3, true},
+                {3, 4, true},
+                {3, 4, false}
         });
     }
 }

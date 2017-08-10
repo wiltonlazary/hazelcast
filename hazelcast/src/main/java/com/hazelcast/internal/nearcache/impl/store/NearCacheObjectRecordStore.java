@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,22 @@
 package com.hazelcast.internal.nearcache.impl.store;
 
 import com.hazelcast.config.NearCacheConfig;
-import com.hazelcast.internal.nearcache.NearCacheRecord;
 import com.hazelcast.internal.nearcache.impl.record.NearCacheObjectRecord;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.serialization.SerializationService;
-import com.hazelcast.util.Clock;
 
-public class NearCacheObjectRecordStore<K, V> extends BaseHeapNearCacheRecordStore<K, V, NearCacheObjectRecord> {
+import static com.hazelcast.internal.nearcache.NearCache.CACHED_AS_NULL;
+import static com.hazelcast.internal.nearcache.NearCacheRecord.TIME_NOT_SET;
+import static com.hazelcast.util.Clock.currentTimeMillis;
+
+/**
+ * {@link com.hazelcast.internal.nearcache.NearCacheRecordStore} implementation for Near Caches
+ * with {@link com.hazelcast.config.InMemoryFormat#OBJECT} in-memory-format.
+ *
+ * @param <K> the type of the key stored in Near Cache
+ * @param <V> the type of the value stored in Near Cache
+ */
+public class NearCacheObjectRecordStore<K, V> extends BaseHeapNearCacheRecordStore<K, V, NearCacheObjectRecord<V>> {
 
     public NearCacheObjectRecordStore(String name,
                                       NearCacheConfig nearCacheConfig,
@@ -45,24 +54,27 @@ public class NearCacheObjectRecordStore<K, V> extends BaseHeapNearCacheRecordSto
     }
 
     @Override
-    protected NearCacheObjectRecord valueToRecord(V value) {
+    protected NearCacheObjectRecord<V> valueToRecord(V value) {
         value = toValue(value);
-        long creationTime = Clock.currentTimeMillis();
+        long creationTime = currentTimeMillis();
         if (timeToLiveMillis > 0) {
             return new NearCacheObjectRecord<V>(value, creationTime, creationTime + timeToLiveMillis);
         } else {
-            return new NearCacheObjectRecord<V>(value, creationTime, NearCacheRecord.TIME_NOT_SET);
+            return new NearCacheObjectRecord<V>(value, creationTime, TIME_NOT_SET);
         }
     }
 
     @Override
-    protected V recordToValue(NearCacheObjectRecord record) {
-        return (V) record.getValue();
+    protected void updateRecordValue(NearCacheObjectRecord<V> record, V value) {
+        record.setValue(toValue(value));
     }
 
     @Override
-    protected void putToRecord(NearCacheObjectRecord record, V value) {
-        record.setValue(value);
+    protected V recordToValue(NearCacheObjectRecord<V> record) {
+        if (record.getValue() == null) {
+            return (V) CACHED_AS_NULL;
+        }
+        return record.getValue();
     }
 
     @Override

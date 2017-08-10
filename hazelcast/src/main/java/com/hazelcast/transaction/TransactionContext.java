@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,9 +46,9 @@ public interface TransactionContext extends TransactionalTaskContext {
     void rollbackTransaction();
 
     /**
-     * Gets the id that uniquely identifies the transaction.
+     * Gets the ID that uniquely identifies the transaction.
      *
-     * @return the transaction id.
+     * @return the transaction ID
      */
     String getTxnId();
 
@@ -60,5 +60,4 @@ public interface TransactionContext extends TransactionalTaskContext {
      */
     @Deprecated
     XAResource getXaResource();
-
 }

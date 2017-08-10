@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -100,7 +100,7 @@ public class ClientCacheReadWriteThroughTest extends CacheReadWriteThroughTest {
 
         Map<Integer, String> loaded = cache.getAll(keys);
         assertEquals(keys.size(), loaded.size());
-        for (Map.Entry<Integer, String> entry  : loaded.entrySet()) {
+        for (Map.Entry<Integer, String> entry : loaded.entrySet()) {
             assertEquals(ServerSideCacheLoader.valueOf(entry.getKey()), entry.getValue());
         }
     }
@@ -123,7 +123,6 @@ public class ClientCacheReadWriteThroughTest extends CacheReadWriteThroughTest {
                 throw new IllegalStateException("This factory can only be used at server side!");
             }
         }
-
     }
 
     private static class ServerSideCacheLoader implements CacheLoader<Integer, String> {
@@ -146,7 +145,5 @@ public class ClientCacheReadWriteThroughTest extends CacheReadWriteThroughTest {
             }
             return result;
         }
-
     }
-
 }

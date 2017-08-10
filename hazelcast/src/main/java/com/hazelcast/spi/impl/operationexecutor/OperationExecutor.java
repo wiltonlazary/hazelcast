@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,6 +47,11 @@ public interface OperationExecutor extends PacketHandler {
     // Will be replaced by metrics
     @Deprecated
     int getPriorityQueueSize();
+
+    /**
+     * Returns the number of executed operations.
+     */
+    long getExecutedOperationCount();
 
     /**
      * Returns the number of partition threads.
@@ -140,7 +145,7 @@ public interface OperationExecutor extends PacketHandler {
      * be executed on another thread, but that one is going to block for completion using the future.get/join etc.
      * Blocking for completion can cause problems, e.g. when you hog a partition thread or deadlocks.
      *
-     * @param op the {@link Operation} to check
+     * @param op      the {@link Operation} to check
      * @param isAsync is the invocation async, if false invocation does not return a future to block on
      * @return true if allowed, false otherwise.
      */
@@ -152,6 +157,14 @@ public interface OperationExecutor extends PacketHandler {
      * @return true if is an {@link Operation} thread, false otherwise.
      */
     boolean isOperationThread();
+
+    /**
+     * Returns the ID of the partitionThread assigned to handle partition with given partitionId
+     *
+     * @param partitionId given partitionId
+     * @return ID of the partitionThread assigned to handle partition with given partitionId
+     */
+    int getPartitionThreadId(int partitionId);
 
     /**
      * Interrupts the partition threads.

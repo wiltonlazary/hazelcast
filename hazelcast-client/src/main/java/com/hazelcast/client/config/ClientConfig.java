@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,6 +108,10 @@ public class ClientConfig {
     private ClassLoader classLoader;
 
     private String licenseKey;
+
+    private ClientConnectionStrategyConfig connectionStrategyConfig = new ClientConnectionStrategyConfig();
+
+    private ClientUserCodeDeploymentConfig userCodeDeploymentConfig = new ClientUserCodeDeploymentConfig();
 
     public void setConfigPatternMatcher(ConfigPatternMatcher configPatternMatcher) {
         if (configPatternMatcher == null) {
@@ -723,5 +727,36 @@ public class ClientConfig {
 
     public void setInstanceName(String instanceName) {
         this.instanceName = instanceName;
+    }
+
+    public ClientConnectionStrategyConfig getConnectionStrategyConfig() {
+        return connectionStrategyConfig;
+    }
+
+    public ClientConfig setConnectionStrategyConfig(ClientConnectionStrategyConfig connectionStrategyConfig) {
+        this.connectionStrategyConfig = connectionStrategyConfig;
+        return this;
+    }
+
+    /**
+     * Get current configuration of User Code Deployment.
+     *
+     * @return User Code Deployment configuration
+     * @since 3.9
+     */
+    public ClientUserCodeDeploymentConfig getUserCodeDeploymentConfig() {
+        return userCodeDeploymentConfig;
+    }
+
+    /**
+     * Set User Code Deployment configuration
+     *
+     * @param userCodeDeploymentConfig
+     * @return configured {@link com.hazelcast.client.config.ClientConfig} for chaining
+     * @since 3.9
+     */
+    public ClientConfig setUserCodeDeploymentConfig(ClientUserCodeDeploymentConfig userCodeDeploymentConfig) {
+        this.userCodeDeploymentConfig = userCodeDeploymentConfig;
+        return this;
     }
 }

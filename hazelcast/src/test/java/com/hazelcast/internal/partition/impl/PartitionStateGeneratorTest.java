@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
 package com.hazelcast.internal.partition.impl;
@@ -62,7 +61,7 @@ import static org.junit.Assert.assertTrue;
 @Category({QuickTest.class, ParallelTest.class})
 public class PartitionStateGeneratorTest {
 
-    private static final MemberVersion VERSION = MemberVersion.of(BuildInfoProvider.BUILD_INFO.getVersion());
+    private static final MemberVersion VERSION = MemberVersion.of(BuildInfoProvider.getBuildInfo().getVersion());
     private static final boolean PRINT_STATE = false;
 
     @Test
@@ -159,7 +158,7 @@ public class PartitionStateGeneratorTest {
     public void testXmlPartitionGroupConfig() {
         Config config = new ClasspathXmlConfig("hazelcast-fullconfig.xml");
         PartitionGroupConfig partitionGroupConfig = config.getPartitionGroupConfig();
-        assertFalse(partitionGroupConfig.isEnabled());
+        assertTrue(partitionGroupConfig.isEnabled());
         assertEquals(PartitionGroupConfig.MemberGroupType.CUSTOM, partitionGroupConfig.getGroupType());
         assertEquals(2, partitionGroupConfig.getMemberGroupConfigs().size());
     }

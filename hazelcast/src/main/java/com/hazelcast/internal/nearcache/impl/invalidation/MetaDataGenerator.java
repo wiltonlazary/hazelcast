@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,21 +24,21 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLongArray;
 
 import static com.hazelcast.util.ConcurrencyUtil.getOrPutIfAbsent;
-import static com.hazelcast.util.UuidUtil.newSecureUUID;
+import static com.hazelcast.util.UuidUtil.newUnsecureUUID;
 
 /**
- * Responsible for partition-sequence and partition-uuid generation.
+ * Responsible for partition-sequence and partition UUID generation.
  * Used by invalidator to generate metadata for invalidation events.
- *
+ * <p>
  * This metadata is used by {@link RepairingHandler} and {@link RepairingTask}
  * to act against possible invalidation-miss and partition-loss.
- *
+ * <p>
  * One instance per service is created. Used on member side.
  */
 public class MetaDataGenerator {
 
+
     private final int partitionCount;
-    private final ConcurrentMap<String, AtomicLongArray> sequenceGenerators = new ConcurrentHashMap<String, AtomicLongArray>();
     private final ConstructorFunction<String, AtomicLongArray> sequenceGeneratorConstructor
             = new ConstructorFunction<String, AtomicLongArray>() {
         @Override
@@ -47,11 +47,12 @@ public class MetaDataGenerator {
         }
     };
     private final ConcurrentMap<Integer, UUID> uuids = new ConcurrentHashMap<Integer, UUID>();
+    private final ConcurrentMap<String, AtomicLongArray> sequenceGenerators = new ConcurrentHashMap<String, AtomicLongArray>();
     private final ConstructorFunction<Integer, UUID> uuidConstructor
             = new ConstructorFunction<Integer, UUID>() {
         @Override
         public UUID createNew(Integer partitionId) {
-            return newSecureUUID();
+            return newUnsecureUUID();
         }
     };
 
@@ -93,13 +94,26 @@ public class MetaDataGenerator {
         uuids.put(partitionId, uuid);
     }
 
-    public void resetMetadata(final int partitionId) {
-        // remove uuid.
+    public void removeUuidAndSequence(final int partitionId) {
+        // remove UUID
         uuids.remove(partitionId);
 
         // reset data-structures' sequence numbers
         for (AtomicLongArray sequences : sequenceGenerators.values()) {
             sequences.set(partitionId, 0);
         }
+    }
+
+    public void destroyMetaDataFor(String dataStructureName) {
+        sequenceGenerators.remove(dataStructureName);
+    }
+
+    public void regenerateUuid(int partitionId) {
+        uuids.put(partitionId, uuidConstructor.createNew(partitionId));
+    }
+
+    // used for testing
+    public ConcurrentMap<String, AtomicLongArray> getSequenceGenerators() {
+        return sequenceGenerators;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,12 @@ import com.hazelcast.nio.ObjectDataOutput;
 
 import java.io.IOException;
 
+/**
+ * Sent from the master to publish or sync the partition table state to all cluster members.
+ *
+ * @see InternalPartitionServiceImpl#publishPartitionRuntimeState
+ * @see InternalPartitionServiceImpl#syncPartitionRuntimeState
+ */
 public final class PartitionStateOperation extends AbstractPartitionOperation
         implements MigrationCycleOperation, JoinOperation {
 

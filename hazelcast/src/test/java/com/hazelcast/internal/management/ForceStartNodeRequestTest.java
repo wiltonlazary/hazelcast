@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
 package com.hazelcast.internal.management;
@@ -24,6 +23,7 @@ import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.util.JsonUtil;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -51,6 +51,6 @@ public class ForceStartNodeRequestTest extends HazelcastTestSupport {
         request.writeResponse(managementCenterService, jsonObject);
 
         JsonObject result = (JsonObject) jsonObject.get("result");
-        assertEquals(ForceStartNodeRequest.FAILED_RESULT, request.readResponse(result));
+        assertEquals(ForceStartNodeRequest.FAILED_RESULT, JsonUtil.getString(result, "result"));
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,9 +116,11 @@ public class DistributedScheduledExecutorService
 
     @Override
     public void destroyDistributedObject(String name) {
-        if (shutdownExecutors.remove(name) != null) {
+        if (shutdownExecutors.remove(name) == null) {
             ((InternalExecutionService) nodeEngine.getExecutionService()).shutdownScheduledDurableExecutor(name);
         }
+
+        resetPartitionOrMemberBinContainer(name);
     }
 
     public void shutdownExecutor(String name) {
@@ -160,7 +162,7 @@ public class DistributedScheduledExecutorService
         int partitionId = event.getPartitionId();
         if (event.getMigrationEndpoint() == MigrationEndpoint.DESTINATION) {
             discardStash(event.getPartitionId(), event.getCurrentReplicaIndex());
-        } else {
+        } else if (event.getCurrentReplicaIndex() == 0) {
             ScheduledExecutorPartition partition = partitions[partitionId];
             partition.promoteStash();
         }
@@ -172,4 +174,13 @@ public class DistributedScheduledExecutorService
         partition.disposeObsoleteReplicas(thresholdReplicaIndex);
     }
 
+    private void resetPartitionOrMemberBinContainer(String name) {
+        if (memberBin != null) {
+            memberBin.destroyContainer(name);
+        }
+
+        for (ScheduledExecutorPartition partition : partitions) {
+            partition.destroyContainer(name);
+        }
+    }
 }

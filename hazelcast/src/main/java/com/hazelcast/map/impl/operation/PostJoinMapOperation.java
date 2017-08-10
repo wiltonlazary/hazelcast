@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapServiceContext;
+import com.hazelcast.map.impl.PartitionContainer;
 import com.hazelcast.map.impl.querycache.QueryCacheContext;
 import com.hazelcast.map.impl.querycache.accumulator.AccumulatorInfo;
 import com.hazelcast.map.impl.querycache.accumulator.AccumulatorInfoSupplier;
@@ -57,14 +58,26 @@ public class PostJoinMapOperation extends Operation implements IdentifiedDataSer
         return MapService.SERVICE_NAME;
     }
 
-    public void addMapIndex(MapContainer mapContainer) {
-        final Indexes indexes = mapContainer.getIndexes();
-        if (indexes.hasIndex()) {
+    public void addMapIndex(MapServiceContext mapServiceContext, MapContainer mapContainer) {
+        if (mapContainer.isGlobalIndexEnabled()) {
+            // global-index
             MapIndexInfo mapIndexInfo = new MapIndexInfo(mapContainer.getName());
-            for (Index index : indexes.getIndexes()) {
+            for (Index index : mapContainer.getIndexes().getIndexes()) {
                 mapIndexInfo.addIndexInfo(index.getAttributeName(), index.isOrdered());
             }
             indexInfoList.add(mapIndexInfo);
+        } else {
+            // partitioned-index
+            for (PartitionContainer partitionContainer : mapServiceContext.getPartitionContainers()) {
+                final Indexes indexes = mapContainer.getIndexes(partitionContainer.getPartitionId());
+                if (indexes != null && indexes.hasIndex()) {
+                    MapIndexInfo mapIndexInfo = new MapIndexInfo(mapContainer.getName());
+                    for (Index index : indexes.getIndexes()) {
+                        mapIndexInfo.addIndexInfo(index.getAttributeName(), index.isOrdered());
+                    }
+                    indexInfoList.add(mapIndexInfo);
+                }
+            }
         }
     }
 
@@ -136,10 +149,20 @@ public class PostJoinMapOperation extends Operation implements IdentifiedDataSer
         MapService mapService = getService();
         MapServiceContext mapServiceContext = mapService.getMapServiceContext();
         for (MapIndexInfo mapIndex : indexInfoList) {
-            final MapContainer mapContainer = mapServiceContext.getMapContainer(mapIndex.mapName);
-            final Indexes indexes = mapContainer.getIndexes();
+            MapContainer mapContainer = mapServiceContext.getMapContainer(mapIndex.mapName);
             for (MapIndexInfo.IndexInfo indexInfo : mapIndex.lsIndexes) {
-                indexes.addOrGetIndex(indexInfo.attributeName, indexInfo.ordered);
+                if (mapContainer.isGlobalIndexEnabled()) {
+                    // global-index
+                    Indexes indexes = mapContainer.getIndexes();
+                    indexes.addOrGetIndex(indexInfo.attributeName, indexInfo.ordered);
+                } //else {
+                    // partitioned-index
+//                    https://github.com/hazelcast/hazelcast/issues/10841
+//                    for (PartitionContainer partitionContainer : mapServiceContext.getPartitionContainers()) {
+//                        final Indexes indexes = mapContainer.getIndexes(partitionContainer.getPartitionId());
+//                        indexes.addOrGetIndex(indexInfo.attributeName, indexInfo.ordered);
+//                    }
+//                }
             }
         }
         for (InterceptorInfo interceptorInfo : interceptorInfoList) {

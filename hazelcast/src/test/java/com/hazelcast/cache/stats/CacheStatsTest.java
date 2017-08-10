@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.cache.stats;
 
 import com.hazelcast.cache.CacheStatistics;
@@ -8,6 +24,7 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
+import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -15,13 +32,15 @@ import org.junit.runner.RunWith;
 
 import javax.cache.CacheManager;
 import javax.cache.spi.CachingProvider;
+import java.util.concurrent.Callable;
 
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class})
+@Category({QuickTest.class, ParallelTest.class})
 public class CacheStatsTest extends CacheTestSupport {
 
     protected TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
@@ -117,6 +136,26 @@ public class CacheStatsTest extends CacheTestSupport {
     }
 
     @Test
+    public void testPutStat_whenPutAsync() throws Exception {
+        ICache<Integer, String> cache = createCache();
+        final CacheStatistics stats = cache.getLocalCacheStatistics();
+
+        final long ENTRY_COUNT = 100;
+
+        for (int i = 0; i < ENTRY_COUNT; i++) {
+            cache.putAsync(i, "Value-" + i).get();
+        }
+
+        assertEqualsEventually(new Callable<Long>() {
+            @Override
+            public Long call()
+                    throws Exception {
+                return stats.getCachePuts();
+            }
+        }, ENTRY_COUNT);
+    }
+
+    @Test
     public void testAveragePutTimeStat() {
         ICache<Integer, String> cache = createCache();
         CacheStatistics stats = cache.getLocalCacheStatistics();
@@ -129,7 +168,7 @@ public class CacheStatsTest extends CacheTestSupport {
         }
         long end = System.nanoTime();
 
-        float avgPutTime = (end - start) / 1000;
+        float avgPutTime = NANOSECONDS.toMicros(end - start);
 
         assertTrue(stats.getAveragePutTime() > 0);
         assertTrue(stats.getAveragePutTime() < avgPutTime);
@@ -154,6 +193,29 @@ public class CacheStatsTest extends CacheTestSupport {
     }
 
     @Test
+    public void testGetStat_whenGetAsync() throws Exception {
+        ICache<Integer, String> cache = createCache();
+        final CacheStatistics stats = cache.getLocalCacheStatistics();
+
+        final long ENTRY_COUNT = 100;
+
+        for (int i = 0; i < ENTRY_COUNT; i++) {
+            cache.put(i, "Value-" + i);
+        }
+
+        for (int i = 0; i < 2 * ENTRY_COUNT; i++) {
+            cache.getAsync(i).get();
+        }
+        assertEqualsEventually(new Callable<Long>() {
+            @Override
+            public Long call()
+                    throws Exception {
+                return stats.getCacheGets();
+            }
+        }, 2 * ENTRY_COUNT);
+    }
+
+    @Test
     public void testAverageGetTimeStat() {
         ICache<Integer, String> cache = createCache();
         CacheStatistics stats = cache.getLocalCacheStatistics();
@@ -170,7 +232,7 @@ public class CacheStatsTest extends CacheTestSupport {
         }
         long end = System.nanoTime();
 
-        float avgGetTime = (end - start) / 1000;
+        float avgGetTime = NANOSECONDS.toMicros(end - start);
 
         assertTrue(stats.getAverageGetTime() > 0);
         assertTrue(stats.getAverageGetTime() < avgGetTime);
@@ -195,6 +257,30 @@ public class CacheStatsTest extends CacheTestSupport {
     }
 
     @Test
+    public void testRemoveStat_whenRemoveAsync() throws Exception {
+        ICache<Integer, String> cache = createCache();
+        final CacheStatistics stats = cache.getLocalCacheStatistics();
+
+        final long ENTRY_COUNT = 100;
+
+        for (int i = 0; i < ENTRY_COUNT; i++) {
+            cache.put(i, "Value-" + i);
+        }
+
+        for (int i = 0; i < 2 * ENTRY_COUNT; i++) {
+            cache.removeAsync(i).get();
+        }
+
+        assertEqualsEventually(new Callable<Long>() {
+            @Override
+            public Long call()
+                    throws Exception {
+                return stats.getCacheRemovals();
+            }
+        }, ENTRY_COUNT);
+    }
+
+    @Test
     public void testAverageRemoveTimeStat() {
         ICache<Integer, String> cache = createCache();
         CacheStatistics stats = cache.getLocalCacheStatistics();
@@ -211,7 +297,7 @@ public class CacheStatsTest extends CacheTestSupport {
         }
         long end = System.nanoTime();
 
-        float avgRemoveTime = (end - start) / 1000;
+        float avgRemoveTime = NANOSECONDS.toMicros(end - start);
 
         assertTrue(stats.getAverageRemoveTime() > 0);
         assertTrue(stats.getAverageRemoveTime() < avgRemoveTime);
@@ -243,6 +329,31 @@ public class CacheStatsTest extends CacheTestSupport {
         }
 
         assertEquals(ENTRY_COUNT, stats.getCacheHits());
+    }
+
+    @Test
+    public void testHitStat_whenGetAsync() throws Exception {
+        ICache<Integer, String> cache = createCache();
+        final CacheStatistics stats = cache.getLocalCacheStatistics();
+
+        final long ENTRY_COUNT = 100;
+        final long GET_COUNT = 3 * ENTRY_COUNT;
+
+        for (int i = 0; i < ENTRY_COUNT; i++) {
+            cache.put(i, "Value-" + i);
+        }
+
+        for (int i = 0; i < GET_COUNT; i++) {
+            cache.getAsync(i).get();
+        }
+
+        assertEqualsEventually(new Callable<Long>() {
+            @Override
+            public Long call()
+                    throws Exception {
+                return stats.getCacheHits();
+            }
+        }, ENTRY_COUNT);
     }
 
     @Test
@@ -282,6 +393,31 @@ public class CacheStatsTest extends CacheTestSupport {
         }
 
         assertEquals(GET_COUNT - ENTRY_COUNT, stats.getCacheMisses());
+    }
+
+    @Test
+    public void testMissStat_whenGetAsync() throws Exception {
+        ICache<Integer, String> cache = createCache();
+        final CacheStatistics stats = cache.getLocalCacheStatistics();
+
+        final long ENTRY_COUNT = 100;
+        final long GET_COUNT = 3 * ENTRY_COUNT;
+
+        for (int i = 0; i < ENTRY_COUNT; i++) {
+            cache.put(i, "Value-" + i);
+        }
+
+        for (int i = 0; i < GET_COUNT; i++) {
+            cache.getAsync(i).get();
+        }
+
+        assertEqualsEventually(new Callable<Long>() {
+            @Override
+            public Long call()
+                    throws Exception {
+                return stats.getCacheMisses();
+            }
+        }, GET_COUNT - ENTRY_COUNT);
     }
 
     public void testMissPercentageStat() {
@@ -519,11 +655,10 @@ public class CacheStatsTest extends CacheTestSupport {
     }
 
     @Test(expected = UnsupportedOperationException.class)
-    public void testNearCacheStatsWhenNearCacheDisabled() {
+    public void testNearCacheStats_availableWhenEnabled() {
         ICache<Integer, String> cache = createCache();
         CacheStatistics stats = cache.getLocalCacheStatistics();
 
         stats.getNearCacheStatistics();
     }
-
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,11 @@ package com.hazelcast.query.impl;
 
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
+import com.hazelcast.map.impl.query.DefaultIndexProvider;
 import com.hazelcast.query.EntryObject;
 import com.hazelcast.query.PredicateBuilder;
-import com.hazelcast.query.SampleObjects.Employee;
-import com.hazelcast.query.SampleObjects.Value;
+import com.hazelcast.query.SampleTestObjects.Employee;
+import com.hazelcast.query.SampleTestObjects.Value;
 import com.hazelcast.query.SqlPredicate;
 import com.hazelcast.query.impl.getters.Extractors;
 import com.hazelcast.test.HazelcastSerialClassRunner;
@@ -41,35 +42,33 @@ import static org.junit.Assert.assertNull;
 @Category(QuickTest.class)
 public class IndexesTest {
 
-    final InternalSerializationService serializationService = new DefaultSerializationServiceBuilder().build();
+    private final InternalSerializationService serializationService = new DefaultSerializationServiceBuilder().build();
 
     @Test
     public void testAndWithSingleEntry() throws Exception {
-        Indexes indexes = new Indexes(serializationService, Extractors.empty());
+        Indexes indexes = new Indexes(serializationService, new DefaultIndexProvider(), Extractors.empty(), true);
         indexes.addOrGetIndex("name", false);
         indexes.addOrGetIndex("age", true);
         indexes.addOrGetIndex("salary", true);
-        for (int i = 0; i < 20000; i++) {
+        for (int i = 0; i < 100; i++) {
             Employee employee = new Employee(i + "Name", i % 80, (i % 2 == 0), 100 + (i % 1000));
             indexes.saveEntryIndex(new QueryEntry(serializationService, toData(i), employee, Extractors.empty()), null);
         }
-        int count = 1000;
+        int count = 10;
         Set<String> ages = new HashSet<String>(count);
         for (int i = 0; i < count; i++) {
             ages.add(String.valueOf(i));
         }
         EntryObject entryObject = new PredicateBuilder().getEntryObject();
-        PredicateBuilder predicate = entryObject.get("name").equal("140Name")
+        PredicateBuilder predicate = entryObject.get("name").equal("0Name")
                 .and(entryObject.get("age").in(ages.toArray(new String[count])));
-        for (int i = 0; i < 10000; i++) {
-            Set<QueryableEntry> results = indexes.query(predicate);
-            assertEquals(1, results.size());
-        }
+        Set<QueryableEntry> results = indexes.query(predicate);
+        assertEquals(1, results.size());
     }
 
     @Test
     public void testIndex() throws Exception {
-        Indexes indexes = new Indexes(serializationService, Extractors.empty());
+        Indexes indexes = new Indexes(serializationService, new DefaultIndexProvider(), Extractors.empty(), true);
         indexes.addOrGetIndex("name", false);
         indexes.addOrGetIndex("age", true);
         indexes.addOrGetIndex("salary", true);
@@ -87,7 +86,7 @@ public class IndexesTest {
 
     @Test
     public void testIndex2() throws Exception {
-        Indexes indexes = new Indexes(serializationService, Extractors.empty());
+        Indexes indexes = new Indexes(serializationService, new DefaultIndexProvider(), Extractors.empty(), true);
         indexes.addOrGetIndex("name", false);
         indexes.saveEntryIndex(new QueryEntry(serializationService, toData(1), new Value("abc"), Extractors.empty()), null);
         indexes.saveEntryIndex(new QueryEntry(serializationService, toData(2), new Value("xyz"), Extractors.empty()), null);
@@ -108,7 +107,7 @@ public class IndexesTest {
      */
     @Test
     public void shouldNotThrowException_withNullValues_whenIndexAddedForValueField() throws Exception {
-        Indexes indexes = new Indexes(serializationService, Extractors.empty());
+        Indexes indexes = new Indexes(serializationService, new DefaultIndexProvider(), Extractors.empty(), true);
         indexes.addOrGetIndex("name", false);
 
         shouldReturnNull_whenQueryingOnKeys(indexes);
@@ -116,7 +115,7 @@ public class IndexesTest {
 
     @Test
     public void shouldNotThrowException_withNullValues_whenNoIndexAdded() throws Exception {
-        Indexes indexes = new Indexes(serializationService, Extractors.empty());
+        Indexes indexes = new Indexes(serializationService, new DefaultIndexProvider(), Extractors.empty(), true);
 
         shouldReturnNull_whenQueryingOnKeys(indexes);
     }
@@ -134,7 +133,7 @@ public class IndexesTest {
 
     @Test
     public void shouldNotThrowException_withNullValue_whenIndexAddedForKeyField() throws Exception {
-        Indexes indexes = new Indexes(serializationService, Extractors.empty());
+        Indexes indexes = new Indexes(serializationService, new DefaultIndexProvider(), Extractors.empty(), true);
         indexes.addOrGetIndex("__key", false);
 
         for (int i = 0; i < 100; i++) {

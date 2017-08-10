@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.internal.nearcache.impl.invalidation;
 
 import com.hazelcast.core.IFunction;
+import com.hazelcast.internal.serialization.impl.HeapData;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.EventRegistration;
@@ -24,16 +25,12 @@ import com.hazelcast.spi.EventService;
 import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.partition.IPartitionService;
-import com.hazelcast.spi.serialization.SerializationService;
 
 import java.util.Collection;
 import java.util.UUID;
 
-import static java.lang.String.format;
-
-
 /**
- * Contains common functionality of a {@code Invalidator}
+ * Contains shared functionality for Near Cache invalidation.
  */
 public abstract class Invalidator {
 
@@ -42,7 +39,6 @@ public abstract class Invalidator {
     protected final ILogger logger;
     protected final NodeEngine nodeEngine;
     protected final EventService eventService;
-    protected final SerializationService serializationService;
     protected final MetaDataGenerator metaDataGenerator;
     protected final IPartitionService partitionService;
     protected final IFunction<EventRegistration, Boolean> eventFilter;
@@ -54,7 +50,6 @@ public abstract class Invalidator {
         this.logger = nodeEngine.getLogger(getClass());
         this.partitionService = nodeEngine.getPartitionService();
         this.eventService = nodeEngine.getEventService();
-        this.serializationService = nodeEngine.getSerializationService();
         this.partitionCount = nodeEngine.getPartitionService().getPartitionCount();
         this.metaDataGenerator = new MetaDataGenerator(partitionCount);
     }
@@ -62,26 +57,28 @@ public abstract class Invalidator {
     protected abstract void invalidateInternal(Invalidation invalidation, int orderKey);
 
     /**
-     * Invalidates supplied key from near-caches of supplied data structure name.
+     * Invalidates supplied key from Near Caches of supplied data structure name.
      *
-     * @param key     key of the entry to be removed from near-cache
+     * @param key               key of the entry to be removed from Near Cache
      * @param dataStructureName name of the data structure to be invalidated
      */
     public final void invalidateKey(Data key, String dataStructureName, String sourceUuid) {
         assert key != null;
         assert dataStructureName != null;
+        assert sourceUuid != null;
 
         Invalidation invalidation = newKeyInvalidation(key, dataStructureName, sourceUuid);
         invalidateInternal(invalidation, getPartitionId(key));
     }
 
     /**
-     * Invalidates all keys from near-caches of supplied data structure name.
+     * Invalidates all keys from Near Caches of supplied data structure name.
      *
      * @param dataStructureName name of the data structure to be cleared
      */
     public final void invalidateAllKeys(String dataStructureName, String sourceUuid) {
         assert dataStructureName != null;
+        assert sourceUuid != null;
 
         int orderKey = getPartitionId(dataStructureName);
         Invalidation invalidation = newClearInvalidation(dataStructureName, sourceUuid);
@@ -94,20 +91,28 @@ public abstract class Invalidator {
 
     private Invalidation newKeyInvalidation(Data key, String dataStructureName, String sourceUuid) {
         int partitionId = getPartitionId(key);
-        long sequence = metaDataGenerator.nextSequence(dataStructureName, partitionId);
-        UUID partitionUuid = metaDataGenerator.getOrCreateUuid(partitionId);
-        if (logger.isFinestEnabled()) {
-            logger.finest(format("dataStructureName=%s, partition=%d, sequence=%d, uuid=%s",
-                    dataStructureName, partitionId, sequence, partitionUuid));
-        }
-        return new SingleNearCacheInvalidation(toHeapData(key), dataStructureName, sourceUuid, partitionUuid, sequence);
+        return newInvalidation(key, dataStructureName, sourceUuid, partitionId);
     }
 
     protected final Invalidation newClearInvalidation(String dataStructureName, String sourceUuid) {
         int partitionId = getPartitionId(dataStructureName);
+        return newInvalidation(null, dataStructureName, sourceUuid, partitionId);
+    }
+
+    protected Invalidation newInvalidation(Data key, String dataStructureName, String sourceUuid, int partitionId) {
+        assert assertHeapData(key);
+
         long sequence = metaDataGenerator.nextSequence(dataStructureName, partitionId);
         UUID partitionUuid = metaDataGenerator.getOrCreateUuid(partitionId);
-        return new SingleNearCacheInvalidation(null, dataStructureName, sourceUuid, partitionUuid, sequence);
+        return new SingleNearCacheInvalidation(key, dataStructureName, sourceUuid, partitionUuid, sequence);
+    }
+
+    private static boolean assertHeapData(Data data) {
+        if (data != null) {
+            return data instanceof HeapData;
+        } else {
+            return true;
+        }
     }
 
     private int getPartitionId(Data o) {
@@ -129,10 +134,6 @@ public abstract class Invalidator {
         }
     }
 
-    private Data toHeapData(Data key) {
-        return serializationService.toData(key);
-    }
-
     /**
      * Removes supplied data structures invalidation queues and flushes their content.
      * This method is called when removing a Near Cache for example with
@@ -142,7 +143,8 @@ public abstract class Invalidator {
      * @see com.hazelcast.map.impl.MapRemoteService#destroyDistributedObject(String)
      */
     public void destroy(String dataStructureName, String sourceUuid) {
-        // nop.
+        invalidateAllKeys(dataStructureName, sourceUuid);
+        metaDataGenerator.destroyMetaDataFor(dataStructureName);
     }
 
     /**
@@ -164,5 +166,4 @@ public abstract class Invalidator {
     public void shutdown() {
         // nop
     }
-
 }

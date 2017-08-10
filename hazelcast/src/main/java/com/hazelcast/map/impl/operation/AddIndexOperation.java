@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ public class AddIndexOperation extends MapOperation implements PartitionAwareOpe
 
     @Override
     public void run() throws Exception {
-        Indexes indexes = mapContainer.getIndexes();
+        Indexes indexes = mapContainer.getIndexes(getPartitionId());
         Index index = indexes.addOrGetIndex(attributeName, ordered);
 
         final long now = getNow();

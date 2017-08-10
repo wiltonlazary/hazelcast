@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,7 +51,6 @@ import static com.hazelcast.util.Preconditions.isNotNull;
 public abstract class AbstractReplicatedRecordStore<K, V> extends AbstractBaseReplicatedRecordStore<K, V> {
 
     public AbstractReplicatedRecordStore(String name, ReplicatedMapService replicatedMapService, int partitionId) {
-
         super(name, replicatedMapService, partitionId);
     }
 
@@ -334,7 +333,6 @@ public abstract class AbstractReplicatedRecordStore<K, V> extends AbstractBaseRe
         return new ReplicatedRecord<K, V>(key, value, ttlMillis);
     }
 
-
     @Override
     public boolean merge(Object key, ReplicatedMapEntryView mergingEntry, ReplicatedMapMergePolicy policy) {
         Object marshalledKey = marshall(key);
@@ -462,6 +460,4 @@ public abstract class AbstractReplicatedRecordStore<K, V> extends AbstractBaseRe
             return entry;
         }
     }
-
-
 }

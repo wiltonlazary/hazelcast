@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,8 +32,8 @@ import com.hazelcast.spi.exception.TargetNotMemberException;
 import java.io.IOException;
 
 /**
- * Used for committing a migration on migration destination.
- * It updates the partition table on migration destination and finalizes the migration.
+ * Sent by the master node to commit a migration on the migration destination.
+ * It updates the partition table on the migration destination and finalizes the migration.
  */
 public class MigrationCommitOperation extends AbstractPartitionOperation implements MigrationCycleOperation {
 

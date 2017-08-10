@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@ import com.hazelcast.core.Member;
 import com.hazelcast.core.MemberSelector;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
+import com.hazelcast.instance.NodeExtension;
+import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.internal.metrics.Probe;
 import com.hazelcast.internal.partition.InternalPartition;
@@ -42,9 +44,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_SELECTOR;
 
 /**
- *
  * Maintains the partition table state.
- *
  */
 public class PartitionStateManager {
 
@@ -113,6 +113,20 @@ public class PartitionStateManager {
         return memberGroupFactory.createMemberGroups(members);
     }
 
+    /**
+     * Arranges the partitions if:
+     * <ul>
+     * <li>this instance {@link NodeExtension#isStartCompleted()}</li>
+     * <li>the cluster state allows migrations. See {@link ClusterState#isMigrationAllowed()}</li>
+     * </ul>
+     * This will also set the manager state to initialized (if not already) and invoke the
+     * {@link PartitionListener#replicaChanged(PartitionReplicaChangeEvent)} for all changed replicas which
+     * will cancel replica synchronizations and increase the partition state version.
+     *
+     * @param excludedAddresses members which are to be excluded from the new layout
+     * @return if the new partition was assigned
+     * @throws HazelcastException if the partition state generator failed to arrange the partitions
+     */
     boolean initializePartitionAssignments(Set<Address> excludedAddresses) {
         if (!isPartitionAssignmentAllowed()) {
             return false;
@@ -135,7 +149,7 @@ public class PartitionStateManager {
         // if it's started and not locked the state yet.
         stateVersion.incrementAndGet();
         ClusterState clusterState = node.getClusterService().getClusterState();
-        if (clusterState != ClusterState.ACTIVE) {
+        if (!clusterState.isMigrationAllowed()) {
             // cluster state is either changed or locked, decrement version back and fail.
             stateVersion.decrementAndGet();
             logger.warning("Partitions can't be assigned since cluster-state= " + clusterState);
@@ -151,6 +165,10 @@ public class PartitionStateManager {
         return true;
     }
 
+    /**
+     * Returns {@code true} if the node has started and
+     * the cluster state allows migrations (see {@link ClusterState#isMigrationAllowed()}).
+     * */
     private boolean isPartitionAssignmentAllowed() {
         if (!node.getNodeExtension().isStartCompleted()) {
             logger.warning("Partitions can't be assigned since startup is not completed yet.");
@@ -158,13 +176,21 @@ public class PartitionStateManager {
         }
 
         ClusterState clusterState = node.getClusterService().getClusterState();
-        if (clusterState != ClusterState.ACTIVE) {
+        if (!clusterState.isMigrationAllowed()) {
             logger.warning("Partitions can't be assigned since cluster-state= " + clusterState);
             return false;
         }
         return true;
     }
 
+    /**
+     * Sets the initial partition table and state version. If any partition has a replica, the partition state manager is
+     * set to initialized, otherwise {@link #isInitialized()} stays uninitialized but the current state will be updated
+     * nevertheless.
+     *
+     * @param partitionTable the initial partition table
+     * @throws IllegalStateException if the partition manager has already been initialized
+     */
     void setInitialState(PartitionTableView partitionTable) {
         if (initialized) {
             throw new IllegalStateException("Partition table is already initialized!");
@@ -209,6 +235,12 @@ public class PartitionStateManager {
         return node.isLiteMember() ? 0 : 1;
     }
 
+    /**
+     * Checks all replicas for all partitions. If the cluster service does not contain the member for any
+     * address in the partition table, it will remove the address from the partition.
+     *
+     * @see ClusterService#getMember(Address)
+     */
     void removeUnknownAddresses() {
         ClusterServiceImpl clusterService = node.getClusterService();
 
@@ -248,6 +280,7 @@ public class PartitionStateManager {
         return partitions;
     }
 
+    /** Returns a copy of the current partition table. */
     public InternalPartition[] getPartitionsCopy() {
         NopPartitionListener listener = new NopPartitionListener();
         InternalPartition[] result = new InternalPartition[partitions.length];
@@ -291,6 +324,7 @@ public class PartitionStateManager {
         partitions[partitionId].setMigrating(false);
     }
 
+    /** Sets the replica addresses for the {@code partitionId}. */
     void updateReplicaAddresses(int partitionId, Address[] replicaAddresses) {
         InternalPartitionImpl partition = partitions[partitionId];
         partition.setReplicaAddresses(replicaAddresses);

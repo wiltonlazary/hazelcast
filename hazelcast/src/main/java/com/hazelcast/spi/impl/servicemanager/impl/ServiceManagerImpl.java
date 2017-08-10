@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,6 +53,7 @@ import com.hazelcast.spi.ManagedService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.SharedService;
 import com.hazelcast.spi.impl.NodeEngineImpl;
+import com.hazelcast.spi.impl.eventservice.impl.EventServiceImpl;
 import com.hazelcast.spi.impl.proxyservice.impl.ProxyServiceImpl;
 import com.hazelcast.spi.impl.servicemanager.RemoteServiceDescriptor;
 import com.hazelcast.spi.impl.servicemanager.RemoteServiceDescriptorProvider;
@@ -122,6 +123,7 @@ public final class ServiceManagerImpl implements ServiceManager {
         registerService(ClientEngineImpl.SERVICE_NAME, node.clientEngine);
         registerService(QuorumServiceImpl.SERVICE_NAME, nodeEngine.getQuorumService());
         registerService(WanReplicationService.SERVICE_NAME, nodeEngine.getWanReplicationService());
+        registerService(EventServiceImpl.SERVICE_NAME, nodeEngine.getEventService());
     }
 
     private void registerExtensionServices() {
@@ -170,7 +172,8 @@ public final class ServiceManagerImpl implements ServiceManager {
         try {
             ClassLoader classLoader = node.getConfigClassLoader();
             Iterator<Class<RemoteServiceDescriptorProvider>> iter =
-                    com.hazelcast.util.ServiceLoader.classIterator(PROVIDER_ID, classLoader);
+                    com.hazelcast.util.ServiceLoader.classIterator(RemoteServiceDescriptorProvider.class, PROVIDER_ID,
+                            classLoader);
 
             while (iter.hasNext()) {
                 Class<RemoteServiceDescriptorProvider> clazz = iter.next();

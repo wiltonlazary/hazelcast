@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.query.impl.getters;
 import com.hazelcast.util.CollectionUtil;
 import com.hazelcast.util.collection.ArrayUtils;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Collection;
 
@@ -100,8 +101,8 @@ public abstract class AbstractMultiValueGetter extends Getter {
         return inputType.getComponentType();
     }
 
-    private void collectResult(MultiResult collector, Object parentObject) throws IllegalAccessException,
-            InvocationTargetException {
+    private void collectResult(MultiResult collector, Object parentObject)
+            throws IllegalAccessException, InvocationTargetException {
         // re-add nulls from parent extraction without extracting further down the path
         if (parentObject == null) {
             collector.add(null);
@@ -118,8 +119,10 @@ public abstract class AbstractMultiValueGetter extends Getter {
     private Object extractFromMultiResult(MultiResult parentMultiResult) throws IllegalAccessException,
             InvocationTargetException {
         MultiResult collector = new MultiResult();
-        for (Object parentResult : parentMultiResult.getResults()) {
-            collectResult(collector, parentResult);
+        collector.setNullOrEmptyTarget(parentMultiResult.isNullEmptyTarget());
+        int size = parentMultiResult.getResults().size();
+        for (int i = 0; i < size; i++) {
+            collectResult(collector, parentMultiResult.getResults().get(i));
         }
 
         return collector;
@@ -138,12 +141,14 @@ public abstract class AbstractMultiValueGetter extends Getter {
 
 
     private Object getItemAtPositionOrNull(Object object, int position) {
-        if (object instanceof Collection) {
+        if (object == null) {
+            return null;
+        } else if (object instanceof Collection) {
             return CollectionUtil.getItemAtPositionOrNull((Collection) object, position);
         } else if (object instanceof Object[]) {
             return ArrayUtils.getItemAtPositionOrNull((Object[]) object, position);
-        } else if (object == null) {
-            return null;
+        } else if (object.getClass().isArray()) {
+            return Array.get(object, position);
         }
         throw new IllegalArgumentException("Cannot extract an element from class of type" + object.getClass()
                 + " Collections and Arrays are supported only");
@@ -157,7 +162,7 @@ public abstract class AbstractMultiValueGetter extends Getter {
     private void reduceArrayInto(MultiResult collector, Object[] currentObject) {
         Object[] array = currentObject;
         if (array.length == 0) {
-            collector.add(null);
+            collector.addNullOrEmptyTarget();
         } else {
             for (int i = 0; i < array.length; i++) {
                 collector.add(array[i]);
@@ -165,10 +170,21 @@ public abstract class AbstractMultiValueGetter extends Getter {
         }
     }
 
+    private void reducePrimitiveArrayInto(MultiResult collector, Object primitiveArray) {
+        int length = Array.getLength(primitiveArray);
+        if (length == 0) {
+            collector.addNullOrEmptyTarget();
+        } else {
+            for (int i = 0; i < length; i++) {
+                collector.add(Array.get(primitiveArray, i));
+            }
+        }
+    }
+
     protected void reduceCollectionInto(MultiResult collector, Collection currentObject) {
         Collection collection = currentObject;
         if (collection.isEmpty()) {
-            collector.add(null);
+            collector.addNullOrEmptyTarget();
         } else {
             for (Object o : collection) {
                 collector.add(o);
@@ -183,18 +199,20 @@ public abstract class AbstractMultiValueGetter extends Getter {
             return;
         }
 
-        if (currentObject instanceof Collection) {
+        if (currentObject == null) {
+            collector.addNullOrEmptyTarget();
+        } else if (currentObject instanceof Collection) {
             reduceCollectionInto(collector, (Collection) currentObject);
         } else if (currentObject instanceof Object[]) {
             reduceArrayInto(collector, (Object[]) currentObject);
-        } else if (currentObject == null) {
-            // collect null since it's a valid result
-            collector.add(null);
+        } else if (currentObject.getClass().isArray()) {
+            reducePrimitiveArrayInto(collector, currentObject);
         } else {
             throw new IllegalArgumentException("Can't reduce result from a type " + currentObject.getClass()
                     + " Only Collections and Arrays are supported.");
         }
     }
+
 
     private static int parseModifier(String modifier) {
         String stringValue = modifier.substring(1, modifier.length() - 1);

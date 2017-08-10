@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
 package com.hazelcast.test.mocknetwork;
@@ -62,21 +61,21 @@ class MockJoiner extends AbstractJoiner {
 
                 if (node.getThisAddress().equals(joinAddress)) {
                     logger.fine("This node is found as master, no need to join.");
-                    clusterJoinManager.setAsMaster();
+                    clusterJoinManager.setThisMemberAsMaster();
                     break;
                 }
 
                 logger.fine("Sending join request to " + joinAddress);
                 if (!clusterJoinManager.sendJoinRequest(joinAddress, true)) {
                     logger.fine("Could not send join request to " + joinAddress);
-                    clusterJoinManager.setMasterAddress(null);
+                    clusterService.setMasterAddressToJoin(null);
                 }
 
                 if (Clock.currentTimeMillis() > joinAddressTimeout) {
                     logger.warning("Resetting master address because join address timeout");
                     previousJoinAddress = null;
                     joinAddressTimeout = 0;
-                    clusterJoinManager.setMasterAddress(null);
+                    clusterService.setMasterAddressToJoin(null);
                 }
             }
             try {
@@ -132,7 +131,7 @@ class MockJoiner extends AbstractJoiner {
                 continue;
             }
 
-            if (!foundNode.joined()) {
+            if (!foundNode.getClusterService().isJoined()) {
                 logger.fine("Node for " + address + " is not joined yet.");
                 continue;
             }
@@ -153,7 +152,7 @@ class MockJoiner extends AbstractJoiner {
         possibleAddresses.remove(node.getThisAddress());
         possibleAddresses.removeAll(node.getClusterService().getMemberAddresses());
         for (Address address : possibleAddresses) {
-            SplitBrainJoinMessage  response = sendSplitBrainJoinMessage(address);
+            SplitBrainJoinMessage response = sendSplitBrainJoinMessage(address);
             if (shouldMerge(response)) {
                 startClusterMerge(address);
             }

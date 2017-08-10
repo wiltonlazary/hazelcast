@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+
 /**
  * Or result set for Predicates.
  */
@@ -46,6 +47,29 @@ public class OrResultSet extends AbstractSet<QueryableEntry> {
 
     @Override
     public Iterator<QueryableEntry> iterator() {
+        return getEntries().iterator();
+    }
+
+    @Override
+    public int size() {
+        return getEntries().size();
+    }
+
+    /**
+     * @return returns estimated size without allocating the full result set
+     */
+    public int estimatedSize() {
+        if (entries == null) {
+            if (indexedResults.isEmpty()) {
+                return 0;
+            } else {
+                return indexedResults.get(0).size();
+            }
+        }
+        return entries.size();
+    }
+
+    private Set<QueryableEntry> getEntries() {
         if (entries == null) {
             if (indexedResults.isEmpty()) {
                 entries = Collections.emptySet();
@@ -60,15 +84,7 @@ public class OrResultSet extends AbstractSet<QueryableEntry> {
                 }
             }
         }
-        return entries.iterator();
+        return entries;
     }
 
-    @Override
-    public int size() {
-        if (indexedResults.isEmpty()) {
-            return 0;
-        } else {
-            return indexedResults.get(0).size();
-        }
-    }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -849,7 +849,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         while (it.hasNext()) {
             count++;
             Entry entry = (Entry) it.next();
-            println(entry.getKey() + " : " + entry.getValue());
+            println(entry.getKey() + ": " + entry.getValue());
         }
         println("Total " + count);
     }
@@ -897,7 +897,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         while (it.hasNext()) {
             count++;
             Entry entry = (Entry) it.next();
-            println(entry.getKey() + " : " + entry.getValue());
+            println(entry.getKey() + ": " + entry.getValue());
         }
         println("Total " + count);
     }
@@ -1124,7 +1124,7 @@ public class ClientConsoleApp implements EntryListener, ItemListener, MessageLis
         } else if (iteratorStr.startsWith("l.")) {
             result = getList().contains(data);
         }
-        println("Contains : " + result);
+        println("Contains: " + result);
     }
 
     protected void handleSize(String[] args) {

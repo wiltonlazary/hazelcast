@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -143,7 +143,7 @@ public class HashSlotArray12byteKeyImplTest {
             insert(i, factor * i);
         }
 
-        for (int i = mod; i <= k ; i += mod) {
+        for (int i = mod; i <= k; i += mod) {
             assertTrue(hsa.remove(i, factor * i));
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,10 +35,14 @@ import com.hazelcast.map.impl.record.RecordFactory;
 import com.hazelcast.map.merge.MapMergePolicy;
 import com.hazelcast.nio.ClassLoaderUtil;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.SerializableByConvention;
+import com.hazelcast.query.impl.Index;
 import com.hazelcast.query.impl.Indexes;
 import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.query.impl.getters.Extractors;
+import com.hazelcast.spi.DistributedObjectNamespace;
 import com.hazelcast.spi.NodeEngine;
+import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.ConstructorFunction;
@@ -48,39 +52,43 @@ import com.hazelcast.util.RuntimeMemoryInfoAccessor;
 import com.hazelcast.wan.WanReplicationPublisher;
 import com.hazelcast.wan.WanReplicationService;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.hazelcast.config.InMemoryFormat.NATIVE;
+import static com.hazelcast.config.InMemoryFormat.OBJECT;
 import static com.hazelcast.map.impl.eviction.Evictor.NULL_EVICTOR;
 import static com.hazelcast.map.impl.mapstore.MapStoreContextFactory.createMapStoreContext;
 import static java.lang.System.getProperty;
 
 /**
- * Map container.
+ * Map container for a map with a specific name. Contains config and supporting structures for
+ * all of the maps' functionalities.
  */
 public class MapContainer {
 
     protected final String name;
     protected final String quorumName;
     protected final MapServiceContext mapServiceContext;
-    protected final Indexes indexes;
     protected final Extractors extractors;
     protected final PartitioningStrategy partitioningStrategy;
     protected final MapStoreContext mapStoreContext;
     protected final SerializationService serializationService;
     protected final QueryEntryFactory queryEntryFactory;
     protected final InterceptorRegistry interceptorRegistry = new InterceptorRegistry();
-    protected final IFunction<Object, Data> toDataFunction = new IFunction<Object, Data>() {
-        @Override
-        public Data apply(Object input) {
-            SerializationService ss = mapStoreContext.getSerializationService();
-            return ss.toData(input, partitioningStrategy);
-        }
-    };
+    protected final IFunction<Object, Data> toDataFunction = new ObjectToData();
     protected final ConstructorFunction<Void, RecordFactory> recordFactoryConstructor;
+    // On-heap indexes are global, meaning there is only one index per map, stored in the mapContainer.
+    // If globalIndexes is null it means that global index is not in use.
+    protected final Indexes globalIndexes;
+
     /**
      * Holds number of registered {@link InvalidationListener} from clients.
      */
     protected final AtomicInteger invalidationListenerCount = new AtomicInteger();
+
+    protected final ObjectNamespace objectNamespace;
 
     protected WanReplicationPublisher wanReplicationPublisher;
     protected MapMergePolicy wanMergePolicy;
@@ -104,9 +112,15 @@ public class MapContainer {
         this.serializationService = nodeEngine.getSerializationService();
         this.recordFactoryConstructor = createRecordFactoryConstructor(serializationService);
         this.queryEntryFactory = new QueryEntryFactory(mapConfig.getCacheDeserializedValues());
+        this.objectNamespace = new DistributedObjectNamespace(MapService.SERVICE_NAME, name);
         initWanReplication(nodeEngine);
         this.extractors = new Extractors(mapConfig.getMapAttributeConfigs(), config.getClassLoader());
-        this.indexes = new Indexes((InternalSerializationService) serializationService, extractors);
+        if (shouldUseGlobalIndex(mapConfig)) {
+            this.globalIndexes = new Indexes((InternalSerializationService) serializationService,
+                    mapServiceContext.getIndexProvider(mapConfig), extractors, true);
+        } else {
+            this.globalIndexes = null;
+        }
         this.mapStoreContext = createMapStoreContext(this);
         this.mapStoreContext.start();
         initEvictor();
@@ -123,6 +137,11 @@ public class MapContainer {
             IPartitionService partitionService = mapServiceContext.getNodeEngine().getPartitionService();
             evictor = new EvictorImpl(mapEvictionPolicy, evictionChecker, partitionService);
         }
+    }
+
+    protected boolean shouldUseGlobalIndex(MapConfig mapConfig) {
+        // for non-native memory populate a single global index
+        return !mapConfig.getInMemoryFormat().equals(NATIVE);
     }
 
     protected static MemoryInfoAccessor getMemoryInfoAccessor() {
@@ -176,8 +195,26 @@ public class MapContainer {
         return mapServiceContext.getPartitioningStrategy(mapConfig.getName(), mapConfig.getPartitioningStrategyConfig());
     }
 
+    /**
+     * @return the global index, if the global index is in use (on-heap) or null.
+     */
     public Indexes getIndexes() {
-        return indexes;
+        return globalIndexes;
+    }
+
+    /**
+     * @param partitionId partitionId
+     * @return
+     */
+    public Indexes getIndexes(int partitionId) {
+        if (globalIndexes != null) {
+            return globalIndexes;
+        }
+        return mapServiceContext.getPartitionContainer(partitionId).getIndexes(name);
+    }
+
+    public boolean isGlobalIndexEnabled() {
+        return globalIndexes != null;
     }
 
     public WanReplicationPublisher getWanReplicationPublisher() {
@@ -284,6 +321,39 @@ public class MapContainer {
 
     // callback called when the MapContainer is de-registered from MapService and destroyed - basically on map-destroy
     public void onDestroy() {
+    }
+
+    public boolean shouldCloneOnEntryProcessing(int partitionId) {
+        return getIndexes(partitionId).hasIndex() && OBJECT.equals(mapConfig.getInMemoryFormat());
+    }
+
+    public ObjectNamespace getObjectNamespace() {
+        return objectNamespace;
+    }
+
+    public Map<String, Boolean> getIndexDefinitions() {
+        Map<String, Boolean> definitions = new HashMap<String, Boolean>();
+        if (isGlobalIndexEnabled()) {
+            for (Index index : globalIndexes.getIndexes()) {
+                definitions.put(index.getAttributeName(), index.isOrdered());
+            }
+        } else {
+            for (PartitionContainer container : mapServiceContext.getPartitionContainers()) {
+                for (Index index : container.getIndexes(name).getIndexes()) {
+                    definitions.put(index.getAttributeName(), index.isOrdered());
+                }
+            }
+        }
+        return definitions;
+    }
+
+    @SerializableByConvention
+    private class ObjectToData implements IFunction<Object, Data> {
+        @Override
+        public Data apply(Object input) {
+            SerializationService ss = mapStoreContext.getSerializationService();
+            return ss.toData(input, partitioningStrategy);
+        }
     }
 }
 

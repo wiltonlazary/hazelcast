@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.impl.querycache;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
@@ -15,7 +31,6 @@ import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.RootCauseMatcher;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -25,12 +40,13 @@ import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 
 import java.util.Collection;
-import java.util.concurrent.Future;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -51,7 +67,7 @@ public class ClientQueryCacheContextTest extends HazelcastTestSupport {
 
         HazelcastInstance hz = factory.newHazelcastClient();
         ClientMapProxy proxy = (ClientMapProxy) hz.getMap("test");
-        context = proxy.getQueryContext();
+        context = proxy.getQueryCacheContext();
     }
 
     @After
@@ -114,19 +130,18 @@ public class ClientQueryCacheContextTest extends HazelcastTestSupport {
     @Test(expected = NullPointerException.class)
     public void testInvokerWrapper_invokeOnAllPartitions_whenExceptionOccurs_thenExceptionIsRethrown() throws Exception {
         ClientMessage request = mock(ClientMessage.class);
-
+        when(request.setCorrelationId((Long) any())).thenThrow(NullPointerException.class);
         context.getInvokerWrapper().invokeOnAllPartitions(request);
     }
 
-    @Test
-    public void testInvokerWrapper_invokeOnTarget_whenExceptionOccurs_thenFutureReturnsException() throws Exception {
+    @Test(expected = NullPointerException.class)
+    public void testInvokerWrapper_invokeOnTarget_whenExceptionOccurs_thenExceptionIsRethrown() throws Exception {
         ClientMessage request = mock(ClientMessage.class);
+        when(request.setCorrelationId((Long) any())).thenThrow(NullPointerException.class);
+
         Address address = new Address();
 
-        Future future = context.getInvokerWrapper().invokeOnTarget(request, address);
-
-        expectedException.expect(new RootCauseMatcher(NullPointerException.class));
-        future.get();
+        context.getInvokerWrapper().invokeOnTarget(request, address);
     }
 
     @Test(expected = NullPointerException.class)
@@ -144,6 +159,7 @@ public class ClientQueryCacheContextTest extends HazelcastTestSupport {
     @Test(expected = NullPointerException.class)
     public void testInvokerWrapper_invoke_whenExceptionOccurs_thenExceptionIsRethrown() throws Exception {
         ClientMessage request = mock(ClientMessage.class);
+        when(request.setCorrelationId((Long) any())).thenThrow(NullPointerException.class);
 
         context.getInvokerWrapper().invoke(request);
     }

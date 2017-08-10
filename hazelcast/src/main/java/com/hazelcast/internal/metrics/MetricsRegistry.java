@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,12 @@ import java.util.concurrent.TimeUnit;
 public interface MetricsRegistry {
 
     /**
-     * Creates a LongGauge for a given metric name.
+     * Returns the minimum ProbeLevel this MetricsRegistry is recording.
+     */
+    ProbeLevel minimumLevel();
+
+    /**
+     * Creates a {@link LongGauge} for a given metric name.
      *
      * If no gauge exists for the name, it will be created but no probe is set. The reason to do so is that you don't want to
      * depend on the order of registration. Perhaps you want to read out e.g. operations.count gauge, but the OperationService
@@ -71,7 +76,7 @@ public interface MetricsRegistry {
     LongGauge newLongGauge(String name);
 
     /**
-     * Creates a DoubleProbe for a given metric name.
+     * Creates a {@link DoubleGauge} for a given metric name.
      *
      * @param name name of the metric
      * @return the create DoubleGauge

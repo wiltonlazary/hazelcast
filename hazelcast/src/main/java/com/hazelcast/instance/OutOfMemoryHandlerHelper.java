@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,19 +59,6 @@ public final class OutOfMemoryHandlerHelper {
         closeSockets(factory);
         try {
             factory.node.shutdown(true);
-        } catch (Throwable ignored) {
-            EmptyStatement.ignore(ignored);
-        }
-    }
-
-    public static void tryStopThreads(HazelcastInstance hazelcastInstance) {
-        if (hazelcastInstance == null) {
-            return;
-        }
-
-        HazelcastInstanceImpl factory = (HazelcastInstanceImpl) hazelcastInstance;
-        try {
-            factory.node.getHazelcastThreadGroup().destroy();
         } catch (Throwable ignored) {
             EmptyStatement.ignore(ignored);
         }

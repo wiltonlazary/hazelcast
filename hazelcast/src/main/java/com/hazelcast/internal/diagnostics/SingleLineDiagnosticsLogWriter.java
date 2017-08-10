@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ class SingleLineDiagnosticsLogWriter extends DiagnosticsLogWriter {
 
     private void appendComma() {
         if (firstEntry) {
-            firstEntry = false;
+            this.firstEntry = false;
         } else {
             write(',');
         }
@@ -89,8 +89,15 @@ class SingleLineDiagnosticsLogWriter extends DiagnosticsLogWriter {
     }
 
     @Override
+    public void writeKeyValueEntryAsDateTime(String key, long epochMillis) {
+        appendComma();
+        write(key).write('=');
+        appendDateTime(epochMillis);
+    }
+
+    @Override
     protected void init(PrintWriter writer) {
-        firstEntry = true;
+        this.firstEntry = true;
         super.init(writer);
     }
 }

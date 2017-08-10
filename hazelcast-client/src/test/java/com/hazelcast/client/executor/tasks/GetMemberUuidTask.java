@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import com.hazelcast.nio.serialization.DataSerializable;
 import java.io.IOException;
 import java.util.concurrent.Callable;
 
-public class GetMemberUuidTask implements Callable<String>, DataSerializable, HazelcastInstanceAware{
+public class GetMemberUuidTask implements Callable<String>, DataSerializable, HazelcastInstanceAware {
 
     private HazelcastInstance node;
 

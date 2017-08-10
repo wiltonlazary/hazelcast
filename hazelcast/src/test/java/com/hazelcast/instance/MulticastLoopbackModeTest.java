@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -113,8 +113,7 @@ public class MulticastLoopbackModeTest extends HazelcastTestSupport {
     public void testEnabledMode() throws Exception {
         createTestEnvironment(true);
 
-        assertClusterSize(2, hz1);
-        assertClusterSize(2, hz2);
+        assertClusterSize(2, hz1, hz2);
 
         Cluster cluster1 = hz1.getCluster();
         Cluster cluster2 = hz2.getCluster();

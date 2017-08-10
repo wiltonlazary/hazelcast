@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -110,7 +110,7 @@ public abstract class AbstractConfigBuilder extends AbstractXmlConfigHelper {
             throw new InvalidConfigurationException("Failed to load resource: " + resource);
         }
         if (!currentlyImportedFiles.add(url.getPath())) {
-            throw new InvalidConfigurationException("Cyclic loading of resource " + url.getPath() + " is detected !");
+            throw new InvalidConfigurationException("Cyclic loading of resource " + url.getPath() + " is detected!");
         }
         Document doc = parse(url.openStream());
         Element importedRoot = doc.getDocumentElement();
@@ -138,7 +138,7 @@ public abstract class AbstractConfigBuilder extends AbstractXmlConfigHelper {
     protected abstract Properties getProperties();
 
     /**
-     * @return ConfigType of current config class as enum value.
+     * @return ConfigType of current config class as enum value
      */
     @Override
     protected abstract ConfigType getXmlType();

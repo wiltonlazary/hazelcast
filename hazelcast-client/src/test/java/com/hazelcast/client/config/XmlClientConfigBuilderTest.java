@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import com.hazelcast.config.SocketInterceptorConfig;
 import com.hazelcast.config.XMLConfigBuilderTest;
 import com.hazelcast.core.HazelcastException;
 import com.hazelcast.test.HazelcastSerialClassRunner;
+import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
 import org.junit.Before;
@@ -55,11 +56,11 @@ import java.io.PrintWriter;
 import java.net.URL;
 import java.nio.ByteOrder;
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
+import static com.hazelcast.nio.IOUtil.delete;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -69,18 +70,20 @@ import static org.junit.Assert.fail;
 /**
  * This class tests the usage of {@link XmlClientConfigBuilder}
  */
-//tests need to be executed sequentially because of system properties being set/unset
+// tests need to be executed sequentially because of system properties being set/unset
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
-public class XmlClientConfigBuilderTest {
+public class XmlClientConfigBuilderTest extends HazelcastTestSupport {
 
-    ClientConfig clientConfig;
-
-    public static final String HAZELCAST_CLIENT_START_TAG =
+    static final String HAZELCAST_CLIENT_START_TAG =
             "<hazelcast-client xmlns=\"http://www.hazelcast.com/schema/client-config\">\n";
 
+    static final String HAZELCAST_CLIENT_END_TAG = "</hazelcast-client>";
+
+    private ClientConfig clientConfig;
+
     @Before
-    public void init() throws IOException {
+    public void init() throws Exception {
         URL schemaResource = XMLConfigBuilderTest.class.getClassLoader().getResource("hazelcast-client-full.xml");
         clientConfig = new XmlClientConfigBuilder(schemaResource).build();
     }
@@ -105,7 +108,7 @@ public class XmlClientConfigBuilderTest {
     @Test(expected = HazelcastException.class)
     public void loadingThroughSystemProperty_nonExistingFile() throws IOException {
         File file = File.createTempFile("foo", "bar");
-        file.delete();
+        delete(file);
         System.setProperty("hazelcast.client.config", file.getAbsolutePath());
 
         new XmlClientConfigBuilder();
@@ -113,13 +116,12 @@ public class XmlClientConfigBuilderTest {
 
     @Test
     public void loadingThroughSystemProperty_existingFile() throws IOException {
-        String xml =
-                HAZELCAST_CLIENT_START_TAG +
-                        "    <group>\n" +
-                        "        <name>foobar</name>\n" +
-                        "        <password>dev-pass</password>\n" +
-                        "    </group>" +
-                        "</hazelcast-client>";
+        String xml = HAZELCAST_CLIENT_START_TAG
+                + "    <group>\n"
+                + "        <name>foobar</name>\n"
+                + "        <password>dev-pass</password>\n"
+                + "    </group>\n"
+                + "</hazelcast-client>";
 
         File file = File.createTempFile("foo", "bar");
         file.deleteOnExit();
@@ -148,7 +150,7 @@ public class XmlClientConfigBuilderTest {
         ClientConfig config = configBuilder.build();
         assertEquals("foobar", config.getGroupConfig().getName());
         assertEquals("com.hazelcast.nio.ssl.BasicSSLContextFactory", config.getNetworkConfig().getSSLConfig().getFactoryClassName());
-        assertEquals(32, config.getNetworkConfig().getSocketOptions().getBufferSize());
+        assertEquals(128, config.getNetworkConfig().getSocketOptions().getBufferSize());
         assertFalse(config.getNetworkConfig().getSocketOptions().isKeepAlive());
         assertFalse(config.getNetworkConfig().getSocketOptions().isTcpNoDelay());
         assertEquals(3, config.getNetworkConfig().getSocketOptions().getLingerSeconds());
@@ -172,8 +174,8 @@ public class XmlClientConfigBuilderTest {
         final ClientNetworkConfig networkConfig = clientConfig.getNetworkConfig();
         assertEquals(2, networkConfig.getConnectionAttemptLimit());
         assertEquals(2, networkConfig.getAddresses().size());
-        assertTrue(networkConfig.getAddresses().contains("127.0.0.1"));
-        assertTrue(networkConfig.getAddresses().contains("127.0.0.2"));
+        assertContains(networkConfig.getAddresses(), "127.0.0.1");
+        assertContains(networkConfig.getAddresses(), "127.0.0.2");
 
         assertTrue(networkConfig.isSmartRouting());
         assertTrue(networkConfig.isRedoOperation());
@@ -220,20 +222,20 @@ public class XmlClientConfigBuilderTest {
         assertEquals("com.hazelcast.examples.GlobalSerializerFactory", globalSerializerConfig.getClassName());
 
         assertEquals(ByteOrder.BIG_ENDIAN, serializationConfig.getByteOrder());
-        assertEquals(true, serializationConfig.isCheckClassDefErrors());
-        assertEquals(false, serializationConfig.isAllowUnsafe());
-        assertEquals(false, serializationConfig.isEnableCompression());
-        assertEquals(true, serializationConfig.isEnableSharedObject());
-        assertEquals(true, serializationConfig.isUseNativeByteOrder());
+        assertTrue(serializationConfig.isCheckClassDefErrors());
+        assertFalse(serializationConfig.isAllowUnsafe());
+        assertFalse(serializationConfig.isEnableCompression());
+        assertTrue(serializationConfig.isEnableSharedObject());
+        assertTrue(serializationConfig.isUseNativeByteOrder());
     }
 
     @Test
     public void testProxyFactories() {
         final List<ProxyFactoryConfig> pfc = clientConfig.getProxyFactoryConfigs();
         assertEquals(3, pfc.size());
-        assertTrue(pfc.contains(new ProxyFactoryConfig("com.hazelcast.examples.ProxyXYZ1", "sampleService1")));
-        assertTrue(pfc.contains(new ProxyFactoryConfig("com.hazelcast.examples.ProxyXYZ2", "sampleService1")));
-        assertTrue(pfc.contains(new ProxyFactoryConfig("com.hazelcast.examples.ProxyXYZ3", "sampleService3")));
+        assertContains(pfc, new ProxyFactoryConfig("com.hazelcast.examples.ProxyXYZ1", "sampleService1"));
+        assertContains(pfc, new ProxyFactoryConfig("com.hazelcast.examples.ProxyXYZ2", "sampleService1"));
+        assertContains(pfc, new ProxyFactoryConfig("com.hazelcast.examples.ProxyXYZ3", "sampleService3"));
     }
 
     @Test
@@ -248,6 +250,7 @@ public class XmlClientConfigBuilderTest {
         assertEquals("LFU", nearCacheConfig.getEvictionPolicy());
         assertEquals(EvictionPolicy.LFU, nearCacheConfig.getEvictionConfig().getEvictionPolicy());
         assertTrue(nearCacheConfig.isInvalidateOnChange());
+        assertTrue(nearCacheConfig.isSerializeKeys());
         assertEquals(InMemoryFormat.OBJECT, nearCacheConfig.getInMemoryFormat());
     }
 
@@ -257,9 +260,9 @@ public class XmlClientConfigBuilderTest {
         ClientConfig clientConfig = new XmlClientConfigBuilder(schemaResource).build();
 
         assertEquals("MyInstanceName", clientConfig.getInstanceName());
-        
+
         NearCacheConfig nearCacheConfig = clientConfig.getNearCacheConfig("nearCacheWithEvictionAndPreloader");
-        
+
         assertEquals(10000, nearCacheConfig.getTimeToLiveSeconds());
         assertEquals(5000, nearCacheConfig.getMaxIdleSeconds());
         assertFalse(nearCacheConfig.isInvalidateOnChange());
@@ -273,7 +276,7 @@ public class XmlClientConfigBuilderTest {
 
         assertNotNull(nearCacheConfig.getPreloaderConfig());
         assertTrue(nearCacheConfig.getPreloaderConfig().isEnabled());
-        assertEquals("myNearCache.store", nearCacheConfig.getPreloaderConfig().getFilename());
+        assertEquals("/tmp/myNearCache", nearCacheConfig.getPreloaderConfig().getDirectory());
         assertEquals(2342, nearCacheConfig.getPreloaderConfig().getStoreInitialDelaySeconds());
         assertEquals(4223, nearCacheConfig.getPreloaderConfig().getStoreIntervalSeconds());
     }
@@ -297,15 +300,19 @@ public class XmlClientConfigBuilderTest {
         assertEquals(InMemoryFormat.BINARY, queryCacheConfig.getInMemoryFormat());
         assertFalse(queryCacheConfig.isCoalesce());
         assertTrue(queryCacheConfig.isPopulate());
-        Iterator<MapIndexConfig> iterator = queryCacheConfig.getIndexConfigs().iterator();
-        while (iterator.hasNext()) {
-            MapIndexConfig mapIndexConfig = iterator.next();
+        for (MapIndexConfig mapIndexConfig : queryCacheConfig.getIndexConfigs()) {
             assertEquals("name", mapIndexConfig.getAttribute());
             assertFalse(mapIndexConfig.isOrdered());
         }
 
         assertEquals("com.hazelcast.examples.ExamplePredicate", queryCacheConfig.getPredicateConfig().getClassName());
+    }
 
+    @Test
+    public void testConnectionStrategyConfig() {
+        ClientConnectionStrategyConfig connectionStrategyConfig = clientConfig.getConnectionStrategyConfig();
+        assertTrue(connectionStrategyConfig.isAsyncStart());
+        assertEquals(ClientConnectionStrategyConfig.ReconnectMode.ASYNC, connectionStrategyConfig.getReconnectMode());
     }
 
     @Test
@@ -320,9 +327,9 @@ public class XmlClientConfigBuilderTest {
 
         final List<ListenerConfig> listenerConfigs = clientConfig.getListenerConfigs();
         assertEquals(3, listenerConfigs.size());
-        assertTrue(listenerConfigs.contains(new ListenerConfig("com.hazelcast.examples.MembershipListener")));
-        assertTrue(listenerConfigs.contains(new ListenerConfig("com.hazelcast.examples.InstanceListener")));
-        assertTrue(listenerConfigs.contains(new ListenerConfig("com.hazelcast.examples.MigrationListener")));
+        assertContains(listenerConfigs, new ListenerConfig("com.hazelcast.examples.MembershipListener"));
+        assertContains(listenerConfigs, new ListenerConfig("com.hazelcast.examples.InstanceListener"));
+        assertContains(listenerConfigs, new ListenerConfig("com.hazelcast.examples.MigrationListener"));
     }
 
     @Test
@@ -359,12 +366,80 @@ public class XmlClientConfigBuilderTest {
         buildConfig(xml);
     }
 
+    @Test
+    public void testNearCacheInMemoryFormatNative_withKeysByReference() {
+        String mapName = "testMapNearCacheInMemoryFormatNative";
+        String xml = HAZELCAST_CLIENT_START_TAG
+                + "  <near-cache name=\"" + mapName + "\">\n"
+                + "    <in-memory-format>NATIVE</in-memory-format>\n"
+                + "    <serialize-keys>false</serialize-keys>\n"
+                + "  </near-cache>\n"
+                + HAZELCAST_CLIENT_END_TAG;
+
+        ClientConfig clientConfig = buildConfig(xml);
+        NearCacheConfig ncConfig = clientConfig.getNearCacheConfig(mapName);
+
+        assertEquals(InMemoryFormat.NATIVE, ncConfig.getInMemoryFormat());
+        assertTrue(ncConfig.isSerializeKeys());
+    }
+
+    @Test
+    public void testNearCacheEvictionPolicy() {
+        String xml = HAZELCAST_CLIENT_START_TAG
+                + "<near-cache name=\"lfu\">"
+                + "  <eviction eviction-policy=\"LFU\"/>"
+                + "</near-cache>"
+                + "<near-cache name=\"lru\">"
+                + "  <eviction eviction-policy=\"LRU\"/>"
+                + "</near-cache>"
+                + "<near-cache name=\"none\">"
+                + "  <eviction eviction-policy=\"NONE\"/>"
+                + "</near-cache>"
+                + "<near-cache name=\"random\">"
+                + "  <eviction eviction-policy=\"RANDOM\"/>"
+                + "</near-cache>"
+                + HAZELCAST_CLIENT_END_TAG;
+        ClientConfig clientConfig = buildConfig(xml);
+        assertEquals(EvictionPolicy.LFU, getNearCacheEvictionPolicy("lfu", clientConfig));
+        assertEquals(EvictionPolicy.LRU, getNearCacheEvictionPolicy("lru", clientConfig));
+        assertEquals(EvictionPolicy.NONE, getNearCacheEvictionPolicy("none", clientConfig));
+        assertEquals(EvictionPolicy.RANDOM, getNearCacheEvictionPolicy("random", clientConfig));
+    }
+
+    @Test
+    public void testClientUserCodeDeploymentConfig() {
+        String xml = HAZELCAST_CLIENT_START_TAG
+                + "<user-code-deployment enabled=\"true\">\n"
+                + "        <jarPaths>\n"
+                + "            <jarPath>/User/test/test.jar</jarPath>\n"
+                + "        </jarPaths>\n"
+                + "        <classNames>\n"
+                + "            <className>test.testClassName</className>\n"
+                + "            <className>test.testClassName2</className>\n"
+                + "        </classNames>\n"
+                + "    </user-code-deployment>"
+                + HAZELCAST_CLIENT_END_TAG;
+        ClientConfig clientConfig = buildConfig(xml);
+        ClientUserCodeDeploymentConfig userCodeDeploymentConfig = clientConfig.getUserCodeDeploymentConfig();
+        assertEquals(true, userCodeDeploymentConfig.isEnabled());
+        List<String> classNames = userCodeDeploymentConfig.getClassNames();
+        assertEquals(2, classNames.size());
+        assertEquals(true, classNames.contains("test.testClassName"));
+        assertEquals(true, classNames.contains("test.testClassName2"));
+        List<String> jarPaths = userCodeDeploymentConfig.getJarPaths();
+        assertEquals(1, jarPaths.size());
+        assertEquals(true, jarPaths.contains("/User/test/test.jar"));
+    }
+
+    private EvictionPolicy getNearCacheEvictionPolicy(String mapName, ClientConfig clientConfig) {
+        return clientConfig.getNearCacheConfig(mapName).getEvictionConfig().getEvictionPolicy();
+    }
+
     static ClientConfig buildConfig(String xml, Properties properties) {
         ByteArrayInputStream bis = new ByteArrayInputStream(xml.getBytes());
         XmlClientConfigBuilder configBuilder = new XmlClientConfigBuilder(bis);
         configBuilder.setProperties(properties);
-        ClientConfig config = configBuilder.build();
-        return config;
+        return configBuilder.build();
     }
 
     static ClientConfig buildConfig(String xml, String key, String value) {
@@ -373,13 +448,13 @@ public class XmlClientConfigBuilderTest {
         return buildConfig(xml, properties);
     }
 
-    static ClientConfig buildConfig(String xml) {
+    public static ClientConfig buildConfig(String xml) {
         return buildConfig(xml, null);
     }
 
     private void testXSDConfigXML(String xmlFileName) throws SAXException, IOException {
         SchemaFactory factory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
-        URL schemaResource = XMLConfigBuilderTest.class.getClassLoader().getResource("hazelcast-client-config-3.6.xsd");
+        URL schemaResource = XMLConfigBuilderTest.class.getClassLoader().getResource("hazelcast-client-config-3.9.xsd");
         InputStream xmlResource = XMLConfigBuilderTest.class.getClassLoader().getResourceAsStream(xmlFileName);
         Schema schema = factory.newSchema(schemaResource);
         Source source = new StreamSource(xmlResource);
@@ -391,4 +466,3 @@ public class XmlClientConfigBuilderTest {
         }
     }
 }
-

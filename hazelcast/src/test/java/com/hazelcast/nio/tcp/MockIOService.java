@@ -1,41 +1,52 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.nio.tcp;
 
-import com.hazelcast.client.impl.protocol.ClientMessage;
+import com.hazelcast.client.ClientEngine;
 import com.hazelcast.config.SSLConfig;
-import com.hazelcast.config.SocketInterceptorConfig;
 import com.hazelcast.config.SymmetricEncryptionConfig;
 import com.hazelcast.instance.BuildInfoProvider;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.internal.ascii.TextCommandService;
-import com.hazelcast.internal.networking.IOOutOfMemoryHandler;
-import com.hazelcast.internal.networking.ReadHandler;
-import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
-import com.hazelcast.internal.networking.WriteHandler;
+import com.hazelcast.internal.networking.ChannelFactory;
+import com.hazelcast.internal.networking.ChannelInboundHandler;
+import com.hazelcast.internal.networking.ChannelOutboundHandler;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.LoggingService;
 import com.hazelcast.logging.LoggingServiceImpl;
 import com.hazelcast.nio.Address;
-import com.hazelcast.nio.Connection;
 import com.hazelcast.nio.IOService;
 import com.hazelcast.nio.MemberSocketInterceptor;
 import com.hazelcast.nio.Packet;
-import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.EventFilter;
 import com.hazelcast.spi.EventRegistration;
 import com.hazelcast.spi.EventService;
 import com.hazelcast.spi.impl.PacketHandler;
-import com.hazelcast.spi.impl.packetdispatcher.PacketDispatcher;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
 import java.nio.channels.ServerSocketChannel;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.concurrent.ConcurrentHashMap;
-
-import static com.hazelcast.logging.Logger.getLogger;
 
 public class MockIOService implements IOService {
 
@@ -43,26 +54,27 @@ public class MockIOService implements IOService {
     public final Address thisAddress;
     public final InternalSerializationService serializationService;
     public final LoggingServiceImpl loggingService;
-    public final HazelcastThreadGroup hazelcastThreadGroup;
     public final ConcurrentHashMap<Long, DummyPayload> payloads = new ConcurrentHashMap<Long, DummyPayload>();
+    private final ChannelFactory channelFactory;
     public volatile PacketHandler packetHandler;
 
-    public MockIOService(int port) throws Exception {
-        loggingService = new LoggingServiceImpl("somegroup", "log4j", BuildInfoProvider.getBuildInfo());
-        hazelcastThreadGroup = new HazelcastThreadGroup(
-                "hz",
-                loggingService.getLogger(HazelcastThreadGroup.class),
-                getClass().getClassLoader());
-
+    public MockIOService(int port, ChannelFactory channelFactory) throws Exception {
+        loggingService = new LoggingServiceImpl("somegroup", "log4j2", BuildInfoProvider.getBuildInfo());
         serverSocketChannel = ServerSocketChannel.open();
         ServerSocket serverSocket = serverSocketChannel.socket();
         serverSocket.setReuseAddress(true);
         serverSocket.setSoTimeout(1000);
         serverSocket.bind(new InetSocketAddress("0.0.0.0", port));
         thisAddress = new Address("127.0.0.1", port);
+        this.channelFactory = channelFactory;
         this.serializationService = new DefaultSerializationServiceBuilder()
                 .addDataSerializableFactory(TestDataFactory.FACTORY_ID, new TestDataFactory())
                 .build();
+    }
+
+    @Override
+    public String getHazelcastName() {
+        return "hz";
     }
 
     @Override
@@ -71,22 +83,8 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public HazelcastThreadGroup getHazelcastThreadGroup() {
-        return hazelcastThreadGroup;
-    }
-
-    @Override
     public LoggingService getLoggingService() {
         return loggingService;
-    }
-
-    @Override
-    public IOOutOfMemoryHandler getIoOutOfMemoryHandler() {
-        return new IOOutOfMemoryHandler() {
-            @Override
-            public void handle(OutOfMemoryError error) {
-            }
-        };
     }
 
     @Override
@@ -96,11 +94,6 @@ public class MockIOService implements IOService {
 
     @Override
     public void onFatalError(Exception e) {
-    }
-
-    @Override
-    public SocketInterceptorConfig getSocketInterceptorConfig() {
-        return null;
     }
 
     @Override
@@ -114,7 +107,8 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public void handleClientMessage(ClientMessage cm, Connection connection) {
+    public ClientEngine getClientEngine() {
+        return null;
     }
 
     @Override
@@ -187,28 +181,26 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public boolean isSocketBufferDirect() {
+    public boolean useDirectSocketBuffer() {
         return false;
     }
 
     @Override
-    public int getSocketLingerSeconds() {
-        return 0;
+    public void configureSocket(Socket socket) throws SocketException {
+    }
+
+    @Override
+    public void interceptSocket(Socket socket, boolean onAccept) throws IOException {
+    }
+
+    @Override
+    public boolean isSocketInterceptorEnabled() {
+        return false;
     }
 
     @Override
     public int getSocketConnectTimeoutSeconds() {
         return 0;
-    }
-
-    @Override
-    public boolean getSocketKeepAlive() {
-        return true;
-    }
-
-    @Override
-    public boolean getSocketNoDelay() {
-        return true;
     }
 
     @Override
@@ -238,11 +230,6 @@ public class MockIOService implements IOService {
 
     @Override
     public void onDisconnect(Address endpoint, Throwable cause) {
-    }
-
-    @Override
-    public boolean isClient() {
-        return false;
     }
 
     @Override
@@ -354,8 +341,8 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public SocketChannelWrapperFactory getSocketChannelWrapperFactory() {
-        return new DefaultSocketChannelWrapperFactory();
+    public ChannelFactory getChannelFactory() {
+        return channelFactory;
     }
 
     @Override
@@ -364,12 +351,12 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public ReadHandler createReadHandler(final TcpIpConnection connection) {
-        return new MemberReadHandler(connection, new PacketDispatcher() {
+    public ChannelInboundHandler createInboundHandler(final TcpIpConnection connection) {
+        return new MemberChannelInboundHandler(connection, new PacketHandler() {
             private ILogger logger = loggingService.getLogger("MockIOService");
 
             @Override
-            public void dispatch(Packet packet) {
+            public void handle(Packet packet) {
                 try {
                     if (packet.getPacketType() == Packet.Type.BIND) {
                         connection.getConnectionManager().handle(packet);
@@ -387,8 +374,8 @@ public class MockIOService implements IOService {
     }
 
     @Override
-    public WriteHandler createWriteHandler(TcpIpConnection connection) {
-        return new MemberWriteHandler();
+    public ChannelOutboundHandler createOutboundHandler(TcpIpConnection connection) {
+        return new MemberChannelOutboundHandler();
     }
 
 }

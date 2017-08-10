@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,26 +23,26 @@ import com.hazelcast.nio.serialization.Data;
  */
 public interface MinimalPartitionService {
     /**
-     * Returns the partition id for a Data key.
+     * Returns the partition ID for a Data key.
      *
-     * @param key the Data key.
-     * @return the partition id.
-     * @throws NullPointerException if key is null.
+     * @param key the Data key
+     * @return the partition ID
+     * @throws NullPointerException if key is {@code null}
      */
     int getPartitionId(Data key);
 
     /**
-     * Returns the partition id for a given object.
+     * Returns the partition ID for a given object.
      *
-     * @param key the object key.
-     * @return the partition id.
+     * @param key the object key
+     * @return the partition ID
      */
     int getPartitionId(Object key);
 
     /**
      * Returns the number of partitions.
      *
-     * @return the number of partitions.
+     * @return the number of partitions
      */
     int getPartitionCount();
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -636,8 +636,12 @@ public final class AddressUtil {
      */
     public static class InvalidAddressException extends IllegalArgumentException {
 
-        public InvalidAddressException(final String s) {
-            super("Illegal IP address format: " + s);
+        public InvalidAddressException(final String message) {
+            this(message, true);
+        }
+
+        public InvalidAddressException(final String message, boolean prependText) {
+            super((prependText ? "Illegal IP address format: " : "") + message);
         }
     }
 }

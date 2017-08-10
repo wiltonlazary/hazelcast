@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.hazelcast.internal.eviction.EvictionListener;
 import com.hazelcast.internal.eviction.impl.strategy.sampling.SampleableEvictableStore;
 import com.hazelcast.map.impl.querycache.subscriber.record.QueryCacheRecord;
 import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.serialization.SerializableByConvention;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.ConcurrentReferenceHashMap;
 import com.hazelcast.util.SampleableConcurrentHashMap;
@@ -34,6 +35,7 @@ import java.util.EnumSet;
  * @see SampleableConcurrentHashMap
  * @see SampleableEvictableStore
  */
+@SerializableByConvention
 public class QueryCacheRecordHashMap extends SampleableConcurrentHashMap<Data, QueryCacheRecord>
         implements SampleableEvictableStore<Data, QueryCacheRecord> {
 

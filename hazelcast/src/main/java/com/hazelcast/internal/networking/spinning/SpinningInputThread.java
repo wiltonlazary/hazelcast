@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,7 @@
 
 package com.hazelcast.internal.networking.spinning;
 
-import com.hazelcast.instance.HazelcastThreadGroup;
-import com.hazelcast.internal.networking.SocketConnection;
+import com.hazelcast.util.ThreadUtil;
 
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
@@ -26,43 +25,38 @@ import static java.util.concurrent.atomic.AtomicReferenceFieldUpdater.newUpdater
 
 public class SpinningInputThread extends Thread {
 
-    private static final SocketReaders SHUTDOWN = new SocketReaders();
-    private static final AtomicReferenceFieldUpdater<SpinningInputThread, SocketReaders> CONNECTION_HANDLERS
-            = newUpdater(SpinningInputThread.class, SocketReaders.class, "socketReaders");
+    private static final ChannelReaders SHUTDOWN = new ChannelReaders();
+    private static final AtomicReferenceFieldUpdater<SpinningInputThread, ChannelReaders> CONNECTION_HANDLERS
+            = newUpdater(SpinningInputThread.class, ChannelReaders.class, "channelReaders");
 
-    private volatile SocketReaders socketReaders;
+    private volatile ChannelReaders channelReaders = new ChannelReaders();
 
-    public SpinningInputThread(HazelcastThreadGroup threadGroup) {
-        super(threadGroup.getInternalThreadGroup(), "in-thread");
-        this.socketReaders = new SocketReaders();
+    SpinningInputThread(String hzName) {
+        super(ThreadUtil.createThreadName(hzName, "in-thread"));
     }
 
-    public void addConnection(SocketConnection connection) {
-        SpinningSocketReader reader = (SpinningSocketReader) connection.getSocketReader();
-
+    void register(SpinningChannelReader reader) {
         for (; ; ) {
-            SocketReaders current = socketReaders;
+            ChannelReaders current = channelReaders;
             if (current == SHUTDOWN) {
                 return;
             }
 
             int length = current.readers.length;
-            SpinningSocketReader[] newReaders = new SpinningSocketReader[length + 1];
+            SpinningChannelReader[] newReaders = new SpinningChannelReader[length + 1];
             arraycopy(current.readers, 0, newReaders, 0, length);
             newReaders[length] = reader;
 
-            SocketReaders update = new SocketReaders(newReaders);
+            ChannelReaders update = new ChannelReaders(newReaders);
             if (CONNECTION_HANDLERS.compareAndSet(this, current, update)) {
                 return;
             }
         }
     }
 
-    public void removeConnection(SocketConnection connection) {
-        SpinningSocketReader reader = (SpinningSocketReader) connection.getSocketReader();
-
+    void unregister(SpinningChannelReader reader) {
         for (; ; ) {
-            SocketReaders current = socketReaders;
+            ChannelReaders current = channelReaders;
             if (current == SHUTDOWN) {
                 return;
             }
@@ -73,7 +67,7 @@ public class SpinningInputThread extends Thread {
             }
 
             int length = current.readers.length;
-            SpinningSocketReader[] newReaders = new SpinningSocketReader[length - 1];
+            SpinningChannelReader[] newReaders = new SpinningChannelReader[length - 1];
 
             int destIndex = 0;
             for (int sourceIndex = 0; sourceIndex < length; sourceIndex++) {
@@ -83,7 +77,7 @@ public class SpinningInputThread extends Thread {
                 }
             }
 
-            SocketReaders update = new SocketReaders(newReaders);
+            ChannelReaders update = new ChannelReaders(newReaders);
             if (CONNECTION_HANDLERS.compareAndSet(this, current, update)) {
                 return;
             }
@@ -91,20 +85,20 @@ public class SpinningInputThread extends Thread {
     }
 
     public void shutdown() {
-        socketReaders = SHUTDOWN;
+        channelReaders = SHUTDOWN;
         interrupt();
     }
 
     @Override
     public void run() {
         for (; ; ) {
-            SocketReaders handlers = socketReaders;
+            ChannelReaders readers = channelReaders;
 
-            if (handlers == SHUTDOWN) {
+            if (readers == SHUTDOWN) {
                 return;
             }
 
-            for (SpinningSocketReader reader : handlers.readers) {
+            for (SpinningChannelReader reader : readers.readers) {
                 try {
                     reader.read();
                 } catch (Throwable t) {
@@ -114,20 +108,20 @@ public class SpinningInputThread extends Thread {
         }
     }
 
-    static class SocketReaders {
-        final SpinningSocketReader[] readers;
+    static class ChannelReaders {
+        final SpinningChannelReader[] readers;
 
-        public SocketReaders() {
-            this(new SpinningSocketReader[0]);
+        ChannelReaders() {
+            this(new SpinningChannelReader[0]);
         }
 
-        public SocketReaders(SpinningSocketReader[] readers) {
+        ChannelReaders(SpinningChannelReader[] readers) {
             this.readers = readers;
         }
 
-        public int indexOf(SpinningSocketReader readHandler) {
+        public int indexOf(SpinningChannelReader reader) {
             for (int k = 0; k < readers.length; k++) {
-                if (readers[k] == readHandler) {
+                if (readers[k] == reader) {
                     return k;
                 }
             }

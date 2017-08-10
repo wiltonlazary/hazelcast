@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,28 +16,24 @@
 
 package com.hazelcast.client.map;
 
-import com.hazelcast.client.test.TestHazelcastFactory;
-import com.hazelcast.config.Config;
 import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.EntryListener;
 import com.hazelcast.core.EntryView;
-import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.core.MapEvent;
+import com.hazelcast.map.MapInterceptor;
 import com.hazelcast.map.listener.EntryEvictedListener;
 import com.hazelcast.monitor.LocalMapStats;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.SqlPredicate;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -55,29 +51,7 @@ import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
-public class ClientMapBasicTest extends HazelcastTestSupport {
-
-    private final TestHazelcastFactory hazelcastFactory = new TestHazelcastFactory();
-
-    private HazelcastInstance client;
-
-    private HazelcastInstance member1;
-    private HazelcastInstance member2;
-
-    @Before
-    public void setup() {
-        Config config = getConfig();
-
-        member1 = hazelcastFactory.newHazelcastInstance(config);
-        member2 = hazelcastFactory.newHazelcastInstance(config);
-
-        client = hazelcastFactory.newHazelcastClient();
-    }
-
-    @After
-    public void tearDown() {
-        hazelcastFactory.terminateAll();
-    }
+public class ClientMapBasicTest extends AbstractClientMapTest {
 
     @Test
     public void testClientGetMap() {
@@ -210,7 +184,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         String result = map.put(key, value, 1, TimeUnit.SECONDS);
         assertNull(result);
         sleepSeconds(2);
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -224,7 +198,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         String result = map.put(key, newValue, 1, TimeUnit.SECONDS);
         assertEquals(oldValue, result);
         sleepSeconds(2);
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -235,7 +209,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
 
         Future result = map.putAsync(key, value);
 
-        assertEquals(null, result.get());
+        assertNull(result.get());
         assertEquals(value, map.get(key));
     }
 
@@ -277,7 +251,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
 
         Future result = map.putAsync(key, value, 5, TimeUnit.MINUTES);
 
-        assertEquals(null, result.get());
+        assertNull(result.get());
         assertEquals(value, map.get(key));
     }
 
@@ -302,9 +276,9 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         String value = "Val";
 
         Future result = map.putAsync(key, value, 1, TimeUnit.SECONDS);
-        assertEquals(null, result.get());
+        assertNull(result.get());
         sleepSeconds(2);
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -319,7 +293,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
 
         assertEquals(oldValue, result.get());
         sleepSeconds(2);
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -377,7 +351,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         Future<Void> result = map.setAsync(key, value, 1, TimeUnit.SECONDS);
         result.get();
         assertOpenEventually(latch);
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -397,7 +371,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         Future<Void> result = map.setAsync(key, newValue, 1, TimeUnit.SECONDS);
         result.get();
         assertOpenEventually(latch);
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -448,7 +422,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
 
         String result = map.putIfAbsent(key, value);
 
-        assertEquals(null, result);
+        assertNull(result);
         assertEquals(value, map.get(key));
     }
 
@@ -487,7 +461,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
 
         String result = map.putIfAbsent(key, value, 5, TimeUnit.MINUTES);
 
-        assertEquals(null, result);
+        assertNull(result);
         assertEquals(value, map.get(key));
     }
 
@@ -500,8 +474,8 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         String result = map.putIfAbsent(key, value, 1, TimeUnit.SECONDS);
         sleepSeconds(2);
 
-        assertEquals(null, result);
-        assertEquals(null, map.get(key));
+        assertNull(result);
+        assertNull(map.get(key));
     }
 
     @Test
@@ -626,7 +600,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
     @Test
     public void testGet_whenKeyAbsent() {
         IMap<String, String> map = client.getMap(randomString());
-        assertEquals(null, map.get("NOT_THERE"));
+        assertNull(map.get("NOT_THERE"));
     }
 
     @Test(expected = NullPointerException.class)
@@ -651,7 +625,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         IMap<String, String> map = client.getMap(randomString());
 
         Future result = map.getAsync("NOT_THERE");
-        assertEquals(null, result.get());
+        assertNull(result.get());
     }
 
     @Test(expected = NullPointerException.class)
@@ -700,7 +674,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
 
         map.set(key, val, 1, TimeUnit.SECONDS);
         sleepSeconds(2);
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -713,7 +687,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         map.set(key, oldValue);
         map.set(key, newValue, 1, TimeUnit.SECONDS);
         sleepSeconds(2);
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -781,7 +755,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         Future result = map.removeAsync(key);
 
         assertEquals(value, result.get());
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -789,7 +763,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         IMap<String, String> map = client.getMap(randomString());
 
         Future result = map.removeAsync("NOT_THERE");
-        assertEquals(null, result.get());
+        assertNull(result.get());
     }
 
     @Test(expected = NullPointerException.class)
@@ -869,7 +843,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         map.put(key, value);
         boolean result = map.evict(key);
         assertTrue(result);
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -993,7 +967,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
 
         map.putTransient(key, value, 1, TimeUnit.SECONDS);
         sleepSeconds(2);
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -1018,7 +992,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         map.put(key, oldValue);
         map.putTransient(key, newValue, 1, TimeUnit.SECONDS);
         sleepSeconds(2);
-        assertEquals(null, map.get(key));
+        assertNull(map.get(key));
     }
 
     @Test
@@ -1026,7 +1000,7 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
         IMap<String, String> map = client.getMap(randomString());
         EntryView view = map.getEntryView("NOT_THERE");
 
-        assertEquals(null, view);
+        assertNull(view);
     }
 
     @Test
@@ -1174,7 +1148,9 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
     @Test
     public void testMapStatistics_withClientOperations() {
         String mapName = randomString();
-        LocalMapStats stats1 = member1.getMap(mapName).getLocalMapStats();
+        IMap<Integer, Integer> member1Map = member1.getMap(mapName);
+        member1Map.addInterceptor(new DelayGetRemoveMapInterceptor());
+        LocalMapStats stats1 = member1Map.getLocalMapStats();
         LocalMapStats stats2 = member2.getMap(mapName).getLocalMapStats();
 
         IMap<Integer, Integer> map = client.getMap(mapName);
@@ -1185,12 +1161,18 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
             map.remove(i);
         }
 
-        assertEquals("put count", operationCount, stats1.getPutOperationCount() + stats2.getPutOperationCount());
-        assertEquals("get count", operationCount, stats1.getGetOperationCount() + stats2.getGetOperationCount());
-        assertEquals("remove count", operationCount, stats1.getRemoveOperationCount() + stats2.getRemoveOperationCount());
-        assertTrue("put latency", 0 < stats1.getTotalPutLatency() + stats2.getTotalPutLatency());
-        assertTrue("get latency", 0 < stats1.getTotalGetLatency() + stats2.getTotalGetLatency());
-        assertTrue("remove latency", 0 < stats1.getTotalRemoveLatency() + stats2.getTotalRemoveLatency());
+        assertEquals("put count: stats1" + stats1 + " stats2:" + stats2, operationCount,
+                stats1.getPutOperationCount() + stats2.getPutOperationCount());
+        assertEquals("get count : stats1" + stats1 + " stats2:" + stats2, operationCount,
+                stats1.getGetOperationCount() + stats2.getGetOperationCount());
+        assertEquals("remove count : stats1" + stats1 + " stats2:" + stats2, operationCount,
+                stats1.getRemoveOperationCount() + stats2.getRemoveOperationCount());
+        assertTrue("put latency : stats1" + stats1 + " stats2:" + stats2,
+                0 < stats1.getTotalPutLatency() + stats2.getTotalPutLatency());
+        assertTrue("get latency : stats1" + stats1 + " stats2:" + stats2,
+                0 < stats1.getTotalGetLatency() + stats2.getTotalGetLatency());
+        assertTrue("remove latency : stats1" + stats1 + " stats2:" + stats2,
+                0 < stats1.getTotalRemoveLatency() + stats2.getTotalRemoveLatency());
     }
 
     @Test(expected = UnsupportedOperationException.class)
@@ -1224,6 +1206,39 @@ public class ClientMapBasicTest extends HazelcastTestSupport {
     public void testLocalKeySet_WithPredicate() {
         IMap<String, String> map = client.getMap(randomString());
         map.localKeySet(new FalsePredicate());
+    }
+
+    private static class DelayGetRemoveMapInterceptor implements MapInterceptor, Serializable {
+
+        @Override
+        public Object interceptGet(Object value) {
+            sleepMillis(1);
+            return value;
+        }
+
+        @Override
+        public void afterGet(Object value) {
+        }
+
+        @Override
+        public Object interceptPut(Object oldValue, Object newValue) {
+            sleepMillis(1);
+            return newValue;
+        }
+
+        @Override
+        public void afterPut(Object value) {
+        }
+
+        @Override
+        public Object interceptRemove(Object removedValue) {
+            sleepMillis(1);
+            return removedValue;
+        }
+
+        @Override
+        public void afterRemove(Object value) {
+        }
     }
 
     private static class EmptyEntryListener implements EntryListener<String, String> {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,12 @@ package com.hazelcast.cache.merge;
 
 import com.hazelcast.cache.CacheEntryView;
 import com.hazelcast.cache.StorageTypeAwareCacheMergePolicy;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 /**
  * `PassThroughCacheMergePolicy` policy merges cache entry from source to destination directly.
  */
+@BinaryInterface
 public class PassThroughCacheMergePolicy
         implements StorageTypeAwareCacheMergePolicy {
 

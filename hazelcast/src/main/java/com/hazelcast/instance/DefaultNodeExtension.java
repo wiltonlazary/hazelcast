@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.SerializationConfig;
 import com.hazelcast.core.HazelcastInstanceAware;
+import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.PartitioningStrategy;
 import com.hazelcast.hotrestart.HotRestartService;
 import com.hazelcast.hotrestart.InternalHotRestartService;
@@ -31,9 +32,15 @@ import com.hazelcast.internal.cluster.ClusterStateListener;
 import com.hazelcast.internal.cluster.ClusterVersionListener;
 import com.hazelcast.internal.cluster.impl.JoinMessage;
 import com.hazelcast.internal.cluster.impl.VersionMismatchException;
-import com.hazelcast.internal.networking.ReadHandler;
-import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
-import com.hazelcast.internal.networking.WriteHandler;
+import com.hazelcast.internal.dynamicconfig.DynamicConfigListener;
+import com.hazelcast.internal.dynamicconfig.EmptyDynamicConfigListener;
+import com.hazelcast.internal.management.TimedMemberStateFactory;
+import com.hazelcast.internal.management.ManagementCenterConnectionFactory;
+import com.hazelcast.internal.networking.ChannelFactory;
+import com.hazelcast.internal.networking.ChannelInboundHandler;
+import com.hazelcast.internal.networking.ChannelOutboundHandler;
+import com.hazelcast.internal.networking.nio.NioChannelFactory;
+import com.hazelcast.internal.networking.spinning.SpinningChannelFactory;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.SerializationServiceBuilder;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
@@ -45,23 +52,26 @@ import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ClassLoaderUtil;
 import com.hazelcast.nio.IOService;
 import com.hazelcast.nio.MemberSocketInterceptor;
-import com.hazelcast.nio.tcp.DefaultSocketChannelWrapperFactory;
-import com.hazelcast.nio.tcp.MemberReadHandler;
-import com.hazelcast.nio.tcp.MemberWriteHandler;
+import com.hazelcast.nio.tcp.MemberChannelInboundHandler;
+import com.hazelcast.nio.tcp.MemberChannelOutboundHandler;
 import com.hazelcast.nio.tcp.TcpIpConnection;
 import com.hazelcast.partition.strategy.DefaultPartitioningStrategy;
 import com.hazelcast.security.SecurityContext;
+import com.hazelcast.security.SecurityService;
+import com.hazelcast.security.impl.NoOpSecurityService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.servicemanager.ServiceManager;
 import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.util.ByteArrayProcessor;
 import com.hazelcast.util.ConstructorFunction;
 import com.hazelcast.util.ExceptionUtil;
 import com.hazelcast.util.Preconditions;
 import com.hazelcast.util.UuidUtil;
-import com.hazelcast.version.ClusterVersion;
+import com.hazelcast.util.function.Supplier;
 import com.hazelcast.version.MemberVersion;
+import com.hazelcast.version.Version;
 import com.hazelcast.wan.WanReplicationService;
 import com.hazelcast.wan.impl.WanReplicationServiceImpl;
 
@@ -73,7 +83,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static com.hazelcast.map.impl.MapServiceConstructor.getDefaultMapServiceConstructor;
 
 @PrivateApi
-@SuppressWarnings({"checkstyle:methodcount", "checkstyle:classfanoutcomplexity"})
+@SuppressWarnings({"checkstyle:methodcount", "checkstyle:classfanoutcomplexity", "checkstyle:classdataabstractioncoupling"})
 public class DefaultNodeExtension implements NodeExtension {
 
     protected final Node node;
@@ -104,8 +114,8 @@ public class DefaultNodeExtension implements NodeExtension {
         }
         systemLogger.info("Hazelcast " + buildInfo.getVersion()
                 + " (" + build + ") starting at " + node.getThisAddress());
-        systemLogger.info("Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.");
-        systemLogger.info("Configured Hazelcast Serialization version : " + buildInfo.getSerializationVersion());
+        systemLogger.info("Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.");
+        systemLogger.info("Configured Hazelcast Serialization version: " + buildInfo.getSerializationVersion());
     }
 
     @Override
@@ -118,7 +128,7 @@ public class DefaultNodeExtension implements NodeExtension {
 
     @Override
     public boolean isStartCompleted() {
-        return node.joined();
+        return node.getClusterService().isJoined();
     }
 
     @Override
@@ -142,17 +152,28 @@ public class DefaultNodeExtension implements NodeExtension {
 
             byte version = (byte) node.getProperties().getInteger(GroupProperty.SERIALIZATION_VERSION);
 
-            ss = (InternalSerializationService) builder.setClassLoader(configClassLoader)
+            ss = builder.setClassLoader(configClassLoader)
                     .setConfig(serializationConfig)
                     .setManagedContext(hazelcastInstance.managedContext)
                     .setPartitioningStrategy(partitioningStrategy)
                     .setHazelcastInstance(hazelcastInstance)
                     .setVersion(version)
+                    .setNotActiveExceptionSupplier(new Supplier<RuntimeException>() {
+                        @Override
+                        public RuntimeException get() {
+                            return new HazelcastInstanceNotActiveException();
+                        }
+                    })
                     .build();
         } catch (Exception e) {
             throw ExceptionUtil.rethrow(e);
         }
         return ss;
+    }
+
+    @Override
+    public SecurityService getSecurityService() {
+        return new NoOpSecurityService(node.getConfig().getSecurityConfig().getClientPermissionConfigs());
     }
 
     protected PartitioningStrategy getPartitioningStrategy(ClassLoader configClassLoader) throws Exception {
@@ -173,6 +194,7 @@ public class DefaultNodeExtension implements NodeExtension {
         } else if (MapService.class.isAssignableFrom(clazz)) {
             return createMapService();
         }
+
         throw new IllegalArgumentException("Unknown service class: " + clazz);
     }
 
@@ -194,19 +216,20 @@ public class DefaultNodeExtension implements NodeExtension {
     }
 
     @Override
-    public SocketChannelWrapperFactory getSocketChannelWrapperFactory() {
-        return new DefaultSocketChannelWrapperFactory();
+    public ChannelFactory getChannelFactory() {
+        boolean spinning = Boolean.getBoolean("hazelcast.io.spinning");
+        return spinning ? new SpinningChannelFactory() : new NioChannelFactory();
     }
 
     @Override
-    public ReadHandler createReadHandler(TcpIpConnection connection, IOService ioService) {
+    public ChannelInboundHandler createInboundHandler(TcpIpConnection connection, IOService ioService) {
         NodeEngineImpl nodeEngine = node.nodeEngine;
-        return new MemberReadHandler(connection, nodeEngine.getPacketDispatcher());
+        return new MemberChannelInboundHandler(connection, nodeEngine.getPacketDispatcher());
     }
 
     @Override
-    public WriteHandler createWriteHandler(TcpIpConnection connection, IOService ioService) {
-        return new MemberWriteHandler();
+    public ChannelOutboundHandler createOutboundHandler(TcpIpConnection connection, IOService ioService) {
+        return new MemberChannelOutboundHandler();
     }
 
     @Override
@@ -234,9 +257,9 @@ public class DefaultNodeExtension implements NodeExtension {
     @Override
     public void validateJoinRequest(JoinMessage joinMessage) {
         // check joining member's major.minor version is same as current cluster version's major.minor numbers
-        if (!joinMessage.getVersion().asClusterVersion().equals(node.getClusterService().getClusterVersion())) {
-            throw new VersionMismatchException("Joining node's version " + joinMessage.getVersion() + " is not compatible with "
-                    + node.getVersion());
+        if (!joinMessage.getMemberVersion().asVersion().equals(node.getClusterService().getClusterVersion())) {
+            throw new VersionMismatchException("Joining node's version " + joinMessage.getMemberVersion() + " is not"
+                    + " compatible with " + node.getVersion());
         }
     }
 
@@ -254,7 +277,7 @@ public class DefaultNodeExtension implements NodeExtension {
     }
 
     @Override
-    public void onClusterVersionChange(ClusterVersion newVersion) {
+    public void onClusterVersionChange(Version newVersion) {
         systemLogger.info("Cluster version set to " + newVersion);
         ServiceManager serviceManager = node.getNodeEngine().getServiceManager();
         List<ClusterVersionListener> listeners = serviceManager.getServices(ClusterVersionListener.class);
@@ -268,9 +291,9 @@ public class DefaultNodeExtension implements NodeExtension {
     }
 
     @Override
-    public boolean isNodeVersionCompatibleWith(ClusterVersion clusterVersion) {
+    public boolean isNodeVersionCompatibleWith(Version clusterVersion) {
         Preconditions.checkNotNull(clusterVersion);
-        return node.getVersion().asClusterVersion().equals(clusterVersion);
+        return node.getVersion().asVersion().equals(clusterVersion);
     }
 
     @Override
@@ -303,16 +326,41 @@ public class DefaultNodeExtension implements NodeExtension {
         return UuidUtil.createMemberUuid(address);
     }
 
+    @Override
+    public ByteArrayProcessor createMulticastInputProcessor(IOService ioService) {
+        return null;
+    }
+
+    @Override
+    public ByteArrayProcessor createMulticastOutputProcessor(IOService ioService) {
+        return null;
+    }
+
     // obtain cluster version, if already initialized (not null)
     // otherwise, if overridden with GroupProperty#INIT_CLUSTER_VERSION, use this one
     // otherwise, if not overridden, use current node's codebase version
-    private ClusterVersion getClusterOrNodeVersion() {
-        if (node.getClusterService() != null && node.getClusterService().getClusterVersion() != null) {
+    private Version getClusterOrNodeVersion() {
+        if (node.getClusterService() != null && !node.getClusterService().getClusterVersion().isUnknown()) {
             return node.getClusterService().getClusterVersion();
         } else {
             String overriddenClusterVersion = node.getProperties().getString(GroupProperty.INIT_CLUSTER_VERSION);
-            return (overriddenClusterVersion != null) ? MemberVersion.of(overriddenClusterVersion).asClusterVersion()
-                                                        : node.getVersion().asClusterVersion();
+            return (overriddenClusterVersion != null) ? MemberVersion.of(overriddenClusterVersion).asVersion()
+                    : node.getVersion().asVersion();
         }
+    }
+
+    @Override
+    public TimedMemberStateFactory createTimedMemberStateFactory(HazelcastInstanceImpl instance) {
+        return new TimedMemberStateFactory(instance);
+    }
+
+    @Override
+    public DynamicConfigListener createDynamicConfigListener() {
+        return new EmptyDynamicConfigListener();
+    }
+
+    @Override
+    public ManagementCenterConnectionFactory getManagementCenterConnectionFactory() {
+        return null;
     }
 }

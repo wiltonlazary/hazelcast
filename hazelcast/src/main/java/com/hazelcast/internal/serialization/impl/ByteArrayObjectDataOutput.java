@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -372,8 +372,13 @@ class ByteArrayObjectDataOutput extends VersionedObjectDataOutput implements Buf
 
     @Override
     public void writeData(Data data) throws IOException {
-        byte[] payload = data != null ? data.toByteArray() : null;
-        writeByteArray(payload);
+        int len = data == null ? NULL_ARRAY_LENGTH : data.totalSize();
+        writeInt(len);
+        if (len > 0) {
+            ensureAvailable(len);
+            data.copyTo(buffer, pos);
+            pos += len;
+        }
     }
 
     /**

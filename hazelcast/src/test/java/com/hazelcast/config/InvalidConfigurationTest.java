@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -455,7 +455,7 @@ public class InvalidConfigurationTest {
                 "</network>\n" +
 
                 "<queue name=\"default\">\n" +
-                "<quorum-ref>quorumRuleWithThreeMembers</quorum-ref>"+
+                "<quorum-ref>quorumRuleWithThreeMembers</quorum-ref>" +
                 "<max-size>0</max-size>\n" +
                 "<backup-count>${queue-backup-count}</backup-count>\n" +
                 "<async-backup-count>${queue-async-backup-count}</async-backup-count>\n" +

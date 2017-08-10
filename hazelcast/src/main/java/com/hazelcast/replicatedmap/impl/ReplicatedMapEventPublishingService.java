@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,6 +56,7 @@ import static com.hazelcast.replicatedmap.impl.ReplicatedMapService.SERVICE_NAME
  * Dispatches published events on replicated map to corresponding listeners.
  */
 public class ReplicatedMapEventPublishingService implements EventPublishingService {
+
     private final ReplicatedMapService replicatedMapService;
     private final NodeEngine nodeEngine;
     private final Config config;
@@ -171,7 +172,6 @@ public class ReplicatedMapEventPublishingService implements EventPublishingServi
                 entryEventData.getDataMergingValue(), nodeEngine.getSerializationService());
     }
 
-
     public void fireEntryListenerEvent(Data key, Data oldValue, Data value, String name, Address caller) {
         EntryEventType eventType = value == null ? REMOVED : oldValue == null ? ADDED : UPDATED;
         fireEntryListenerEvent(key, oldValue, value, eventType, name, caller);
@@ -207,6 +207,4 @@ public class ReplicatedMapEventPublishingService implements EventPublishingServi
         }
         return filter == null || filter.eval(queryEntry != null ? queryEntry : key);
     }
-
-
 }

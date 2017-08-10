@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client;
 
 import com.hazelcast.client.config.ClientConfig;
@@ -16,6 +32,7 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -27,7 +44,6 @@ public class ClientOwnershipTest extends HazelcastTestSupport {
     public void cleanup() {
         hazelcastFactory.terminateAll();
     }
-
 
     @Test
     public void test_clientOwnedByMember() {
@@ -60,7 +76,6 @@ public class ClientOwnershipTest extends HazelcastTestSupport {
                 assertEquals(instanceUuid, clientEngine2.getOwnerUuid(clientUuid));
             }
         });
-
     }
 
     @Test
@@ -88,7 +103,7 @@ public class ClientOwnershipTest extends HazelcastTestSupport {
         HazelcastInstance client = hazelcastFactory.newHazelcastClient();
         final HazelcastInstance instance2 = hazelcastFactory.newHazelcastInstance();
 
-        //Make sure client connected to all nodes
+        // make sure client connected to all nodes
         IExecutorService exec = client.getExecutorService("exec");
         exec.submitToAllMembers(new DummySerializableCallable());
         assertTrueEventually(new AssertTask() {
@@ -98,7 +113,6 @@ public class ClientOwnershipTest extends HazelcastTestSupport {
                 assertEquals(1, instance2.getClientService().getConnectedClients().size());
             }
         });
-
 
         instance1.shutdown();
 
@@ -134,17 +148,15 @@ public class ClientOwnershipTest extends HazelcastTestSupport {
             }
         });
 
-
         client.shutdown();
 
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                assertEquals(null, clientEngine1.getOwnerUuid(clientUuid));
-                assertEquals(null, clientEngine2.getOwnerUuid(clientUuid));
+                assertNull(clientEngine1.getOwnerUuid(clientUuid));
+                assertNull(clientEngine2.getOwnerUuid(clientUuid));
             }
         });
-
     }
 
     @Test
@@ -158,12 +170,12 @@ public class ClientOwnershipTest extends HazelcastTestSupport {
 
         final HazelcastInstance instance2 = hazelcastFactory.newHazelcastInstance();
 
-        //Wait for client to connect to node
+        // wait for client to connect to node
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
-                assertEquals(1, client.getCluster().getMembers().size());
-                assertEquals(1, instance2.getCluster().getMembers().size());
+                assertClusterSize(1, client);
+                assertClusterSize(1, instance2);
             }
         });
 
@@ -179,5 +191,38 @@ public class ClientOwnershipTest extends HazelcastTestSupport {
         });
     }
 
+    @Test
+    public void test_ownerShip_whenSmartClientAndOwnerDiesTogether() {
+        test_ownerShip_whenClientAndOwnerDiesTogether(true);
+    }
 
+    @Test
+    public void test_ownerShip_whenNonSmartClientAndOwnerDiesTogether() {
+        test_ownerShip_whenClientAndOwnerDiesTogether(false);
+    }
+
+    private void test_ownerShip_whenClientAndOwnerDiesTogether(boolean smart) {
+        final HazelcastInstance instance = hazelcastFactory.newHazelcastInstance();
+        ClientConfig config = new ClientConfig();
+        config.getNetworkConfig().setSmartRouting(smart);
+        final HazelcastInstance client = hazelcastFactory.newHazelcastClient(config);
+        final String clientUuid = client.getLocalEndpoint().getUuid();
+        final HazelcastInstance instance2 = hazelcastFactory.newHazelcastInstance();
+
+        client.getLifecycleService().terminate();
+        instance.getLifecycleService().terminate();
+
+        HazelcastInstance instance3 = hazelcastFactory.newHazelcastInstance();
+
+        final ClientEngineImpl clientEngine3 = getClientEngineImpl(instance3);
+        final ClientEngineImpl clientEngine2 = getClientEngineImpl(instance2);
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertNull(clientEngine2.getOwnerUuid(clientUuid));
+                assertNull(clientEngine3.getOwnerUuid(clientUuid));
+            }
+        });
+    }
 }

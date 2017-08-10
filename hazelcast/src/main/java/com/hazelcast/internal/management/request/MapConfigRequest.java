@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,31 +73,6 @@ public class MapConfigRequest implements ConsoleRequest {
             }
         }
         root.add("result", result);
-    }
-
-    @Override
-    public Object readResponse(JsonObject json) {
-        update = getBoolean(json, "update", false);
-        if (!update) {
-            boolean hasMapConfig = getBoolean(json, "hasMapConfig", false);
-            if (hasMapConfig) {
-                final MapConfigDTO adapter = new MapConfigDTO();
-                adapter.fromJson(getObject(json, "mapConfig"));
-                return adapter.getMapConfig();
-            } else {
-                return null;
-            }
-        }
-        return getString(json, "updateResult");
-    }
-
-    @Override
-    public JsonObject toJson() {
-        JsonObject root = new JsonObject();
-        root.add("mapName", mapName);
-        root.add("update", update);
-        root.add("config", config.toJson());
-        return root;
     }
 
     @Override

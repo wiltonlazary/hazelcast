@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,12 @@ package com.hazelcast.internal.serialization.impl;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.ManagedContext;
 import com.hazelcast.core.PartitioningStrategy;
-import com.hazelcast.internal.distributedclassloading.impl.ClassLocator;
 import com.hazelcast.internal.serialization.InputOutputFactory;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.bufferpool.BufferPool;
 import com.hazelcast.internal.serialization.impl.bufferpool.BufferPoolFactory;
 import com.hazelcast.internal.serialization.impl.bufferpool.BufferPoolThreadLocal;
+import com.hazelcast.internal.usercodedeployment.impl.ClassLocator;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.nio.BufferObjectDataInput;
@@ -36,6 +36,7 @@ import com.hazelcast.nio.serialization.DataSerializable;
 import com.hazelcast.nio.serialization.HazelcastSerializationException;
 import com.hazelcast.nio.serialization.Portable;
 import com.hazelcast.nio.serialization.Serializer;
+import com.hazelcast.util.function.Supplier;
 
 import java.io.Externalizable;
 import java.io.Serializable;
@@ -56,6 +57,7 @@ import static com.hazelcast.internal.serialization.impl.SerializationUtil.handle
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.indexForDefaultType;
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.isNullData;
 import static com.hazelcast.util.Preconditions.checkNotNull;
+import static java.nio.ByteOrder.BIG_ENDIAN;
 
 public abstract class AbstractSerializationService implements InternalSerializationService {
 
@@ -84,20 +86,21 @@ public abstract class AbstractSerializationService implements InternalSerializat
     private final int outputBufferSize;
     private volatile boolean active = true;
     private final byte version;
-
-    private ILogger logger = Logger.getLogger(InternalSerializationService.class);
+    private final ILogger logger = Logger.getLogger(InternalSerializationService.class);
 
     AbstractSerializationService(InputOutputFactory inputOutputFactory, byte version, ClassLoader classLoader,
                                  ManagedContext managedContext, PartitioningStrategy globalPartitionStrategy,
                                  int initialOutputBufferSize,
-                                 BufferPoolFactory bufferPoolFactory) {
+                                 BufferPoolFactory bufferPoolFactory,
+                                 Supplier<RuntimeException> notActiveExceptionSupplier) {
         this.inputOutputFactory = inputOutputFactory;
         this.version = version;
         this.classLoader = classLoader;
         this.managedContext = managedContext;
         this.globalPartitioningStrategy = globalPartitionStrategy;
         this.outputBufferSize = initialOutputBufferSize;
-        this.bufferPoolThreadLocal = new BufferPoolThreadLocal(this, bufferPoolFactory);
+        this.bufferPoolThreadLocal = new BufferPoolThreadLocal(this, bufferPoolFactory,
+                notActiveExceptionSupplier);
         this.nullSerializerAdapter = createSerializerAdapter(new ConstantSerializers.NullSerializer(), this);
     }
 
@@ -116,40 +119,38 @@ public abstract class AbstractSerializationService implements InternalSerializat
             return (B) obj;
         }
 
-        byte[] bytes = toBytes(obj, strategy);
+        byte[] bytes = toBytes(obj, 0, true, strategy);
         return (B) new HeapData(bytes);
     }
 
     @Override
     public byte[] toBytes(Object obj) {
-        return toBytes(0, obj, globalPartitioningStrategy);
+        return toBytes(obj, 0, true, globalPartitioningStrategy);
     }
 
     @Override
-    public byte[] toBytes(int padding, Object obj) {
-        return toBytes(padding, obj, globalPartitioningStrategy);
+    public byte[] toBytes(Object obj, int leftPadding, boolean insertPartitionHash) {
+        return toBytes(obj, leftPadding, insertPartitionHash, globalPartitioningStrategy);
     }
 
-    @Override
-    public byte[] toBytes(Object obj, PartitioningStrategy strategy) {
-        return toBytes(0, obj, strategy);
-    }
-
-    @Override
-    public byte[] toBytes(int padding, Object obj, PartitioningStrategy strategy) {
+    private byte[] toBytes(Object obj, int leftPadding, boolean writeHash, PartitioningStrategy strategy) {
         checkNotNull(obj);
 
         BufferPool pool = bufferPoolThreadLocal.get();
         BufferObjectDataOutput out = pool.takeOutputBuffer();
         try {
-            SerializerAdapter serializer = serializerFor(obj);
-            int partitionHash = calculatePartitionHash(obj, strategy);
-            out.writeInt(partitionHash, ByteOrder.BIG_ENDIAN);
+            out.position(leftPadding);
 
-            out.writeInt(serializer.getTypeId(), ByteOrder.BIG_ENDIAN);
+            SerializerAdapter serializer = serializerFor(obj);
+            if (writeHash) {
+                int partitionHash = calculatePartitionHash(obj, strategy);
+                out.writeInt(partitionHash, BIG_ENDIAN);
+            }
+
+            out.writeInt(serializer.getTypeId(), BIG_ENDIAN);
 
             serializer.write(out, obj);
-            return out.toByteArray(padding);
+            return out.toByteArray();
         } catch (Throwable e) {
             throw handleSerializeException(obj, e);
         } finally {
@@ -358,7 +359,7 @@ public abstract class AbstractSerializationService implements InternalSerializat
         }
         if (serializer.getTypeId() <= 0) {
             throw new IllegalArgumentException(
-                    "Type id must be positive! Current: " + serializer.getTypeId() + ", Serializer: " + serializer);
+                    "Type ID must be positive! Current: " + serializer.getTypeId() + ", Serializer: " + serializer);
         }
         safeRegister(type, createSerializerAdapter(serializer, this));
     }
@@ -533,7 +534,7 @@ public abstract class AbstractSerializationService implements InternalSerializat
     private SerializerAdapter lookupGlobalSerializer(Class type) {
         SerializerAdapter serializer = global.get();
         if (serializer != null) {
-            logger.fine("Registering global serializer for : " + type.getName());
+            logger.fine("Registering global serializer for: " + type.getName());
             safeRegister(type, serializer);
         }
         return serializer;
@@ -542,16 +543,16 @@ public abstract class AbstractSerializationService implements InternalSerializat
     private SerializerAdapter lookupJavaSerializer(Class type) {
         if (Externalizable.class.isAssignableFrom(type)) {
             if (safeRegister(type, javaExternalizableAdapter) && !Throwable.class.isAssignableFrom(type)) {
-                logger.info("Performance Hint: Serialization service will use java.io.Externalizable for : " + type.getName()
-                        + " . Please consider using a faster serialization option such as DataSerializable. ");
+                logger.info("Performance Hint: Serialization service will use java.io.Externalizable for: " + type.getName()
+                        + ". Please consider using a faster serialization option such as DataSerializable.");
             }
             return javaExternalizableAdapter;
         }
 
         if (Serializable.class.isAssignableFrom(type)) {
             if (safeRegister(type, javaSerializerAdapter) && !Throwable.class.isAssignableFrom(type)) {
-                logger.info("Performance Hint: Serialization service will use java.io.Serializable for : " + type.getName()
-                        + " . Please consider using a faster serialization option such as DataSerializable. ");
+                logger.info("Performance Hint: Serialization service will use java.io.Serializable for: " + type.getName()
+                        + ". Please consider using a faster serialization option such as DataSerializable.");
             }
             return javaSerializerAdapter;
         }

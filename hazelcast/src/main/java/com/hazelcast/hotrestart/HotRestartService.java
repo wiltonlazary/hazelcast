@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,4 +60,11 @@ public interface HotRestartService {
      * directories will be left as-is.
      */
     void interruptBackupTask();
+
+    /**
+     * Returns if hot backup is enabled.
+     *
+     * @return {@code true} if hot backup is enabled, {@code false} otherwise
+     */
+    boolean isHotBackupEnabled();
 }

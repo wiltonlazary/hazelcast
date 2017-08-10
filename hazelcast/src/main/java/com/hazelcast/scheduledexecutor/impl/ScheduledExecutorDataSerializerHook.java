@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,9 @@ import com.hazelcast.scheduledexecutor.impl.operations.CancelTaskBackupOperation
 import com.hazelcast.scheduledexecutor.impl.operations.CancelTaskOperation;
 import com.hazelcast.scheduledexecutor.impl.operations.DisposeBackupTaskOperation;
 import com.hazelcast.scheduledexecutor.impl.operations.DisposeTaskOperation;
-import com.hazelcast.scheduledexecutor.impl.operations.GetAllScheduledOperation;
+import com.hazelcast.scheduledexecutor.impl.operations.GetAllScheduledOnMemberOperation;
+import com.hazelcast.scheduledexecutor.impl.operations.GetAllScheduledOnPartitionOperation;
+import com.hazelcast.scheduledexecutor.impl.operations.GetAllScheduledOnPartitionOperationFactory;
 import com.hazelcast.scheduledexecutor.impl.operations.GetDelayOperation;
 import com.hazelcast.scheduledexecutor.impl.operations.GetResultOperation;
 import com.hazelcast.scheduledexecutor.impl.operations.GetStatisticsOperation;
@@ -75,9 +77,15 @@ public class    ScheduledExecutorDataSerializerHook implements DataSerializerHoo
 
     public static final int DISPOSE_BACKUP_TASK_OP = 21;
 
-    public static final int GET_ALL_SCHEDULED = 22;
+    public static final int GET_ALL_SCHEDULED_ON_MEMBER = 22;
+
+    public static final int GET_ALL_SCHEDULED_ON_PARTITION = 25;
+
+    public static final int GET_ALL_SCHEDULED_ON_PARTITION_OPERATION_FACTORY = 26;
 
     public static final int SHUTDOWN = 23;
+
+    public static final int TASK_RESOLUTION = 24;
 
     @Override
     public int getFactoryId() {
@@ -128,14 +136,20 @@ public class    ScheduledExecutorDataSerializerHook implements DataSerializerHoo
                         return new SyncBackupStateOperation();
                     case REPLICATION:
                         return new ReplicationOperation();
-                    case GET_ALL_SCHEDULED:
-                        return new GetAllScheduledOperation();
+                    case GET_ALL_SCHEDULED_ON_MEMBER:
+                        return new GetAllScheduledOnMemberOperation();
                     case GET_RESULT:
                         return new GetResultOperation();
                     case PUBLISH_RESULT:
                         return new ResultReadyNotifyOperation();
                     case SHUTDOWN:
                         return new ShutdownOperation();
+                    case TASK_RESOLUTION:
+                        return new ScheduledTaskResult();
+                    case GET_ALL_SCHEDULED_ON_PARTITION:
+                        return new GetAllScheduledOnPartitionOperation();
+                    case GET_ALL_SCHEDULED_ON_PARTITION_OPERATION_FACTORY:
+                        return new GetAllScheduledOnPartitionOperationFactory();
                     default:
                         throw new IllegalArgumentException("Illegal Scheduled Executor serializer type ID: " + typeId);
                 }

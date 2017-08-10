@@ -1,14 +1,32 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.partition;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.partition.InternalPartition;
-import com.hazelcast.internal.partition.impl.ReplicaSyncInfo;
+import com.hazelcast.internal.partition.impl.ReplicaFragmentSyncInfo;
 import com.hazelcast.nio.Address;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.spi.partition.IPartition;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
+import com.hazelcast.internal.partition.PartitionReplicaVersionsView;
 import com.hazelcast.util.scheduler.ScheduledEntry;
 import org.junit.After;
 import org.junit.Before;
@@ -22,10 +40,10 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.CountDownLatch;
 
-import static com.hazelcast.test.TestPartitionUtils.getAllReplicaAddresses;
-import static com.hazelcast.test.TestPartitionUtils.getOngoingReplicaSyncRequests;
-import static com.hazelcast.test.TestPartitionUtils.getOwnedReplicaVersions;
-import static com.hazelcast.test.TestPartitionUtils.getScheduledReplicaSyncRequests;
+import static com.hazelcast.internal.partition.TestPartitionUtils.getAllReplicaAddresses;
+import static com.hazelcast.internal.partition.TestPartitionUtils.getOngoingReplicaSyncRequests;
+import static com.hazelcast.internal.partition.TestPartitionUtils.getOwnedReplicaVersions;
+import static com.hazelcast.internal.partition.TestPartitionUtils.getScheduledReplicaSyncRequests;
 import static junit.framework.TestCase.assertNotNull;
 
 public abstract class AbstractPartitionLostListenerTest extends HazelcastTestSupport {
@@ -69,7 +87,7 @@ public abstract class AbstractPartitionLostListenerTest extends HazelcastTestSup
                     if (nodeLeaveType == NodeLeaveType.SHUTDOWN) {
                         instance.getLifecycleService().shutdown();
                         latch.countDown();
-                    } else if (nodeLeaveType == NodeLeaveType.TERMINATE ){
+                    } else if (nodeLeaveType == NodeLeaveType.TERMINATE) {
                         instance.getLifecycleService().terminate();
                         latch.countDown();
                     } else {
@@ -168,24 +186,27 @@ public abstract class AbstractPartitionLostListenerTest extends HazelcastTestSup
         }
     }
 
-    final protected void logPartitionState(List<HazelcastInstance> instances) throws InterruptedException {
+    private void logPartitionState(List<HazelcastInstance> instances) throws InterruptedException {
         for (Entry<Integer, List<Address>> entry : getAllReplicaAddresses(instances).entrySet()) {
             System.out.println("PartitionTable >> partitionId=" + entry.getKey() + " table=" + entry.getValue());
         }
 
         for (HazelcastInstance instance : instances) {
             Address address = getNode(instance).getThisAddress();
-            for (Entry<Integer, long[]> entry : getOwnedReplicaVersions(instance).entrySet()) {
-                System.out.println("ReplicaVersions >> " + address + " - partitionId=" + entry.getKey()
-                        + " replicaVersions=" + Arrays.toString(entry.getValue()));
+            for (Entry<Integer, PartitionReplicaVersionsView> entry : getOwnedReplicaVersions(getNode(instance)).entrySet()) {
+                PartitionReplicaVersionsView replicaVersionsView = entry.getValue();
+                for (ServiceNamespace namespace : replicaVersionsView.getNamespaces()) {
+                    System.out.println(namespace + " ReplicaVersions >> " + address + " - partitionId=" + entry.getKey()
+                            + " replicaVersions=" + Arrays.toString(replicaVersionsView.getVersions(namespace)));
+                }
             }
 
-            for (ReplicaSyncInfo replicaSyncInfo : getOngoingReplicaSyncRequests(instance)) {
+            for (ReplicaFragmentSyncInfo replicaSyncInfo : getOngoingReplicaSyncRequests(instance)) {
                 System.out.println("OngoingReplicaSync >> " + address + " - " + replicaSyncInfo);
             }
 
-            for (ScheduledEntry<Integer, ReplicaSyncInfo> entry : getScheduledReplicaSyncRequests(instance)) {
-                System.out.println("ScheduledReplicaSync >> " + address + " - " + entry);
+            for (ScheduledEntry<ReplicaFragmentSyncInfo, Void> entry : getScheduledReplicaSyncRequests(instance)) {
+                System.out.println("ScheduledReplicaSync >> " + address + " - " + entry.getKey());
             }
         }
     }

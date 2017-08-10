@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,7 @@
 
 package com.hazelcast.internal.networking.spinning;
 
-import com.hazelcast.instance.HazelcastThreadGroup;
-import com.hazelcast.internal.networking.SocketConnection;
+import com.hazelcast.util.ThreadUtil;
 
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
@@ -26,55 +25,50 @@ import static java.util.concurrent.atomic.AtomicReferenceFieldUpdater.newUpdater
 
 public class SpinningOutputThread extends Thread {
 
-    private static final SocketWriters SHUTDOWN = new SocketWriters();
-    private static final AtomicReferenceFieldUpdater<SpinningOutputThread, SocketWriters> CONNECTION_HANDLERS
-            = newUpdater(SpinningOutputThread.class, SocketWriters.class, "socketWriters");
+    private static final ChannelWriters SHUTDOWN = new ChannelWriters();
+    private static final AtomicReferenceFieldUpdater<SpinningOutputThread, ChannelWriters> CONNECTION_HANDLERS
+            = newUpdater(SpinningOutputThread.class, ChannelWriters.class, "channelWriters");
 
-    private volatile SocketWriters socketWriters;
+    private volatile ChannelWriters channelWriters = new ChannelWriters();
 
-    public SpinningOutputThread(HazelcastThreadGroup threadGroup) {
-        super(threadGroup.getInternalThreadGroup(), "out-thread");
-        this.socketWriters = new SocketWriters();
+    SpinningOutputThread(String hzName) {
+        super(ThreadUtil.createThreadName(hzName, "out-thread"));
     }
 
-    void addConnection(SocketConnection connection) {
-        SpinningSocketWriter writer = (SpinningSocketWriter) connection.getSocketWriter();
-
+    void register(SpinningChannelWriter writer) {
         for (; ; ) {
-            SocketWriters current = socketWriters;
+            ChannelWriters current = channelWriters;
             if (current == SHUTDOWN) {
                 return;
             }
 
             int length = current.writers.length;
 
-            SpinningSocketWriter[] newWriters = new SpinningSocketWriter[length + 1];
+            SpinningChannelWriter[] newWriters = new SpinningChannelWriter[length + 1];
             arraycopy(current.writers, 0, newWriters, 0, length);
             newWriters[length] = writer;
 
-            SocketWriters update = new SocketWriters(newWriters);
+            ChannelWriters update = new ChannelWriters(newWriters);
             if (CONNECTION_HANDLERS.compareAndSet(this, current, update)) {
                 return;
             }
         }
     }
 
-    void removeConnection(SocketConnection connection) {
-        SpinningSocketWriter writeHandlers = (SpinningSocketWriter) connection.getSocketWriter();
-
+    void unregister(SpinningChannelWriter writer) {
         for (; ; ) {
-            SocketWriters current = socketWriters;
+            ChannelWriters current = channelWriters;
             if (current == SHUTDOWN) {
                 return;
             }
 
-            int indexOf = current.indexOf(writeHandlers);
+            int indexOf = current.indexOf(writer);
             if (indexOf == -1) {
                 return;
             }
 
             int length = current.writers.length;
-            SpinningSocketWriter[] newWriters = new SpinningSocketWriter[length - 1];
+            SpinningChannelWriter[] newWriters = new SpinningChannelWriter[length - 1];
 
             int destIndex = 0;
             for (int sourceIndex = 0; sourceIndex < length; sourceIndex++) {
@@ -84,7 +78,7 @@ public class SpinningOutputThread extends Thread {
                 }
             }
 
-            SocketWriters update = new SocketWriters(newWriters);
+            ChannelWriters update = new ChannelWriters(newWriters);
             if (CONNECTION_HANDLERS.compareAndSet(this, current, update)) {
                 return;
             }
@@ -92,20 +86,20 @@ public class SpinningOutputThread extends Thread {
     }
 
     public void shutdown() {
-        socketWriters = SHUTDOWN;
+        channelWriters = SHUTDOWN;
         interrupt();
     }
 
     @Override
     public void run() {
         for (; ; ) {
-            SocketWriters handlers = socketWriters;
+            ChannelWriters writers = channelWriters;
 
-            if (handlers == SHUTDOWN) {
+            if (writers == SHUTDOWN) {
                 return;
             }
 
-            for (SpinningSocketWriter writer : handlers.writers) {
+            for (SpinningChannelWriter writer : writers.writers) {
                 try {
                     writer.write();
                 } catch (Throwable t) {
@@ -115,18 +109,18 @@ public class SpinningOutputThread extends Thread {
         }
     }
 
-    private static class SocketWriters {
-        final SpinningSocketWriter[] writers;
+    private static class ChannelWriters {
+        final SpinningChannelWriter[] writers;
 
-        SocketWriters() {
-            this(new SpinningSocketWriter[0]);
+        ChannelWriters() {
+            this(new SpinningChannelWriter[0]);
         }
 
-        SocketWriters(SpinningSocketWriter[] writers) {
+        ChannelWriters(SpinningChannelWriter[] writers) {
             this.writers = writers;
         }
 
-        public int indexOf(SpinningSocketWriter handler) {
+        public int indexOf(SpinningChannelWriter handler) {
             for (int k = 0; k < writers.length; k++) {
                 if (writers[k] == handler) {
                     return k;

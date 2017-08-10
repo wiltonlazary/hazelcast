@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -235,12 +235,20 @@ public final class Preconditions {
      * @return the object argument.
      * @throws java.lang.IllegalArgumentException if the object is not an instance of the expected type.
      */
-    public static <E> E checkInstanceOf(Class type, E object, String errorMessage) {
+    public static <E> E checkInstanceOf(Class<E> type, Object object, String errorMessage) {
         isNotNull(type, "type");
         if (!type.isInstance(object)) {
             throw new IllegalArgumentException(errorMessage);
         }
-        return object;
+        return (E) object;
+    }
+
+    public static <E> E checkInstanceOf(Class<E> type, Object object) {
+        isNotNull(type, "type");
+        if (!type.isInstance(object)) {
+            throw new IllegalArgumentException(object + " should be instanceof " + type.getName());
+        }
+        return (E) object;
     }
 
     /**

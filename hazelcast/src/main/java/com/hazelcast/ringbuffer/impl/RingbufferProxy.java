@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ public class RingbufferProxy<E> extends AbstractDistributedObject<RingbufferServ
     public RingbufferProxy(NodeEngine nodeEngine, RingbufferService service, String name, RingbufferConfig config) {
         super(nodeEngine, service);
         this.name = name;
-        this.partitionId = nodeEngine.getPartitionService().getPartitionId(getNameAsPartitionAwareData());
+        this.partitionId = service.getRingbufferPartitionId(name);
         this.config = config;
     }
 
@@ -195,7 +195,7 @@ public class RingbufferProxy<E> extends AbstractDistributedObject<RingbufferServ
         checkTrue(minCount <= config.getCapacity(), "the minCount should be smaller than or equal to the capacity");
         checkTrue(maxCount <= MAX_BATCH_SIZE, "maxCount can't be larger than " + MAX_BATCH_SIZE);
 
-        Operation op = new ReadManyOperation(name, startSequence, minCount, maxCount, filter)
+        Operation op = new ReadManyOperation<E>(name, startSequence, minCount, maxCount, filter)
                 .setPartitionId(partitionId);
         OperationService operationService = getOperationService();
         return operationService.createInvocationBuilder(null, op, partitionId)

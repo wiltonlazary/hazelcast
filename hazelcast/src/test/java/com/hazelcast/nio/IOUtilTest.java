@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -670,9 +670,8 @@ public class IOUtilTest extends HazelcastTestSupport {
         try {
             is1 = new FileInputStream(f1);
             is2 = new FileInputStream(f2);
-            // Compare byte-by-byte since InputStream.read(byte[]) possibly doesn't
-            // return the requested number of bytes. This is why this method should
-            // be used for smallFiles
+            // compare byte-by-byte since InputStream.read(byte[]) possibly doesn't return the requested number of bytes
+            // this is why this method should be used for smallFiles
             int data;
             while ((data = is1.read()) != -1) {
                 if (data != is2.read()) {
@@ -695,5 +694,4 @@ public class IOUtilTest extends HazelcastTestSupport {
         }
         return true;
     }
-
 }

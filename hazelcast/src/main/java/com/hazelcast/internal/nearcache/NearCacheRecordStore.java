@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,12 +40,21 @@ public interface NearCacheRecordStore<K, V> extends InitializingObject {
     V get(K key);
 
     /**
+     * Gets the record associated with the given {@code key}.
+     *
+     * @param key the key from which to get the associated {@link NearCacheRecord}.
+     * @return the {@link NearCacheRecord} associated with the given {@code key}.
+     */
+    NearCacheRecord getRecord(K key);
+
+    /**
      * Puts (associates) a value with the given {@code key}.
      *
-     * @param key   the key to which the given value will be associated.
-     * @param value the value that will be associated with the key.
+     * @param key     the key to which the given value will be associated.
+     * @param keyData the key as {@link Data} to which the given value will be associated.
+     * @param value   the value that will be associated with the key.
      */
-    void put(K key, V value);
+    void put(K key, Data keyData, V value);
 
     /**
      * Removes the value associated with the given {@code key}.
@@ -107,7 +116,7 @@ public interface NearCacheRecordStore<K, V> extends InitializingObject {
     /**
      * Loads the keys into the Near Cache.
      */
-    void loadKeys(DataStructureAdapter<Data, ?> adapter);
+    void loadKeys(DataStructureAdapter<Object, ?> adapter);
 
     /**
      * Persists the key set of the Near Cache.
@@ -123,4 +132,8 @@ public interface NearCacheRecordStore<K, V> extends InitializingObject {
      * @see StaleReadDetector
      */
     StaleReadDetector getStaleReadDetector();
+
+    long tryReserveForUpdate(K key, Data keyData);
+
+    V tryPublishReserved(K key, V value, long reservationId, boolean deserialize);
 }

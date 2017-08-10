@@ -102,8 +102,8 @@ We encourage pull requests and process them promptly.
 
 To contribute:
 
-* see [Developing with Git] (https://hazelcast.atlassian.net/wiki/display/COM/Developing+with+Git) for our Git process
-* complete the [Hazelcast Contributor Agreement] (https://hazelcast.atlassian.net/wiki/display/COM/Hazelcast+Contributor+Agreement)
+* see [Developing with Git](https://hazelcast.atlassian.net/wiki/display/COM/Developing+with+Git) for our Git process
+* complete the [Hazelcast Contributor Agreement](https://hazelcast.atlassian.net/wiki/display/COM/Hazelcast+Contributor+Agreement)
 
 For an enhancement or larger feature, create a GitHub issue first to discuss.
 
@@ -120,6 +120,6 @@ Hazelcast is available under the Apache 2 License. Please see the [Licensing sec
 
 #### Copyright
 
-Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
 
 Visit [www.hazelcast.com](http://www.hazelcast.com/) for more info.

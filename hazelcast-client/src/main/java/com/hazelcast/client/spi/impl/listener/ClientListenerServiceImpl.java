@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ package com.hazelcast.client.spi.impl.listener;
 import com.hazelcast.client.connection.nio.ClientConnection;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.spi.ClientInvocationService;
 import com.hazelcast.client.spi.ClientListenerService;
 import com.hazelcast.client.spi.EventHandler;
 import com.hazelcast.client.spi.impl.ClientExecutionServiceImpl;
@@ -36,21 +35,18 @@ import com.hazelcast.util.executor.StripedRunnable;
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
-import java.util.logging.Level;
 
 import static com.hazelcast.internal.metrics.ProbeLevel.MANDATORY;
 
 public abstract class ClientListenerServiceImpl implements ClientListenerService, MetricsProvider {
 
     protected final HazelcastClientInstanceImpl client;
-    protected final ClientExecutionServiceImpl executionService;
     protected final SerializationService serializationService;
-    protected final ClientInvocationService invocationService;
-    protected final ExecutorService registrationExecutor;
+    protected final ScheduledExecutorService registrationExecutor;
     protected final ILogger logger;
 
     @Probe(name = "eventHandlerCount", level = MANDATORY)
@@ -61,18 +57,14 @@ public abstract class ClientListenerServiceImpl implements ClientListenerService
 
     public ClientListenerServiceImpl(HazelcastClientInstanceImpl client, int eventThreadCount, int eventQueueCapacity) {
         this.client = client;
-        executionService = (ClientExecutionServiceImpl) client.getClientExecutionService();
-        invocationService = client.getInvocationService();
         serializationService = client.getSerializationService();
         logger = client.getLoggingService().getLogger(ClientListenerService.class);
-        ThreadGroup threadGroup = client.getThreadGroup();
         String name = client.getName();
-        eventExecutor = new StripedExecutor(logger, name + ".event",
-                threadGroup, eventThreadCount, eventQueueCapacity);
+        eventExecutor = new StripedExecutor(logger, name + ".event", eventThreadCount, eventQueueCapacity);
         ClassLoader classLoader = client.getClientConfig().getClassLoader();
 
-        ThreadFactory threadFactory = new SingleExecutorThreadFactory(threadGroup, classLoader, name + ".eventRegistration-");
-        registrationExecutor = Executors.newSingleThreadExecutor(threadFactory);
+        ThreadFactory threadFactory = new SingleExecutorThreadFactory(classLoader, name + ".eventRegistration-");
+        registrationExecutor = Executors.newSingleThreadScheduledExecutor(threadFactory);
     }
 
     @Override
@@ -106,7 +98,7 @@ public abstract class ClientListenerServiceImpl implements ClientListenerService
         try {
             eventExecutor.execute(new ClientEventProcessor(clientMessage, (ClientConnection) connection));
         } catch (RejectedExecutionException e) {
-            logger.log(Level.WARNING, " event clientMessage could not be handled ", e);
+            logger.warning("Event clientMessage could not be handled", e);
         }
     }
 

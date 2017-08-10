@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,19 +47,22 @@ public class ClientDisconnectionOperation extends AbstractClientOperation implem
     public void run() throws Exception {
         ClientEngineImpl engine = getService();
         final ClientEndpointManagerImpl endpointManager = (ClientEndpointManagerImpl) engine.getEndpointManager();
-        if (engine.removeOwnershipMapping(clientUuid, memberUuid)) {
-            Set<ClientEndpoint> endpoints = endpointManager.getEndpoints(clientUuid);
-            for (ClientEndpoint endpoint : endpoints) {
-                endpointManager
-                        .removeEndpoint(endpoint, true, "ClientDisconnectionOperation: Cleanup of disconnected client resources");
-            }
+        if (!engine.removeOwnershipMapping(clientUuid, memberUuid)) {
+            return;
+        }
 
-            NodeEngineImpl nodeEngine = (NodeEngineImpl) getNodeEngine();
-            nodeEngine.onClientDisconnected(clientUuid);
-            Collection<ClientAwareService> services = nodeEngine.getServices(ClientAwareService.class);
-            for (ClientAwareService service : services) {
-                service.clientDisconnected(clientUuid);
-            }
+        Set<ClientEndpoint> endpoints = endpointManager.getEndpoints(clientUuid);
+        // This part cleans up listener and transactions
+        for (ClientEndpoint endpoint : endpoints) {
+            endpoint.getConnection().close("ClientDisconnectionOperation: Client disconnected from cluster", null);
+        }
+
+        // This part cleans up locks conditions semaphore etc..
+        NodeEngineImpl nodeEngine = (NodeEngineImpl) getNodeEngine();
+        nodeEngine.onClientDisconnected(clientUuid);
+        Collection<ClientAwareService> services = nodeEngine.getServices(ClientAwareService.class);
+        for (ClientAwareService service : services) {
+            service.clientDisconnected(clientUuid);
         }
     }
 

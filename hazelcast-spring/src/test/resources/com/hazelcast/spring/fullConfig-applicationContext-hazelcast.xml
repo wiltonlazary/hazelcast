@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans
 		http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
 		http://www.hazelcast.com/schema/spring
-		http://www.hazelcast.com/schema/spring/hazelcast-spring.xsd
+		hazelcast-spring-3.9.xsd
 		http://www.hazelcast.com/schema/sample
 		hazelcast-sample-service.xsd">
 
@@ -44,7 +44,15 @@
                     name="${cluster.group.name}"
                     password="${cluster.group.password}"/>
             <hz:license-key>HAZELCAST_ENTERPRISE_LICENSE_KEY</hz:license-key>
-            <hz:management-center enabled="true" url="myserver:80" update-interval="4"/>
+            <hz:management-center enabled="true" update-interval="2">
+                <hz:url>myserver:80</hz:url>
+                <hz:mutual-auth enabled="true">
+                    <hz:factory-class-name>who.let.the.cat.out.class</hz:factory-class-name>
+                    <hz:properties>
+                        <hz:property name="bool">ean</hz:property>
+                    </hz:properties>
+                </hz:mutual-auth>
+            </hz:management-center>
             <hz:properties>
                 <hz:property name="hazelcast.merge.first.run.delay.seconds">5</hz:property>
                 <hz:property name="hazelcast.merge.next.run.delay.seconds">5</hz:property>
@@ -66,8 +74,35 @@
                 </hz:wan-publisher>
                 <hz:wan-publisher group-name="istanbul" class-name="com.hazelcast.wan.custom.CustomPublisher">
                     <hz:queue-full-behavior>THROW_EXCEPTION_ONLY_IF_REPLICATION_ACTIVE</hz:queue-full-behavior>
+                    <hz:aws enabled="false"
+                            access-key="sample-access-key"
+                            secret-key="sample-secret-key"
+                            region="sample-region"
+                            host-header="sample-header"
+                            security-group-name="sample-group"
+                            tag-key="sample-tag-key"
+                            tag-value="sample-tag-value"
+                            iam-role="sample-role"/>
+                    <hz:discovery-strategies>
+                        <hz:node-filter implementation="dummyNodeFilter"/>
+                        <hz:discovery-strategy discovery-strategy-factory="dummyDiscoveryStrategyFactory">
+                            <hz:properties>
+                                <hz:property name="key-string">foo</hz:property>
+                                <hz:property name="key-int">123</hz:property>
+                                <hz:property name="key-boolean">true</hz:property>
+                            </hz:properties>
+                        </hz:discovery-strategy>
+                        <hz:discovery-strategy class-name="com.hazelcast.spring.DummyDiscoveryStrategy">
+                            <hz:properties>
+                                <hz:property name="key-string">foo2</hz:property>
+                            </hz:properties>
+                        </hz:discovery-strategy>
+                        <hz:discovery-service-provider implementation="dummyDiscoveryServiceProvider"/>
+                    </hz:discovery-strategies>
                     <hz:properties>
                         <hz:property name="custom.prop.publisher">prop.publisher</hz:property>
+                        <hz:property name="discovery.period">5</hz:property>
+                        <hz:property name="maxEndpoints">2</hz:property>
                     </hz:properties>
                 </hz:wan-publisher>
                 <hz:wan-consumer class-name="com.hazelcast.wan.custom.WanConsumer">
@@ -97,9 +132,15 @@
                         <hz:interface>127.0.0.1:5700</hz:interface>
                         <hz:interface>127.0.0.1:5701</hz:interface>
                     </hz:tcp-ip>
-                    <hz:aws enabled="false" access-key="sample-access-key" secret-key="sample-secret-key"
-                            region="sample-region" security-group-name="sample-group"
-                            tag-key="sample-tag-key" tag-value="sample-tag-value" iam-role="sample-role"/>
+                    <hz:aws enabled="false"
+                            access-key="sample-access-key"
+                            secret-key="sample-secret-key"
+                            region="sample-region"
+                            host-header="sample-header"
+                            security-group-name="sample-group"
+                            tag-key="sample-tag-key"
+                            tag-value="sample-tag-value"
+                            iam-role="sample-role"/>
                     <hz:discovery-strategies>
                         <hz:node-filter implementation="dummyNodeFilter"/>
                         <hz:discovery-strategy discovery-strategy-factory="dummyDiscoveryStrategyFactory">
@@ -233,7 +274,7 @@
                 <hz:map-store enabled="true" class-name="com.hazelcast.spring.DummyStore" write-delay-seconds="0"
                               initial-mode="EAGER" write-batch-size="10"/>
                 <hz:near-cache time-to-live-seconds="0" max-idle-seconds="60" eviction-policy="LRU" max-size="5000"
-                               invalidate-on-change="true"/>
+                               invalidate-on-change="true" serialize-keys="false"/>
 
                 <hz:indexes>
                     <hz:index attribute="name"/>
@@ -262,6 +303,24 @@
                     <hz:entry-listener class-name="com.hazelcast.spring.DummyEntryListener" include-value="true"/>
                     <hz:entry-listener implementation="dummyEntryListener" local="true"/>
                 </hz:entry-listeners>
+            </hz:map>
+
+            <hz:map name="lfuEvictionMap" eviction-policy="LFU" />
+            <hz:map name="lruEvictionMap" eviction-policy="LRU" />
+            <hz:map name="noneEvictionMap" eviction-policy="NONE" />
+            <hz:map name="randomEvictionMap" eviction-policy="RANDOM" />
+
+            <hz:map name="lfuNearCacheEvictionMap">
+                <hz:near-cache eviction-policy="LFU" />
+            </hz:map>
+            <hz:map name="lruNearCacheEvictionMap">
+                <hz:near-cache eviction-policy="LRU" />
+            </hz:map>
+            <hz:map name="noneNearCacheEvictionMap">
+                <hz:near-cache eviction-policy="NONE" />
+            </hz:map>
+            <hz:map name="randomNearCacheEvictionMap">
+                <hz:near-cache eviction-policy="RANDOM" />
             </hz:map>
 
             <hz:map name="testMap3"
@@ -358,6 +417,9 @@
                 </hz:wan-replication-ref>
                 <hz:hot-restart enabled="true" fsync="true" />
             </hz:cache>
+
+            <hz:event-journal map-name="mapName" cache-name="cacheName" enabled="true"
+                              capacity="123" time-to-live-seconds="321"/>
 
             <hz:multimap name="testMultimap"
                          value-collection-type="LIST" binary="false" statistics-enabled="false">

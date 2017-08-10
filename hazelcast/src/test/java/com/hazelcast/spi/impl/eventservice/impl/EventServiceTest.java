@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,7 +108,9 @@ public class EventServiceTest extends HazelcastTestSupport {
                 es3.publishEvent(TopicService.SERVICE_NAME, registration, event, 0);
             }
             counter++;
-            if (counter == 3) counter = 0;
+            if (counter == 3) {
+                counter = 0;
+            }
         }
 
         l1.await(30, TimeUnit.SECONDS);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.map.impl.operation;
 
+import com.hazelcast.internal.nearcache.impl.invalidation.Invalidator;
 import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.MapService;
@@ -24,17 +25,18 @@ import com.hazelcast.map.impl.PartitionContainer;
 import com.hazelcast.map.impl.event.MapEventPublisher;
 import com.hazelcast.map.impl.mapstore.MapDataStore;
 import com.hazelcast.map.impl.nearcache.MapNearCacheManager;
-import com.hazelcast.internal.nearcache.impl.invalidation.Invalidator;
 import com.hazelcast.map.impl.recordstore.RecordStore;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.spi.ObjectNamespace;
+import com.hazelcast.spi.ServiceNamespaceAware;
 import com.hazelcast.spi.impl.AbstractNamedOperation;
 
 import java.util.List;
 
 import static com.hazelcast.util.CollectionUtil.isEmpty;
 
-public abstract class MapOperation extends AbstractNamedOperation implements IdentifiedDataSerializable {
+public abstract class MapOperation extends AbstractNamedOperation implements IdentifiedDataSerializable, ServiceNamespaceAware {
 
     protected transient MapService mapService;
     protected transient MapContainer mapContainer;
@@ -86,7 +88,7 @@ public abstract class MapOperation extends AbstractNamedOperation implements Ide
         return MapService.SERVICE_NAME;
     }
 
-    protected boolean isPostProcessing(RecordStore recordStore) {
+    public boolean isPostProcessing(RecordStore recordStore) {
         MapDataStore mapDataStore = recordStore.getMapDataStore();
         return mapDataStore.isPostProcessingMapStore() || mapServiceContext.hasInterceptor(name);
     }
@@ -111,8 +113,8 @@ public abstract class MapOperation extends AbstractNamedOperation implements Ide
         }
     }
 
-    // TODO improve here it is possible that client cannot manage to attach listener
-    protected final void invalidateNearCache(Data key) {
+    // TODO: improve here it's possible that client cannot manage to attach listener
+    public final void invalidateNearCache(Data key) {
         if (!mapContainer.hasInvalidationListener() || key == null) {
             return;
         }
@@ -122,8 +124,7 @@ public abstract class MapOperation extends AbstractNamedOperation implements Ide
     }
 
     /**
-     * This method helps to add clearing near-cache event only from one-partition
-     * which matches partition-id of the map-name.
+     * This method helps to add clearing Near Cache event only from one-partition which matches partitionId of the map name.
      */
     protected final void invalidateAllKeysInNearCaches() {
         if (!mapContainer.hasInvalidationListener()
@@ -164,4 +165,13 @@ public abstract class MapOperation extends AbstractNamedOperation implements Ide
         return MapDataSerializerHook.F_ID;
     }
 
+    @Override
+    public ObjectNamespace getServiceNamespace() {
+        MapContainer container = mapContainer;
+        if (container == null) {
+            MapService service = getService();
+            container = service.getMapServiceContext().getMapContainer(name);
+        }
+        return container.getObjectNamespace();
+    }
 }

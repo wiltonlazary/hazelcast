@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.map.querycache;
 
 import com.hazelcast.client.config.ClientConfig;
@@ -12,7 +28,6 @@ import com.hazelcast.map.EventLostEvent;
 import com.hazelcast.map.QueryCache;
 import com.hazelcast.map.impl.querycache.QueryCacheContext;
 import com.hazelcast.map.listener.EventLostListener;
-import com.hazelcast.mapreduce.helpers.Employee;
 import com.hazelcast.query.SqlPredicate;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
@@ -42,7 +57,7 @@ public class ClientQueryCacheRecoveryUponEventLossTest extends HazelcastTestSupp
     public void testForceConsistency() {
         String mapName = randomMapName("map");
         String queryCacheName = randomMapName("cache");
-        Config config = new Config();
+        Config config = getConfig();
 
         config.setProperty(PARTITION_COUNT.getName(), "1");
         factory.newHazelcastInstance(config);
@@ -85,7 +100,7 @@ public class ClientQueryCacheRecoveryUponEventLossTest extends HazelcastTestSupp
 
     private void setTestSequencer(IMap map, int eventCount) {
         ClientMapProxy proxy = (ClientMapProxy) map;
-        QueryCacheContext queryCacheContext = proxy.getQueryContext();
+        QueryCacheContext queryCacheContext = proxy.getQueryCacheContext();
         queryCacheContext.setSubscriberContext(new TestClientSubscriberContext(queryCacheContext, eventCount, true));
     }
 }

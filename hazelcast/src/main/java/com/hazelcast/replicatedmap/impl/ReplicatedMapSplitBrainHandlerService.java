@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,7 @@ import static com.hazelcast.replicatedmap.impl.ReplicatedMapService.SERVICE_NAME
  * Contains split-brain handling logic for {@link com.hazelcast.core.ReplicatedMap}
  */
 public class ReplicatedMapSplitBrainHandlerService implements SplitBrainHandlerService {
+
     private final ReplicatedMapService service;
     private final MergePolicyProvider mergePolicyProvider;
     private final NodeEngine nodeEngine;
@@ -84,10 +85,8 @@ public class ReplicatedMapSplitBrainHandlerService implements SplitBrainHandlerS
                 store.reset();
             }
         }
-
         return new Merger(recordMap);
     }
-
 
     private class Merger implements Runnable {
 
@@ -95,7 +94,7 @@ public class ReplicatedMapSplitBrainHandlerService implements SplitBrainHandlerS
 
         Map<String, Collection<ReplicatedRecord>> recordMap;
 
-        public Merger(Map<String, Collection<ReplicatedRecord>> recordMap) {
+        Merger(Map<String, Collection<ReplicatedRecord>> recordMap) {
             this.recordMap = recordMap;
         }
 
@@ -105,7 +104,7 @@ public class ReplicatedMapSplitBrainHandlerService implements SplitBrainHandlerS
             int recordCount = 0;
             final ILogger logger = nodeEngine.getLogger(ReplicatedMapService.class);
 
-            ExecutionCallback mergeCallback = new ExecutionCallback() {
+            ExecutionCallback<Object> mergeCallback = new ExecutionCallback<Object>() {
                 @Override
                 public void onResponse(Object response) {
                     semaphore.release(1);
@@ -130,9 +129,9 @@ public class ReplicatedMapSplitBrainHandlerService implements SplitBrainHandlerS
                     MergeOperation mergeOperation = new MergeOperation(name, record.getKeyInternal(), entryView, policy);
                     try {
                         int partitionId = nodeEngine.getPartitionService().getPartitionId(record.getKeyInternal());
-                        ICompletableFuture f = nodeEngine.getOperationService()
+                        ICompletableFuture<Object> future = nodeEngine.getOperationService()
                                 .invokeOnPartition(SERVICE_NAME, mergeOperation, partitionId);
-                        f.andThen(mergeCallback);
+                        future.andThen(mergeCallback);
                     } catch (Throwable t) {
                         throw ExceptionUtil.rethrow(t);
                     }
@@ -144,13 +143,12 @@ public class ReplicatedMapSplitBrainHandlerService implements SplitBrainHandlerS
                 Thread.currentThread().interrupt();
                 logger.warning("Interrupted while waiting replicated map merge operation...");
             }
-
         }
 
         private ReplicatedMapEntryView createEntryView(ReplicatedRecord record) {
             Object key = serializationService.toObject(record.getKeyInternal());
             Object value = serializationService.toObject(record.getValueInternal());
-            ReplicatedMapEntryView entryView = new ReplicatedMapEntryView(key, value);
+            ReplicatedMapEntryView entryView = new ReplicatedMapEntryView<Object, Object>(key, value);
             entryView.setHits(record.getHits());
             entryView.setTtl(record.getTtlMillis());
             entryView.setLastAccessTime(record.getLastAccessTime());

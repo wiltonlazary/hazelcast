@@ -1,6 +1,5 @@
-
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.hazelcast.util.executor;
 
 import com.hazelcast.test.HazelcastParallelClassRunner;
@@ -40,14 +40,14 @@ public class StripedExecutorTest extends HazelcastTestSupport {
     public void throws_illegalArgumentException_whenThreadCount_isNotPositive() throws Exception {
         expectedException.expect(IllegalArgumentException.class);
 
-        new StripedExecutor(getLogger(getClass()), "", null, 0, 0);
+        new StripedExecutor(getLogger(getClass()), "", 0, 0);
     }
 
     @Test
     public void throws_illegalArgumentException_whenMaximumQueueCapacity_isNotPositive() throws Exception {
         expectedException.expect(IllegalArgumentException.class);
 
-        new StripedExecutor(getLogger(getClass()), "", null, 0, 0);
+        new StripedExecutor(getLogger(getClass()), "", 0, 0);
     }
 
     @Test
@@ -55,7 +55,7 @@ public class StripedExecutorTest extends HazelcastTestSupport {
         int threadCount = 5;
         int maximumQueueCapacity = 1000000;
 
-        StripedExecutor executor = new StripedExecutor(getLogger(getClass()), "", null,
+        StripedExecutor executor = new StripedExecutor(getLogger(getClass()), "",
                 threadCount, maximumQueueCapacity);
 
         assertEquals(maximumQueueCapacity, calculateWorkersTotalQueueCapacity(executor));

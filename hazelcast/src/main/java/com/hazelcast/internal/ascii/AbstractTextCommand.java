@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package com.hazelcast.internal.ascii;
 
-import com.hazelcast.nio.ascii.TextReadHandler;
-import com.hazelcast.nio.ascii.TextWriteHandler;
+import com.hazelcast.nio.ascii.TextChannelInboundHandler;
+import com.hazelcast.nio.ascii.TextChannelOutboundHandler;
 
 public abstract class AbstractTextCommand implements TextCommand {
     protected final TextCommandConstants.TextCommandType type;
-    private TextReadHandler readHandler;
-    private TextWriteHandler writeHandler;
+    private TextChannelInboundHandler readHandler;
+    private TextChannelOutboundHandler writeHandler;
     private long requestId = -1;
 
     protected AbstractTextCommand(TextCommandConstants.TextCommandType type) {
@@ -35,12 +35,12 @@ public abstract class AbstractTextCommand implements TextCommand {
     }
 
     @Override
-    public TextReadHandler getReadHandler() {
+    public TextChannelInboundHandler getReadHandler() {
         return readHandler;
     }
 
     @Override
-    public TextWriteHandler getWriteHandler() {
+    public TextChannelOutboundHandler getWriteHandler() {
         return writeHandler;
     }
 
@@ -50,10 +50,10 @@ public abstract class AbstractTextCommand implements TextCommand {
     }
 
     @Override
-    public void init(TextReadHandler textReadHandler, long requestId) {
+    public void init(TextChannelInboundHandler textReadHandler, long requestId) {
         this.readHandler = textReadHandler;
         this.requestId = requestId;
-        this.writeHandler = textReadHandler.getTextWriteHandler();
+        this.writeHandler = textReadHandler.getOutboundHandler();
     }
 
     @Override

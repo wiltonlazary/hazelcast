@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
-import java.util.logging.Level;
 
 /**
  * Calls the AWS API to load ip addresses related to given credentials.
@@ -65,7 +64,7 @@ public class AwsAddressProvider implements AddressProvider {
         try {
             privateToPublic = awsClient.getAddresses();
         } catch (Exception e) {
-            logger.log(Level.WARNING, "Aws addresses are failed to load : " + e.getMessage());
+            logger.warning("Aws addresses failed to load: " + e.getMessage());
         }
     }
 }

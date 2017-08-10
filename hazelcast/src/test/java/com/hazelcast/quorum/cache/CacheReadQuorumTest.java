@@ -1,17 +1,17 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *  http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.hazelcast.quorum.cache;
@@ -35,11 +35,11 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.IOException;
 import java.util.HashSet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
+import static com.hazelcast.quorum.PartitionedCluster.QUORUM_ID;
 import static com.hazelcast.test.HazelcastTestSupport.randomString;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -49,13 +49,13 @@ import static org.junit.Assert.assertNull;
 public class CacheReadQuorumTest {
 
     private static final String CACHE_NAME_PREFIX = "cacheQuorum";
-    private static final String QUORUM_ID = "threeNodeQuorumRule";
 
     private static HazelcastServerCachingProvider cachingProvider1;
     private static HazelcastServerCachingProvider cachingProvider2;
     private static HazelcastServerCachingProvider cachingProvider3;
     private static HazelcastServerCachingProvider cachingProvider4;
     private static HazelcastServerCachingProvider cachingProvider5;
+
     private ICache<Integer, String> cache1;
     private ICache<Integer, String> cache2;
     private ICache<Integer, String> cache3;
@@ -63,7 +63,7 @@ public class CacheReadQuorumTest {
     private ICache<Integer, String> cache5;
 
     @BeforeClass
-    public static void initialize() throws InterruptedException {
+    public static void initialize() {
         CacheSimpleConfig cacheConfig = new CacheSimpleConfig();
         cacheConfig.setName(CACHE_NAME_PREFIX + "*");
         cacheConfig.setQuorumName(QUORUM_ID);
@@ -84,8 +84,8 @@ public class CacheReadQuorumTest {
     }
 
     @Before
-    public void setUp() throws Exception {
-        final String cacheName = CACHE_NAME_PREFIX + randomString();
+    public void setUp() {
+        String cacheName = CACHE_NAME_PREFIX + randomString();
         cache1 = (ICache<Integer, String>) cachingProvider1.getCacheManager().<Integer, String>getCache(cacheName);
         cache2 = (ICache<Integer, String>) cachingProvider2.getCacheManager().<Integer, String>getCache(cacheName);
         cache3 = (ICache<Integer, String>) cachingProvider3.getCacheManager().<Integer, String>getCache(cacheName);
@@ -94,17 +94,17 @@ public class CacheReadQuorumTest {
     }
 
     @AfterClass
-    public static void killAllHazelcastInstances() throws IOException {
+    public static void killAllHazelcastInstances() {
         HazelcastInstanceFactory.terminateAll();
     }
 
     @Test
-    public void testGetOperationSuccessfulWhenQuorumSizeMet() throws Exception {
+    public void testGetOperationSuccessfulWhenQuorumSizeMet() {
         cache1.get(1);
     }
 
     @Test(expected = QuorumException.class)
-    public void testGetOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
+    public void testGetOperationThrowsExceptionWhenQuorumSizeNotMet() {
         cache4.get(1);
     }
 
@@ -144,14 +144,14 @@ public class CacheReadQuorumTest {
 
     @Test
     public void testGetAsyncOperationSuccessfulWhenQuorumSizeMet() throws Exception {
-        Future<String> foo = cache1.getAsync(1);
-        foo.get();
+        Future<String> future = cache1.getAsync(1);
+        future.get();
     }
 
     @Test(expected = ExecutionException.class)
     public void testGetAsyncOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
-        Future<String> foo = cache4.getAsync(1);
-        foo.get();
+        Future<String> future = cache4.getAsync(1);
+        future.get();
     }
 
     @Test

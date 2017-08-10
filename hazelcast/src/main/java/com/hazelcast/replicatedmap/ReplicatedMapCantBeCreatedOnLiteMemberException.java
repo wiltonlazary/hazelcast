@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,5 +32,4 @@ public class ReplicatedMapCantBeCreatedOnLiteMemberException
     public ReplicatedMapCantBeCreatedOnLiteMemberException(String message) {
         super(message);
     }
-
 }

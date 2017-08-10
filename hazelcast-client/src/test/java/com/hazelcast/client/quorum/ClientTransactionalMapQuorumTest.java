@@ -1,17 +1,17 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *  http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.hazelcast.client.quorum;
@@ -39,12 +39,12 @@ import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.client.quorum.QuorumTestUtil.getClientConfig;
+import static com.hazelcast.quorum.PartitionedCluster.QUORUM_ID;
 import static com.hazelcast.transaction.TransactionOptions.TransactionType.ONE_PHASE;
 import static com.hazelcast.transaction.TransactionOptions.TransactionType.TWO_PHASE;
 
@@ -53,14 +53,16 @@ import static com.hazelcast.transaction.TransactionOptions.TransactionType.TWO_P
 @Category({QuickTest.class, ParallelTest.class})
 public class ClientTransactionalMapQuorumTest extends HazelcastTestSupport {
 
-    static PartitionedCluster cluster;
     private static final String MAP_NAME_PREFIX = "quorum";
-    private static final String QUORUM_ID = "threeNodeQuorumRule";
+
+    static PartitionedCluster cluster;
+
     static HazelcastInstance c1;
     static HazelcastInstance c2;
     static HazelcastInstance c3;
     static HazelcastInstance c4;
     static HazelcastInstance c5;
+
     private static TestHazelcastFactory factory;
 
     @Rule
@@ -79,13 +81,13 @@ public class ClientTransactionalMapQuorumTest extends HazelcastTestSupport {
         twoPhaseOption.setTransactionType(TWO_PHASE);
 
         return Arrays.asList(
-                new Object[]{twoPhaseOption}, //
-                new Object[]{localOption} //
+                new Object[]{twoPhaseOption},
+                new Object[]{localOption}
         );
     }
 
     @BeforeClass
-    public static void initialize() throws InterruptedException {
+    public static void initialize() throws Exception {
         QuorumConfig quorumConfig = new QuorumConfig();
         quorumConfig.setEnabled(true);
         quorumConfig.setSize(3);
@@ -99,14 +101,6 @@ public class ClientTransactionalMapQuorumTest extends HazelcastTestSupport {
         verifyClients();
     }
 
-    private static void verifyClients() {
-        assertClusterSizeEventually(3, c1);
-        assertClusterSizeEventually(3, c2);
-        assertClusterSizeEventually(3, c3);
-        assertClusterSizeEventually(2, c4);
-        assertClusterSizeEventually(2, c5);
-    }
-
     private static void initializeClients() {
         c1 = factory.newHazelcastClient(getClientConfig(cluster.h1));
         c2 = factory.newHazelcastClient(getClientConfig(cluster.h2));
@@ -115,12 +109,15 @@ public class ClientTransactionalMapQuorumTest extends HazelcastTestSupport {
         c5 = factory.newHazelcastClient(getClientConfig(cluster.h5));
     }
 
-
-    @AfterClass
-    public static void killAllHazelcastInstances() throws IOException {
-        factory.terminateAll();
+    private static void verifyClients() {
+        assertClusterSizeEventually(3, c1, c2, c3);
+        assertClusterSizeEventually(2, c4, c5);
     }
 
+    @AfterClass
+    public static void killAllHazelcastInstances() {
+        factory.terminateAll();
+    }
 
     @Test
     public void testTxPutThrowsExceptionWhenQuorumSizeNotMet() {
@@ -193,7 +190,6 @@ public class ClientTransactionalMapQuorumTest extends HazelcastTestSupport {
         map.remove("foo");
         transaction.commitTransaction();
     }
-
 
     @Test
     public void testTxRemoveValueThrowsExceptionWhenQuorumSizeNotMet() {
@@ -462,5 +458,4 @@ public class ClientTransactionalMapQuorumTest extends HazelcastTestSupport {
     private static TransactionalMap<Object, Object> getMap(TransactionContext transaction) {
         return transaction.getMap(randomMapName(MAP_NAME_PREFIX));
     }
-
 }

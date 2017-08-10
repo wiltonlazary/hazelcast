@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,8 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collection;
 
+import static com.hazelcast.util.Preconditions.checkNotNull;
+
 public class DiscoveryAddressProvider
         implements AddressProvider {
 
@@ -41,7 +43,8 @@ public class DiscoveryAddressProvider
 
     @Override
     public Collection<InetSocketAddress> loadAddresses() {
-        Iterable<DiscoveryNode> discoveredNodes = discoveryService.discoverNodes();
+        Iterable<DiscoveryNode> discoveredNodes = checkNotNull(discoveryService.discoverNodes(),
+                "Discovered nodes cannot be null!");
 
         Collection<InetSocketAddress> possibleMembers = new ArrayList<InetSocketAddress>();
         for (DiscoveryNode discoveryNode : discoveredNodes) {

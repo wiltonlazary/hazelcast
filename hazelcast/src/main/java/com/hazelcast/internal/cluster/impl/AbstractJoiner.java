@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,8 @@ import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.NodeExtension;
 import com.hazelcast.internal.cluster.ClusterService;
-import com.hazelcast.internal.cluster.impl.operations.MemberRemoveOperation;
-import com.hazelcast.internal.cluster.impl.operations.MergeClustersOperation;
-import com.hazelcast.internal.cluster.impl.operations.SplitBrainMergeValidationOperation;
+import com.hazelcast.internal.cluster.impl.operations.MergeClustersOp;
+import com.hazelcast.internal.cluster.impl.operations.SplitBrainMergeValidationOp;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.Connection;
@@ -47,7 +46,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.logging.Level;
 
 import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_SELECTOR;
 import static com.hazelcast.spi.impl.OperationResponseHandlerFactory.createEmptyResponseHandler;
@@ -133,7 +131,7 @@ public abstract class AbstractJoiner implements Joiner {
     public final void join() {
         blacklistedAddresses.clear();
         doJoin();
-        if (!node.joined() && shouldResetHotRestartData()) {
+        if (!clusterService.isJoined() && shouldResetHotRestartData()) {
             logger.warning("Could not join to the cluster because hot restart data must be reset.");
             node.getNodeExtension().getInternalHotRestartService().resetHotRestartData();
             reset();
@@ -143,7 +141,7 @@ public abstract class AbstractJoiner implements Joiner {
     }
 
     protected final boolean shouldRetry() {
-        return node.isRunning() && !node.joined() && !shouldResetHotRestartData();
+        return node.isRunning() && !clusterService.isJoined() && !shouldResetHotRestartData();
     }
 
     private boolean shouldResetHotRestartData() {
@@ -156,30 +154,30 @@ public abstract class AbstractJoiner implements Joiner {
         blacklistedAddresses.clear();
 
         if (logger.isFineEnabled()) {
-            logger.fine("PostJoin master: " + node.getMasterAddress() + ", isMaster: " + node.isMaster());
+            logger.fine("PostJoin master: " + clusterService.getMasterAddress() + ", isMaster: " + clusterService.isMaster());
         }
         if (!node.isRunning()) {
             return;
         }
         if (tryCount.incrementAndGet() == JOIN_TRY_COUNT) {
             logger.warning("Join try count exceed limit, setting this node as master!");
-            clusterJoinManager.setAsMaster();
+            clusterJoinManager.setThisMemberAsMaster();
         }
 
-        if (node.joined()) {
-            if (!node.isMaster()) {
+        if (clusterService.isJoined()) {
+            if (!clusterService.isMaster()) {
                 ensureConnectionToAllMembers();
             }
 
             if (clusterService.getSize() == 1) {
-                logger.info('\n' + node.clusterService.membersString());
+                clusterService.printMemberList();
             }
         }
     }
 
     private void ensureConnectionToAllMembers() {
         boolean allConnected = false;
-        if (node.joined()) {
+        if (clusterService.isJoined()) {
             logger.fine("Waiting for all connections");
             int connectAllWaitSeconds = node.getProperties().getSeconds(GroupProperty.CONNECT_ALL_WAIT_SECONDS);
             int checkCount = 0;
@@ -239,7 +237,7 @@ public abstract class AbstractJoiner implements Joiner {
             return false;
         }
 
-        if (!checkClusterStateActiveBeforeMerge(joinMessage)) {
+        if (!checkClusterStateAllowsJoinBeforeMerge(joinMessage)) {
             return false;
         }
 
@@ -284,7 +282,7 @@ public abstract class AbstractJoiner implements Joiner {
                 return false;
             }
         } catch (Exception e) {
-            logger.log(Level.FINE, "failure during validating join message", e);
+            logger.fine("failure during validating join message", e);
             return false;
         }
         return true;
@@ -313,9 +311,9 @@ public abstract class AbstractJoiner implements Joiner {
         return true;
     }
 
-    private boolean checkClusterStateActiveBeforeMerge(SplitBrainJoinMessage joinMessage) {
+    private boolean checkClusterStateAllowsJoinBeforeMerge(SplitBrainJoinMessage joinMessage) {
         ClusterState clusterState = clusterService.getClusterState();
-        if (clusterState != ClusterState.ACTIVE) {
+        if (!clusterState.isJoinAllowed()) {
             if (logger.isFineEnabled()) {
                 logger.fine("Should not merge to " + joinMessage.getAddress() + ", because this cluster is in "
                         + clusterState + " state.");
@@ -327,10 +325,15 @@ public abstract class AbstractJoiner implements Joiner {
 
     private boolean checkMembershipIntersectionSetEmpty(SplitBrainJoinMessage joinMessage) {
         Collection<Address> targetMemberAddresses = joinMessage.getMemberAddresses();
+        Address joinMessageAddress = joinMessage.getAddress();
         if (targetMemberAddresses.contains(node.getThisAddress())) {
-            node.nodeEngine.getOperationService()
-                    .send(new MemberRemoveOperation(node.getThisAddress()), joinMessage.getAddress());
-            logger.info(node.getThisAddress() + " CANNOT merge to " + joinMessage.getAddress()
+            // Join request is coming from master of the split and it thinks that I am its member.
+            // This is partial split case and we want to convert it to a full split.
+            // So it should remove me from its cluster.
+            MembersViewMetadata membersViewMetadata = new MembersViewMetadata(joinMessageAddress, joinMessage.getUuid(),
+                    joinMessageAddress, joinMessage.getMemberListVersion());
+            clusterService.sendExplicitSuspicion(membersViewMetadata);
+            logger.info(node.getThisAddress() + " CANNOT merge to " + joinMessageAddress
                     + ", because it thinks this-node as its member.");
             return false;
         }
@@ -338,7 +341,7 @@ public abstract class AbstractJoiner implements Joiner {
         Collection<Address> thisMemberAddresses = clusterService.getMemberAddresses();
         for (Address address : thisMemberAddresses) {
             if (targetMemberAddresses.contains(address)) {
-                logger.info(node.getThisAddress() + " CANNOT merge to " + joinMessage.getAddress()
+                logger.info(node.getThisAddress() + " CANNOT merge to " + joinMessageAddress
                         + ", because it thinks " + address + " as its member. "
                         + "But " + address + " is member of this cluster.");
                 return false;
@@ -394,12 +397,12 @@ public abstract class AbstractJoiner implements Joiner {
 
         NodeEngine nodeEngine = node.nodeEngine;
         Future future = nodeEngine.getOperationService().createInvocationBuilder(ClusterServiceImpl.SERVICE_NAME,
-                new SplitBrainMergeValidationOperation(node.createSplitBrainJoinMessage()), target)
+                new SplitBrainMergeValidationOp(node.createSplitBrainJoinMessage()), target)
                 .setTryCount(1).invoke();
         try {
             return (SplitBrainJoinMessage) future.get(SPLIT_BRAIN_JOIN_CHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
-            logger.log(Level.FINE, "Timeout during join check!", e);
+            logger.fine("Timeout during join check!", e);
         } catch (Exception e) {
             logger.warning("Error during join check!", e);
         }
@@ -424,7 +427,7 @@ public abstract class AbstractJoiner implements Joiner {
         Collection<Future> futures = new ArrayList<Future>(memberList.size());
         for (Member member : memberList) {
             if (!member.localMember()) {
-                Operation op = new MergeClustersOperation(targetAddress);
+                Operation op = new MergeClustersOp(targetAddress);
                 Future<Object> future =
                         operationService.invokeOnTarget(ClusterServiceImpl.SERVICE_NAME, op, member.getAddress());
                 futures.add(future);
@@ -433,15 +436,14 @@ public abstract class AbstractJoiner implements Joiner {
 
         waitWithDeadline(futures, SPLIT_BRAIN_MERGE_TIMEOUT_SECONDS, TimeUnit.SECONDS, splitBrainMergeExceptionHandler);
 
-        Operation mergeClustersOperation = new MergeClustersOperation(targetAddress);
-        mergeClustersOperation.setNodeEngine(node.nodeEngine).setService(clusterService)
-                .setOperationResponseHandler(createEmptyResponseHandler());
-        operationService.run(mergeClustersOperation);
+        Operation op = new MergeClustersOp(targetAddress);
+        op.setNodeEngine(node.nodeEngine).setService(clusterService).setOperationResponseHandler(createEmptyResponseHandler());
+        operationService.run(op);
     }
 
     /**
      * Prepares the cluster state for cluster merge by changing it to {@link ClusterState#FROZEN}. It expects the current
-     * cluster state to be {@link ClusterState#ACTIVE}.
+     * cluster state to be {@link ClusterState#ACTIVE} or {@link ClusterState#NO_MIGRATION}.
      * The method will keep trying to change the cluster state until {@link GroupProperty#MERGE_NEXT_RUN_DELAY_SECONDS} elapses
      * or until the sleep period between two attempts has been interrupted.
      *
@@ -454,19 +456,23 @@ public abstract class AbstractJoiner implements Joiner {
         }
 
         long until = Clock.currentTimeMillis() + mergeNextRunDelayMs;
-        while (clusterService.getClusterState() == ClusterState.ACTIVE) {
-            try {
-                clusterService.changeClusterState(ClusterState.FROZEN);
+        while (Clock.currentTimeMillis() < until) {
+            ClusterState clusterState = clusterService.getClusterState();
+            if (!clusterState.isMigrationAllowed() && !clusterState.isJoinAllowed()
+                    && clusterState != ClusterState.IN_TRANSITION) {
                 return true;
-            } catch (Exception e) {
-                String error = e.getClass().getName() + ": " + e.getMessage();
-                logger.warning("While freezing cluster state! " + error);
             }
 
-            if (Clock.currentTimeMillis() >= until) {
-                logger.warning("Could not change cluster state to FROZEN in time. "
-                        + "Postponing merge process until next attempt.");
-                return false;
+            // If state is IN_TRANSITION, then skip trying to change state.
+            // Otherwise transaction will print noisy warning logs.
+            if (clusterState != ClusterState.IN_TRANSITION) {
+                try {
+                    clusterService.changeClusterState(ClusterState.FROZEN);
+                    return true;
+                } catch (Exception e) {
+                    String error = e.getClass().getName() + ": " + e.getMessage();
+                    logger.warning("While changing cluster state to FROZEN! " + error);
+                }
             }
 
             try {
@@ -478,13 +484,19 @@ public abstract class AbstractJoiner implements Joiner {
                 return false;
             }
         }
+
+        logger.warning("Could not change cluster state to FROZEN in time. "
+                + "Postponing merge process until next attempt.");
         return false;
     }
 
-    /** Returns true if the current cluster state is {@link com.hazelcast.cluster.ClusterState#ACTIVE} */
+    /**
+     * Returns true if the current cluster state allows join; either
+     * {@link ClusterState#ACTIVE} or {@link ClusterState#NO_MIGRATION}.
+     */
     private boolean preCheckClusterState(final ClusterService clusterService) {
         final ClusterState initialState = clusterService.getClusterState();
-        if (initialState != ClusterState.ACTIVE) {
+        if (!initialState.isJoinAllowed()) {
             logger.warning("Could not prepare cluster state since it has been changed to " + initialState);
             return false;
         }

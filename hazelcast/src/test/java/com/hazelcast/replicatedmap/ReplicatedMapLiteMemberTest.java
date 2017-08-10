@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.replicatedmap;
 
 import com.hazelcast.config.Config;
@@ -23,72 +39,68 @@ import static org.junit.Assert.assertTrue;
 public class ReplicatedMapLiteMemberTest extends HazelcastTestSupport {
 
     @Test
-    public void testLiteMembersWithReplicatedMap() throws Exception {
-        final Config config = buildConfig(false);
-        final TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(3);
+    public void testLiteMembersWithReplicatedMap() {
+        Config config = buildConfig(false);
+        TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(3);
 
         final HazelcastInstance instance1 = nodeFactory.newHazelcastInstance(config);
         final HazelcastInstance instance2 = nodeFactory.newHazelcastInstance(config);
         final HazelcastInstance lite = nodeFactory.newHazelcastInstance(buildConfig(true));
 
-        final ReplicatedMap<String, String> map1 = instance1.getReplicatedMap("default");
+        ReplicatedMap<String, String> map1 = instance1.getReplicatedMap("default");
 
         map1.put("key", "value");
 
         assertTrueEventually(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
+            public void run() throws Exception {
                 assertTrue(instance2.getReplicatedMap("default").containsKey("key"));
             }
         });
 
         assertTrueAllTheTime(new AssertTask() {
             @Override
-            public void run()
-                    throws Exception {
-                final ReplicatedMapService service = getReplicatedMapService(lite);
+            public void run() throws Exception {
+                ReplicatedMapService service = getReplicatedMapService(lite);
                 assertEquals(0, service.getAllReplicatedRecordStores("default").size());
             }
         }, 5);
     }
 
-
     @Test(expected = ReplicatedMapCantBeCreatedOnLiteMemberException.class)
     public void testCreateReplicatedMapOnLiteMember() {
-        final HazelcastInstance lite = createSingleLiteMember();
+        HazelcastInstance lite = createSingleLiteMember();
         lite.getReplicatedMap("default");
     }
 
     @Test(expected = ReplicatedMapCantBeCreatedOnLiteMemberException.class)
     public void testCreateReplicatedStoreOnLiteMember() {
-        final HazelcastInstance lite = createSingleLiteMember();
-        final ReplicatedMapService service = getReplicatedMapService(lite);
+        HazelcastInstance lite = createSingleLiteMember();
+        ReplicatedMapService service = getReplicatedMapService(lite);
         service.getReplicatedRecordStore("default", true, 1);
     }
 
     @Test(expected = ReplicatedMapCantBeCreatedOnLiteMemberException.class)
     public void testGetReplicatedStoreOnLiteMember() {
-        final HazelcastInstance lite = createSingleLiteMember();
-        final ReplicatedMapService service = getReplicatedMapService(lite);
+        HazelcastInstance lite = createSingleLiteMember();
+        ReplicatedMapService service = getReplicatedMapService(lite);
         service.getReplicatedRecordStore("default", false, 1);
     }
 
 
     private HazelcastInstance createSingleLiteMember() {
-        final TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(1);
+        TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(1);
         return nodeFactory.newHazelcastInstance(buildConfig(true));
     }
 
     private ReplicatedMapService getReplicatedMapService(HazelcastInstance lite) {
-        final NodeEngineImpl nodeEngine = getNodeEngineImpl(lite);
+        NodeEngineImpl nodeEngine = getNodeEngineImpl(lite);
         return nodeEngine.getService(ReplicatedMapService.SERVICE_NAME);
     }
 
-    private Config buildConfig(final boolean liteMember) {
-        final Config config = new Config();
+    private Config buildConfig(boolean liteMember) {
+        Config config = new Config();
         config.setLiteMember(liteMember);
         return config;
     }
-
 }

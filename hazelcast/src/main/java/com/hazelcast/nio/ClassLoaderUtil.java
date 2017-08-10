@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,23 @@
 
 package com.hazelcast.nio;
 
-import com.hazelcast.internal.distributedclassloading.impl.ClassSource;
+import com.hazelcast.internal.usercodedeployment.impl.ClassSource;
 import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.util.ConcurrentReferenceHashMap;
-import com.hazelcast.util.EmptyStatement;
+import com.hazelcast.util.ExceptionUtil;
 
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Constructor;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import static com.hazelcast.util.Preconditions.isNotNull;
+import static java.util.Collections.unmodifiableMap;
 
 /**
  * Utility class to deal with classloaders.
@@ -59,12 +62,36 @@ public final class ClassLoaderUtil {
         primitives.put("double", double.class);
         primitives.put("char", char.class);
         primitives.put("void", void.class);
-        PRIMITIVE_CLASSES = Collections.unmodifiableMap(primitives);
+        PRIMITIVE_CLASSES = unmodifiableMap(primitives);
     }
 
     private ClassLoaderUtil() {
     }
 
+    /**
+     * Returns the {@code instance} if not null, otherwise constructs a new instance of the class using
+     * {@link #newInstance(Class, ClassLoader, String)}.
+     *
+     * @param instance    the instance of the class, can be null
+     * @param classLoader the classloader used for class instantiation
+     * @param className   the name of the class being constructed
+     * @return either the provided {@code instance} or a newly constructed instance of {@code className}
+     */
+    public static <T> T getOrCreate(T instance, ClassLoader classLoader, String className) {
+        if (instance != null) {
+            return instance;
+        } else if (className != null) {
+            try {
+                return ClassLoaderUtil.newInstance(classLoader, className);
+            } catch (Exception e) {
+                throw ExceptionUtil.rethrow(e);
+            }
+        } else {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
     public static <T> T newInstance(ClassLoader classLoader, final String className) throws Exception {
         classLoader = classLoader == null ? ClassLoaderUtil.class.getClassLoader() : classLoader;
         Constructor<T> constructor = CONSTRUCTOR_CACHE.get(classLoader, className);
@@ -72,7 +99,7 @@ public final class ClassLoaderUtil {
             return constructor.newInstance();
         }
         Class<T> klass = (Class<T>) loadClass(classLoader, className);
-        return (T) newInstance(klass, classLoader, className);
+        return newInstance(klass, classLoader, className);
     }
 
     public static <T> T newInstance(Class<T> klass, ClassLoader classLoader, String className) throws Exception {
@@ -86,9 +113,7 @@ public final class ClassLoaderUtil {
         return constructor.newInstance();
     }
 
-    public static Class<?> loadClass(final ClassLoader classLoader, final String className)
-            throws ClassNotFoundException {
-
+    public static Class<?> loadClass(final ClassLoader classLoader, final String className) throws ClassNotFoundException {
         isNotNull(className, "className");
         if (className.length() <= MAX_PRIM_CLASSNAME_LENGTH && Character.isLowerCase(className.charAt(0))) {
             final Class primitiveClass = PRIMITIVE_CLASSES.get(className);
@@ -101,18 +126,17 @@ public final class ClassLoaderUtil {
             theClassLoader = Thread.currentThread().getContextClassLoader();
         }
 
-        // First try to load it through the given classloader
+        // first try to load it through the given classloader
         if (theClassLoader != null) {
             try {
                 return tryLoadClass(className, theClassLoader);
             } catch (ClassNotFoundException ignore) {
-
-                // Reset selected classloader and try with others
+                // reset selected classloader and try with others
                 theClassLoader = null;
             }
         }
 
-        // If failed and this is a Hazelcast class try again with our classloader
+        // if failed and this is a Hazelcast class try again with our classloader
         if (className.startsWith(HAZELCAST_BASE_PACKAGE) || className.startsWith(HAZELCAST_ARRAY)) {
             theClassLoader = ClassLoaderUtil.class.getClassLoader();
         }
@@ -130,17 +154,12 @@ public final class ClassLoaderUtil {
             Class<?> clazz = loadClass(classLoader, className);
             return clazz != null;
         } catch (ClassNotFoundException e) {
-            EmptyStatement.ignore(e);
+            return false;
         }
-        return false;
-
     }
 
-    private static Class<?> tryLoadClass(String className, ClassLoader classLoader)
-            throws ClassNotFoundException {
-
+    private static Class<?> tryLoadClass(String className, ClassLoader classLoader) throws ClassNotFoundException {
         Class<?> clazz;
-
         if (!CLASS_CACHE_DISABLED) {
             clazz = CLASS_CACHE.get(classLoader, className);
             if (clazz != null) {
@@ -200,19 +219,72 @@ public final class ClassLoaderUtil {
         }
     }
 
+    /**
+     * Check whether given class implements an interface with the same name.
+     * It returns true even when the implemented interface is loaded by a different
+     * classloader and hence the class is not assignable into it.
+     *
+     * An interface is considered as implemented even when either:
+     * <ul>
+     *     <li>The class directly implements the interface</li>
+     *     <li>The class implements an interface which extends the original interface<li></li>
+     *     <li>One of superclasses directly implements the interface</li>
+     *     <li>One of superclasses implements an interface which extends the original interface</li>
+     * </ul>
+     *
+     * This is useful for logging purposes.
+     *
+     * @param clazz class to check whether implements the interface
+     * @param iface interface to be implemented
+     * @return <code>true</code> when the class implements the inteface with the same name
+     */
+    public static boolean implementsInterfaceWithSameName(Class<?> clazz, Class<?> iface) {
+        Class<?>[] interfaces = getAllInterfaces(clazz);
+        for (Class implementedInterface : interfaces) {
+            if (implementedInterface.getName().equals(iface.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static Class<?>[] getAllInterfaces(Class<?> clazz) {
+        Collection<Class<?>> interfaces = new HashSet<Class<?>>();
+        addOwnInterfaces(clazz, interfaces);
+        addInterfacesOfSuperclasses(clazz, interfaces);
+        return interfaces.toArray(new Class<?>[0]);
+    }
+
+    private static void addOwnInterfaces(Class<?> clazz, Collection<Class<?>> allInterfaces) {
+        Class<?>[] interfaces = clazz.getInterfaces();
+        Collections.addAll(allInterfaces, interfaces);
+        for (Class cl : interfaces) {
+            addOwnInterfaces(cl, allInterfaces);
+        }
+    }
+
+    private static void addInterfacesOfSuperclasses(Class<?> clazz, Collection<Class<?>> interfaces) {
+        Class<?> superClass = clazz.getSuperclass();
+        while (superClass != null) {
+            addOwnInterfaces(superClass, interfaces);
+            superClass = superClass.getSuperclass();
+        }
+    }
+
     private static final class ClassLoaderWeakCache<V> {
+
         private final ConcurrentMap<ClassLoader, ConcurrentMap<String, WeakReference<V>>> cache;
 
         private ClassLoaderWeakCache() {
-            // Guess 16 classloaders to not waste to much memory (16 is default concurrency level)
+            // let's guess 16 classloaders to not waste too much memory (16 is default concurrency level)
             cache = new ConcurrentReferenceHashMap<ClassLoader, ConcurrentMap<String, WeakReference<V>>>(16);
         }
 
-        private V put(ClassLoader classLoader, String className, V value) {
+        private void put(ClassLoader classLoader, String className, V value) {
             ClassLoader cl = classLoader == null ? ClassLoaderUtil.class.getClassLoader() : classLoader;
             ConcurrentMap<String, WeakReference<V>> innerCache = cache.get(cl);
             if (innerCache == null) {
-                // Let's guess a start of 100 classes per classloader
+                // let's guess a start of 100 classes per classloader
                 innerCache = new ConcurrentHashMap<String, WeakReference<V>>(100);
                 ConcurrentMap<String, WeakReference<V>> old = cache.putIfAbsent(cl, innerCache);
                 if (old != null) {
@@ -220,7 +292,6 @@ public final class ClassLoaderUtil {
                 }
             }
             innerCache.put(className, new WeakReference<V>(value));
-            return value;
         }
 
         public V get(ClassLoader classloader, String className) {
@@ -239,8 +310,8 @@ public final class ClassLoaderUtil {
     }
 
     private static boolean shouldBypassCache(Class clazz) {
-        //dynamically loaded class should not be cached here as they are already cached
-        //in the DistributedLoadingService (when cache is enabled)
+        // dynamically loaded class should not be cached here, as they are already
+        // cached in the DistributedLoadingService (when cache is enabled)
         return (clazz.getClassLoader() instanceof ClassSource);
     }
 }

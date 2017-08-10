@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,22 +18,21 @@ package com.hazelcast.cache.impl;
 
 import com.hazelcast.cache.CacheStatistics;
 import com.hazelcast.cache.impl.event.CacheWanEventPublisher;
+import com.hazelcast.cache.impl.journal.CacheEventJournal;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.EventFilter;
 import com.hazelcast.spi.EventPublishingService;
+import com.hazelcast.spi.FragmentedMigrationAwareService;
 import com.hazelcast.spi.ManagedService;
-import com.hazelcast.spi.MigrationAwareService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.RemoteService;
 
 import java.util.Collection;
 
 public interface ICacheService
-        extends ManagedService,
-                RemoteService,
-                MigrationAwareService,
+        extends ManagedService, RemoteService, FragmentedMigrationAwareService,
                 EventPublishingService<Object, CacheEventListener> {
 
     String CACHE_SUPPORT_NOT_AVAILABLE_ERROR_MESSAGE =
@@ -43,8 +42,23 @@ public interface ICacheService
 
     String SERVICE_NAME = "hz:impl:cacheService";
 
+    /**
+     * Gets or creates a cache record store with the prefixed {@code name}
+     * and partition ID.
+     *
+     * @param name        the full cache name containing the prefix
+     * @param partitionId the record store partition ID
+     * @return the cache partition record store
+     */
     ICacheRecordStore getOrCreateRecordStore(String name, int partitionId);
 
+    /**
+     * Gets a cache record store with the prefixed {@code name} and partition ID.
+     *
+     * @param name        the full cache name containing the prefix
+     * @param partitionId the record store partition ID
+     * @return the cache partition record store
+     */
     ICacheRecordStore getRecordStore(String name, int partitionId);
 
     CachePartitionSegment getSegment(int partitionId);
@@ -99,4 +113,6 @@ public interface ICacheService
     boolean isWanReplicationEnabled(String cacheName);
 
     CacheWanEventPublisher getCacheWanEventPublisher();
+
+    CacheEventJournal getEventJournal();
 }

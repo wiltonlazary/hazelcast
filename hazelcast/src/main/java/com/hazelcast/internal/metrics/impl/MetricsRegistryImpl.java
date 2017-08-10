@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import com.hazelcast.internal.metrics.ProbeLevel;
 import com.hazelcast.internal.metrics.renderers.ProbeRenderer;
 import com.hazelcast.internal.util.concurrent.ThreadFactoryImpl;
 import com.hazelcast.logging.ILogger;
+import com.hazelcast.util.ConcurrentReferenceHashMap;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -43,6 +44,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.util.ThreadUtil.createThreadPoolName;
 import static java.lang.String.format;
 
 /**
@@ -60,12 +62,12 @@ public class MetricsRegistryImpl implements MetricsRegistry {
     final ILogger logger;
     final ProbeLevel minimumLevel;
 
-    private final ScheduledExecutorService scheduledExecutorService
-            = new ScheduledThreadPoolExecutor(2, new ThreadFactoryImpl("MetricsRegistry-thread-"));
-
+    private final ScheduledExecutorService scheduledExecutorService;
     private final ConcurrentMap<String, ProbeInstance> probeInstances = new ConcurrentHashMap<String, ProbeInstance>();
+
+    // use ConcurrentReferenceHashMap to allow unreferenced Class instances to be garbage collected
     private final ConcurrentMap<Class<?>, SourceMetadata> metadataMap
-            = new ConcurrentHashMap<Class<?>, SourceMetadata>();
+            = new ConcurrentReferenceHashMap<Class<?>, SourceMetadata>();
     private final LockStripe lockStripe = new LockStripe();
 
     private final AtomicReference<SortedProbeInstances> sortedProbeInstancesRef
@@ -81,12 +83,33 @@ public class MetricsRegistryImpl implements MetricsRegistry {
      * @throws NullPointerException if logger or minimumLevel is null
      */
     public MetricsRegistryImpl(ILogger logger, ProbeLevel minimumLevel) {
+        this("default", logger, minimumLevel);
+    }
+
+    /**
+     * Creates a MetricsRegistryImpl instance.
+     *
+     * @param name Name of the registry
+     * @param logger       the ILogger used
+     * @param minimumLevel the minimum ProbeLevel. If a probe is registered with a ProbeLevel lower than the minimum ProbeLevel,
+     *                     then the registration is skipped.
+     * @throws NullPointerException if logger or minimumLevel is null
+     */
+    public MetricsRegistryImpl(String name, ILogger logger, ProbeLevel minimumLevel) {
         this.logger = checkNotNull(logger, "logger can't be null");
         this.minimumLevel = checkNotNull(minimumLevel, "minimumLevel can't be null");
+
+        scheduledExecutorService = new ScheduledThreadPoolExecutor(2,
+                new ThreadFactoryImpl(createThreadPoolName(name, "MetricsRegistry")));
 
         if (logger.isFinestEnabled()) {
             logger.finest("MetricsRegistry minimumLevel:" + minimumLevel);
         }
+    }
+
+    @Override
+    public ProbeLevel minimumLevel() {
+        return minimumLevel;
     }
 
     long modCount() {

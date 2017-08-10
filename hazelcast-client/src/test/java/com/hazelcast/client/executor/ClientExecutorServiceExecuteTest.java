@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,7 +59,7 @@ public class ClientExecutorServiceExecuteTest {
     }
 
     @Before
-    public void setup()  {
+    public void setup() {
         server1 = hazelcastFactory.newHazelcastInstance();
         hazelcastFactory.newHazelcastInstance();
         server2 = hazelcastFactory.newHazelcastInstance();
@@ -83,7 +83,7 @@ public class ClientExecutorServiceExecuteTest {
         String mapName = randomString();
         MemberSelector selector = new SelectAllMembers();
 
-        service.execute( new MapPutRunnable(mapName), selector);
+        service.execute(new MapPutRunnable(mapName), selector);
         IMap map = client.getMap(mapName);
 
         assertSizeEventually(1, map);
@@ -123,7 +123,7 @@ public class ClientExecutorServiceExecuteTest {
     }
 
     @Test
-    public void testExecuteOnMember(){
+    public void testExecuteOnMember() {
         IExecutorService service = client.getExecutorService(randomString());
         String mapName = randomString();
 

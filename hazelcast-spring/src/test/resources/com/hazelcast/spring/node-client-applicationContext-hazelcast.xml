@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -22,7 +22,8 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans
 		http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
 		http://www.hazelcast.com/schema/spring
-		http://www.hazelcast.com/schema/spring/hazelcast-spring.xsd">
+		hazelcast-spring-3.9.xsd
+		">
 
     <bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer"
           p:systemPropertiesModeName="SYSTEM_PROPERTIES_MODE_OVERRIDE">
@@ -152,9 +153,22 @@
                        max-idle-seconds="70"
                        eviction-policy="LRU"
                        max-size="4000"
-                       invalidate-on-change="true"/>
+                       invalidate-on-change="true"
+                       serialize-keys="false"
+                       local-update-policy="CACHE_ON_UPDATE"/>
 
+        <hz:near-cache name="lfuNearCacheEviction" eviction-policy="LFU" />
+        <hz:near-cache name="lruNearCacheEviction"
+                       eviction-policy="LRU" />
+        <hz:near-cache name="noneNearCacheEviction"
+                       eviction-policy="NONE" />
+        <hz:near-cache name="randomNearCacheEviction"
+                       eviction-policy="RANDOM" />
 
+        <hz:near-cache name="preloader">
+            <hz:preloader enabled="true" directory="/tmp/preloader"
+                          store-initial-delay-seconds="23" store-interval-seconds="42"/>
+        </hz:near-cache>
     </hz:client>
 
     <hz:client id="client4"
@@ -234,6 +248,33 @@
         </hz:network>
         <hz:serialization></hz:serialization>
     </hz:client>
+
+    <hz:client id="client8"
+               credentials-ref="credentials">
+        <hz:network connection-attempt-limit="2">
+            <hz:member>127.0.0.1:5700</hz:member>
+            <hz:member>127.0.0.1:5701</hz:member>
+        </hz:network>
+        <hz:connection-strategy async-start="true" reconnect-mode="ASYNC"/>
+    </hz:client>
+
+    <hz:client id="user-code-deployment-test" credentials-ref="credentials">
+        <hz:network connection-attempt-limit="0">
+            <hz:member>127.0.0.1:5700</hz:member>
+            <hz:member>127.0.0.1:5701</hz:member>
+        </hz:network>
+
+        <hz:user-code-deployment enabled="false">
+            <hz:jarPaths>
+                <hz:jarPath>/User/jar/path/test.jar</hz:jarPath>
+            </hz:jarPaths>
+            <hz:classNames>
+                <hz:className>SampleClassName1</hz:className>
+                <hz:className>SampleClassName2</hz:className>
+            </hz:classNames>
+        </hz:user-code-deployment>
+    </hz:client>
+
 
     <bean id="credentials" class="com.hazelcast.security.UsernamePasswordCredentials">
         <property name="username" value="spring-group"/>

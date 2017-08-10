@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@ import com.hazelcast.config.SocketInterceptorConfig;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+
+import static com.hazelcast.util.Preconditions.isNotNull;
 
 /**
  * Contains configuration parameters for client network related behaviour
@@ -59,9 +61,10 @@ public class ClientNetworkConfig {
      * Defines the Discovery Provider SPI configuration
      *
      * @param discoveryConfig the Discovery Provider SPI configuration
+     * @throws java.lang.IllegalArgumentException if discoveryConfig is null
      */
     public void setDiscoveryConfig(DiscoveryConfig discoveryConfig) {
-        this.discoveryConfig = discoveryConfig;
+        this.discoveryConfig = isNotNull(discoveryConfig, "discoveryConfig");
     }
 
     /**

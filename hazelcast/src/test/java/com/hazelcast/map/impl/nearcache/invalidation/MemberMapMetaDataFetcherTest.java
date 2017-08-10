@@ -1,6 +1,5 @@
-
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +14,13 @@
  * limitations under the License.
  */
 
-
 package com.hazelcast.map.impl.nearcache.invalidation;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.internal.nearcache.impl.invalidation.Invalidator;
+import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataContainer;
 import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataFetcher;
 import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataGenerator;
 import com.hazelcast.internal.nearcache.impl.invalidation.RepairingHandler;
@@ -64,16 +63,17 @@ public class MemberMapMetaDataFetcherTest extends HazelcastTestSupport {
         String mapName = "test";
         int partition = 1;
         long givenSequence = getInt(1, Integer.MAX_VALUE);
-        UUID givenUuid = UuidUtil.newSecureUUID();
+        UUID givenUuid = UuidUtil.newUnsecureUUID();
 
         RepairingTask repairingTask = getRepairingTask(mapName, partition, givenSequence, givenUuid);
         MetaDataFetcher metaDataFetcher = repairingTask.getMetaDataFetcher();
         ConcurrentMap<String, RepairingHandler> handlers = repairingTask.getHandlers();
         metaDataFetcher.fetchMetadata(handlers);
 
-        UUID foundUuid = repairingTask.getPartitionUuids().get(partition);
         RepairingHandler repairingHandler = handlers.get(mapName);
-        long foundSequence = repairingHandler.getMetaDataContainer(partition).getSequence();
+        MetaDataContainer metaDataContainer = repairingHandler.getMetaDataContainer(partition);
+        UUID foundUuid = metaDataContainer.getUuid();
+        long foundSequence = metaDataContainer.getSequence();
 
         assertEquals(givenSequence, foundSequence);
         assertEquals(givenUuid, foundUuid);

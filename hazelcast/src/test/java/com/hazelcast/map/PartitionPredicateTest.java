@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -118,8 +118,8 @@ public class PartitionPredicateTest extends HazelcastTestSupport {
 
     @Test
     public void testToString() {
-        assertTrue(predicate.toString().contains("PartitionPredicate"));
-        assertTrue(predicate.toString().contains("partitionKey=" + partitionKey));
+        assertContains(predicate.toString(), "PartitionPredicate");
+        assertContains(predicate.toString(), "partitionKey=" + partitionKey);
     }
 
     @Test

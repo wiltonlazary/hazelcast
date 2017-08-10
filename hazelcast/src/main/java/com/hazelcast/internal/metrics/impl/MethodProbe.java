@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ import static com.hazelcast.internal.metrics.impl.ProbeUtils.TYPE_PRIMITIVE_LONG
 import static com.hazelcast.internal.metrics.impl.ProbeUtils.TYPE_SEMAPHORE;
 import static com.hazelcast.internal.metrics.impl.ProbeUtils.getType;
 import static com.hazelcast.internal.metrics.impl.ProbeUtils.isDouble;
+import static com.hazelcast.util.StringUtil.getterIntoProperty;
 import static java.lang.String.format;
 
 /**
@@ -63,8 +64,10 @@ abstract class MethodProbe implements ProbeFunction {
     }
 
     private String getName(String namePrefix) {
-        String name = method.getName();
-        if (!probe.name().equals("")) {
+        String name;
+        if (probe.name().equals("")) {
+            name = getterIntoProperty(method.getName());
+        } else {
             name = probe.name();
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ public class ReplicatedMapPutSerializationTest extends HazelcastTestSupport {
     static AtomicInteger deSerializationCount = new AtomicInteger(0);
 
     @Test
-    public void testPutShouldNotDeserializeData() throws Exception {
+    public void testPutShouldNotDeserializeData() {
         String mapName = randomName();
         Config config = new Config();
         config.getReplicatedMapConfig(mapName).setInMemoryFormat(InMemoryFormat.BINARY);
@@ -57,12 +57,12 @@ public class ReplicatedMapPutSerializationTest extends HazelcastTestSupport {
         map.put(key, value);
         map.put(key, value);
 
-        // only deserialized once in the proxy.
+        // only deserialized once in the proxy
         assertEquals(1, deSerializationCount.get());
     }
 
-
     static class SerializationCountingData implements DataSerializable {
+
         public SerializationCountingData() {
         }
 
@@ -75,5 +75,4 @@ public class ReplicatedMapPutSerializationTest extends HazelcastTestSupport {
             deSerializationCount.incrementAndGet();
         }
     }
-
 }

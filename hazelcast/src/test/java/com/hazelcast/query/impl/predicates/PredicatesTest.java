@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,8 @@ import com.hazelcast.query.Predicate;
 import com.hazelcast.query.PredicateBuilder;
 import com.hazelcast.query.Predicates;
 import com.hazelcast.query.QueryException;
-import com.hazelcast.query.SampleObjects.Employee;
-import com.hazelcast.query.SampleObjects.Value;
+import com.hazelcast.query.SampleTestObjects.Employee;
+import com.hazelcast.query.SampleTestObjects.Value;
 import com.hazelcast.query.impl.AttributeType;
 import com.hazelcast.query.impl.Index;
 import com.hazelcast.query.impl.IndexImpl;
@@ -40,6 +40,7 @@ import com.hazelcast.query.impl.getters.ReflectionHelper;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -84,6 +85,7 @@ public class PredicatesTest extends HazelcastTestSupport {
     private final InternalSerializationService ss = new DefaultSerializationServiceBuilder().build();
 
     @Test
+    @Ignore("now will execute partition number of times")
     public void testAndPredicate_whenFirstIndexAwarePredicateIsNotIndexed() throws Exception {
         final HazelcastInstance instance = createHazelcastInstance();
         final IMap<Object, Object> map = instance.getMap("map");

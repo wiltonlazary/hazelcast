@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -823,7 +823,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         while (it.hasNext()) {
             count++;
             Map.Entry entry = (Entry) it.next();
-            println(entry.getKey() + " : " + entry.getValue());
+            println(entry.getKey() + ": " + entry.getValue());
         }
         println("Total " + count);
     }
@@ -871,7 +871,7 @@ public class ConsoleApp implements EntryListener<Object, Object>, ItemListener<O
         while (it.hasNext()) {
             count++;
             Map.Entry entry = (Entry) it.next();
-            println(entry.getKey() + " : " + entry.getValue());
+            println(entry.getKey() + ": " + entry.getValue());
         }
         println("Total " + count);
     }

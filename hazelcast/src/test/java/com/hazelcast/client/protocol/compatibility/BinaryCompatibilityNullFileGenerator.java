@@ -1,385 +1,63 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.protocol.compatibility;
 
+import com.hazelcast.cache.impl.CacheEventData;
+import com.hazelcast.cache.impl.CacheEventDataImpl;
+import com.hazelcast.cache.impl.CacheEventType;
+import com.hazelcast.client.impl.MemberImpl;
+import com.hazelcast.client.impl.client.DistributedObjectInfo;
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongAddAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongAlterAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongAlterCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongApplyCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongCompareAndSetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongDecrementAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongGetAndAddCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongGetAndAlterCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongGetAndIncrementCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongGetAndSetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongIncrementAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicLongSetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceAlterAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceAlterCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceApplyCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceClearCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceCompareAndSetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceContainsCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceGetAndAlterCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceGetAndSetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceIsNullCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceSetAndGetCodec;
-import com.hazelcast.client.impl.protocol.codec.AtomicReferenceSetCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheAddEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheAddInvalidationListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheAddNearCacheInvalidationListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheAddPartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheAssignAndGetUuidsCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheClearCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheContainsKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheCreateConfigCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheDestroyCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheEntryProcessorCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheFetchNearCacheInvalidationMetadataCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheGetAllCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheGetAndRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheGetAndReplaceCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheGetCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheGetConfigCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheIterateCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheIterateEntriesCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheListenerRegistrationCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheLoadAllCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheManagementConfigCodec;
-import com.hazelcast.client.impl.protocol.codec.CachePutAllCodec;
-import com.hazelcast.client.impl.protocol.codec.CachePutCodec;
-import com.hazelcast.client.impl.protocol.codec.CachePutIfAbsentCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemoveAllCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemoveAllKeysCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemoveEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemoveInvalidationListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheRemovePartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheReplaceCodec;
-import com.hazelcast.client.impl.protocol.codec.CacheSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.CardinalityEstimatorAddCodec;
-import com.hazelcast.client.impl.protocol.codec.CardinalityEstimatorEstimateCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientAddDistributedObjectListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientAddMembershipListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientAddPartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientAuthenticationCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientAuthenticationCustomCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientCreateProxyCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientDestroyProxyCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientGetDistributedObjectsCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientGetPartitionsCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientPingCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientRemoveAllListenersCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientRemoveDistributedObjectListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ClientRemovePartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ConditionAwaitCodec;
-import com.hazelcast.client.impl.protocol.codec.ConditionBeforeAwaitCodec;
-import com.hazelcast.client.impl.protocol.codec.ConditionSignalAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ConditionSignalCodec;
-import com.hazelcast.client.impl.protocol.codec.CountDownLatchAwaitCodec;
-import com.hazelcast.client.impl.protocol.codec.CountDownLatchCountDownCodec;
-import com.hazelcast.client.impl.protocol.codec.CountDownLatchGetCountCodec;
-import com.hazelcast.client.impl.protocol.codec.CountDownLatchTrySetCountCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorDisposeResultCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorIsShutdownCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorRetrieveAndDisposeResultCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorRetrieveResultCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorShutdownCodec;
-import com.hazelcast.client.impl.protocol.codec.DurableExecutorSubmitToPartitionCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapAddListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapDestroyCacheCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapMadePublishableCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapPublisherCreateCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapPublisherCreateWithValueCodec;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapSetReadCursorCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceCancelOnAddressCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceCancelOnPartitionCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceIsShutdownCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceShutdownCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceSubmitToAddressCodec;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceSubmitToPartitionCodec;
-import com.hazelcast.client.impl.protocol.codec.ListAddAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ListAddAllWithIndexCodec;
-import com.hazelcast.client.impl.protocol.codec.ListAddCodec;
-import com.hazelcast.client.impl.protocol.codec.ListAddListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ListAddWithIndexCodec;
-import com.hazelcast.client.impl.protocol.codec.ListClearCodec;
-import com.hazelcast.client.impl.protocol.codec.ListCompareAndRemoveAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ListCompareAndRetainAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ListContainsAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ListContainsCodec;
-import com.hazelcast.client.impl.protocol.codec.ListGetAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ListGetCodec;
-import com.hazelcast.client.impl.protocol.codec.ListIndexOfCodec;
-import com.hazelcast.client.impl.protocol.codec.ListIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.ListIteratorCodec;
-import com.hazelcast.client.impl.protocol.codec.ListLastIndexOfCodec;
-import com.hazelcast.client.impl.protocol.codec.ListListIteratorCodec;
-import com.hazelcast.client.impl.protocol.codec.ListRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.ListRemoveListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ListRemoveWithIndexCodec;
-import com.hazelcast.client.impl.protocol.codec.ListSetCodec;
-import com.hazelcast.client.impl.protocol.codec.ListSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.ListSubCodec;
-import com.hazelcast.client.impl.protocol.codec.LockForceUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.LockGetLockCountCodec;
-import com.hazelcast.client.impl.protocol.codec.LockGetRemainingLeaseTimeCodec;
-import com.hazelcast.client.impl.protocol.codec.LockIsLockedByCurrentThreadCodec;
-import com.hazelcast.client.impl.protocol.codec.LockIsLockedCodec;
-import com.hazelcast.client.impl.protocol.codec.LockLockCodec;
-import com.hazelcast.client.impl.protocol.codec.LockTryLockCodec;
-import com.hazelcast.client.impl.protocol.codec.LockUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddEntryListenerToKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddEntryListenerToKeyWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddEntryListenerWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddIndexCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddInterceptorCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddNearCacheEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAddPartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAggregateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAggregateWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapAssignAndGetUuidsCodec;
-import com.hazelcast.client.impl.protocol.codec.MapClearCodec;
-import com.hazelcast.client.impl.protocol.codec.MapClearNearCacheCodec;
-import com.hazelcast.client.impl.protocol.codec.MapContainsKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MapContainsValueCodec;
-import com.hazelcast.client.impl.protocol.codec.MapDeleteCodec;
-import com.hazelcast.client.impl.protocol.codec.MapEntriesWithPagingPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapEntriesWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapEntrySetCodec;
-import com.hazelcast.client.impl.protocol.codec.MapEvictAllCodec;
-import com.hazelcast.client.impl.protocol.codec.MapEvictCodec;
-import com.hazelcast.client.impl.protocol.codec.MapExecuteOnAllKeysCodec;
-import com.hazelcast.client.impl.protocol.codec.MapExecuteOnKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MapExecuteOnKeysCodec;
-import com.hazelcast.client.impl.protocol.codec.MapExecuteWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapFetchEntriesCodec;
-import com.hazelcast.client.impl.protocol.codec.MapFetchKeysCodec;
-import com.hazelcast.client.impl.protocol.codec.MapFetchNearCacheInvalidationMetadataCodec;
-import com.hazelcast.client.impl.protocol.codec.MapFlushCodec;
-import com.hazelcast.client.impl.protocol.codec.MapForceUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.MapGetAllCodec;
-import com.hazelcast.client.impl.protocol.codec.MapGetCodec;
-import com.hazelcast.client.impl.protocol.codec.MapGetEntryViewCodec;
-import com.hazelcast.client.impl.protocol.codec.MapIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.MapIsLockedCodec;
-import com.hazelcast.client.impl.protocol.codec.MapKeySetCodec;
-import com.hazelcast.client.impl.protocol.codec.MapKeySetWithPagingPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapKeySetWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapLoadAllCodec;
-import com.hazelcast.client.impl.protocol.codec.MapLoadGivenKeysCodec;
-import com.hazelcast.client.impl.protocol.codec.MapLockCodec;
-import com.hazelcast.client.impl.protocol.codec.MapProjectCodec;
-import com.hazelcast.client.impl.protocol.codec.MapProjectWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapPutAllCodec;
-import com.hazelcast.client.impl.protocol.codec.MapPutCodec;
-import com.hazelcast.client.impl.protocol.codec.MapPutIfAbsentCodec;
-import com.hazelcast.client.impl.protocol.codec.MapPutTransientCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceCancelCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceForCustomCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceForListCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceForMapCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceForMultiMapCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceForSetCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReduceJobProcessInformationCodec;
-import com.hazelcast.client.impl.protocol.codec.MapRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.MapRemoveEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MapRemoveIfSameCodec;
-import com.hazelcast.client.impl.protocol.codec.MapRemoveInterceptorCodec;
-import com.hazelcast.client.impl.protocol.codec.MapRemovePartitionLostListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReplaceCodec;
-import com.hazelcast.client.impl.protocol.codec.MapReplaceIfSameCodec;
-import com.hazelcast.client.impl.protocol.codec.MapSetCodec;
-import com.hazelcast.client.impl.protocol.codec.MapSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.MapSubmitToKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MapTryLockCodec;
-import com.hazelcast.client.impl.protocol.codec.MapTryPutCodec;
-import com.hazelcast.client.impl.protocol.codec.MapTryRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.MapUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.MapValuesCodec;
-import com.hazelcast.client.impl.protocol.codec.MapValuesWithPagingPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MapValuesWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapAddEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapAddEntryListenerToKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapClearCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapContainsEntryCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapContainsKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapContainsValueCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapEntrySetCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapForceUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapGetCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapIsLockedCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapKeySetCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapLockCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapPutCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapRemoveEntryCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapRemoveEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapTryLockCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapUnlockCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapValueCountCodec;
-import com.hazelcast.client.impl.protocol.codec.MultiMapValuesCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueAddAllCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueAddListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueClearCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueCompareAndRemoveAllCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueCompareAndRetainAllCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueContainsAllCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueContainsCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueDrainToCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueDrainToMaxSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueIteratorCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueOfferCodec;
-import com.hazelcast.client.impl.protocol.codec.QueuePeekCodec;
-import com.hazelcast.client.impl.protocol.codec.QueuePollCodec;
-import com.hazelcast.client.impl.protocol.codec.QueuePutCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueRemainingCapacityCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueRemoveListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.QueueTakeCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapAddEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapAddEntryListenerToKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapAddEntryListenerToKeyWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapAddEntryListenerWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapAddNearCacheEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapClearCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapContainsKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapContainsValueCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapEntrySetCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapGetCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapKeySetCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapPutAllCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapPutCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapRemoveEntryListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.ReplicatedMapValuesCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferAddAllCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferAddCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferCapacityCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferHeadSequenceCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferReadManyCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferReadOneCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferRemainingCapacityCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.RingbufferTailSequenceCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorCancelCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorDisposeCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorGetAllScheduledFuturesCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorGetDelayCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorGetResultCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorGetStatsCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorIsCancelledCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorIsDoneCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorShutdownCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorSubmitToAddressCodec;
-import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorSubmitToPartitionCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreAcquireCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreAvailablePermitsCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreDrainPermitsCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreInitCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreReducePermitsCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreReleaseCodec;
-import com.hazelcast.client.impl.protocol.codec.SemaphoreTryAcquireCodec;
-import com.hazelcast.client.impl.protocol.codec.SetAddAllCodec;
-import com.hazelcast.client.impl.protocol.codec.SetAddCodec;
-import com.hazelcast.client.impl.protocol.codec.SetAddListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.SetClearCodec;
-import com.hazelcast.client.impl.protocol.codec.SetCompareAndRemoveAllCodec;
-import com.hazelcast.client.impl.protocol.codec.SetCompareAndRetainAllCodec;
-import com.hazelcast.client.impl.protocol.codec.SetContainsAllCodec;
-import com.hazelcast.client.impl.protocol.codec.SetContainsCodec;
-import com.hazelcast.client.impl.protocol.codec.SetGetAllCodec;
-import com.hazelcast.client.impl.protocol.codec.SetIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.SetRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.SetRemoveListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.SetSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.TopicAddMessageListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.TopicPublishCodec;
-import com.hazelcast.client.impl.protocol.codec.TopicRemoveMessageListenerCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionCommitCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionCreateCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionRollbackCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalListAddCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalListRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalListSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapContainsKeyCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapDeleteCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapGetCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapGetForUpdateCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapIsEmptyCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapKeySetCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapKeySetWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapPutCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapPutIfAbsentCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapRemoveIfSameCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapReplaceCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapReplaceIfSameCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapSetCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapValuesCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMapValuesWithPredicateCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapGetCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapPutCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapRemoveEntryCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalMultiMapValueCountCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalQueueOfferCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalQueuePeekCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalQueuePollCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalQueueSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalQueueTakeCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalSetAddCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalSetRemoveCodec;
-import com.hazelcast.client.impl.protocol.codec.TransactionalSetSizeCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionClearRemoteCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionCollectTransactionsCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionCommitCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionCreateCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionFinalizeCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionPrepareCodec;
-import com.hazelcast.client.impl.protocol.codec.XATransactionRollbackCodec;
+import com.hazelcast.client.impl.protocol.codec.*;
+import com.hazelcast.core.Member;
+import com.hazelcast.internal.serialization.impl.HeapData;
+import com.hazelcast.map.impl.SimpleEntryView;
+import com.hazelcast.map.impl.querycache.event.DefaultQueryCacheEventData;
+import com.hazelcast.map.impl.querycache.event.QueryCacheEventData;
+import com.hazelcast.mapreduce.JobPartitionState;
+import com.hazelcast.mapreduce.impl.task.JobPartitionStateImpl;
+import com.hazelcast.nio.Address;
+import com.hazelcast.scheduledexecutor.ScheduledTaskHandler;
+import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.transaction.impl.xa.SerializableXID;
 
 import java.io.DataOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Array;
+import java.net.UnknownHostException;
+import javax.transaction.xa.Xid;
+import java.util.AbstractMap;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.Map;
 
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aBoolean;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aByte;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aData;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aListOfEntry;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aLong;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aMember;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aPartitionTable;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aQueryCacheEventData;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aString;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.aUUID;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.anAddress;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.anInt;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.anXid;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.cacheEventDatas;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.datas;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.distributedObjectInfos;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.jobPartitionStates;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.longs;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.members;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.queryCacheEventDatas;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.strings;
-import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.uuids;
+import static org.junit.Assert.assertTrue;
+import static com.hazelcast.client.protocol.compatibility.ReferenceObjects.*;
 
 
 public class BinaryCompatibilityNullFileGenerator {
     public static void main(String[] args) throws IOException {
-        OutputStream out = new FileOutputStream("1.4.protocol.compatibility.null.binary");
+        OutputStream out = new FileOutputStream("1.5.protocol.compatibility.null.binary");
         DataOutputStream outputStream = new DataOutputStream(out);
 
 {
@@ -564,6 +242,30 @@ public class BinaryCompatibilityNullFileGenerator {
 }
 {
     ClientMessage clientMessage = ClientPingCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = ClientStatisticsCodec.encodeRequest(   aString   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = ClientStatisticsCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = ClientDeployClassesCodec.encodeRequest(   aListOfStringToByteArrEntry   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = ClientDeployClassesCodec.encodeResponse( );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
@@ -1366,7 +1068,7 @@ public class BinaryCompatibilityNullFileGenerator {
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = MapFetchNearCacheInvalidationMetadataCodec.encodeResponse(   null   );
+    ClientMessage clientMessage = MapFetchNearCacheInvalidationMetadataCodec.encodeResponse(   aNamePartitionSequenceList ,   aPartitionUuidList   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
@@ -1378,7 +1080,79 @@ public class BinaryCompatibilityNullFileGenerator {
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = MapAssignAndGetUuidsCodec.encodeResponse(   datas   );
+    ClientMessage clientMessage = MapAssignAndGetUuidsCodec.encodeResponse(   aPartitionUuidList   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = MapRemoveAllCodec.encodeRequest(   aString ,   aData   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = MapRemoveAllCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = MapAddNearCacheInvalidationListenerCodec.encodeRequest(   aString ,   anInt ,   aBoolean   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = MapAddNearCacheInvalidationListenerCodec.encodeResponse(   aString   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    {
+        ClientMessage clientMessage = MapAddNearCacheInvalidationListenerCodec.encodeIMapInvalidationEvent(  null ,   aString ,   aUUID ,   aLong   );
+        outputStream.writeInt(clientMessage.getFrameLength());
+        outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+     }
+    {
+        ClientMessage clientMessage = MapAddNearCacheInvalidationListenerCodec.encodeIMapBatchInvalidationEvent(  datas ,   strings ,   uuids ,   longs   );
+        outputStream.writeInt(clientMessage.getFrameLength());
+        outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+     }
+}
+
+
+{
+    ClientMessage clientMessage = MapFetchWithQueryCodec.encodeRequest(   aString ,   anInt ,   anInt ,   aData ,   aData   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = MapFetchWithQueryCodec.encodeResponse(   datas ,   anInt   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = MapEventJournalSubscribeCodec.encodeRequest(   aString   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = MapEventJournalSubscribeCodec.encodeResponse(   aLong ,   aLong   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = MapEventJournalReadCodec.encodeRequest(   aString ,   aLong ,   anInt ,   anInt ,   null ,   null   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = MapEventJournalReadCodec.encodeResponse(   anInt ,   datas ,   null   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
@@ -4181,7 +3955,7 @@ public class BinaryCompatibilityNullFileGenerator {
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = CacheFetchNearCacheInvalidationMetadataCodec.encodeResponse(   null   );
+    ClientMessage clientMessage = CacheFetchNearCacheInvalidationMetadataCodec.encodeResponse(   aNamePartitionSequenceList ,   aPartitionUuidList   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
@@ -4193,7 +3967,31 @@ public class BinaryCompatibilityNullFileGenerator {
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = CacheAssignAndGetUuidsCodec.encodeResponse(   datas   );
+    ClientMessage clientMessage = CacheAssignAndGetUuidsCodec.encodeResponse(   aPartitionUuidList   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = CacheEventJournalSubscribeCodec.encodeRequest(   aString   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = CacheEventJournalSubscribeCodec.encodeResponse(   aLong ,   aLong   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = CacheEventJournalReadCodec.encodeRequest(   aString ,   aLong ,   anInt ,   anInt ,   null ,   null   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = CacheEventJournalReadCodec.encodeResponse(   anInt ,   datas ,   null   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
@@ -4320,59 +4118,59 @@ public class BinaryCompatibilityNullFileGenerator {
 
 
 {
-    ClientMessage clientMessage = EnterpriseMapPublisherCreateWithValueCodec.encodeRequest(   aString ,   aString ,   aData ,   anInt ,   anInt ,   aLong ,   aBoolean ,   aBoolean   );
+    ClientMessage clientMessage = ContinuousQueryPublisherCreateWithValueCodec.encodeRequest(   aString ,   aString ,   aData ,   anInt ,   anInt ,   aLong ,   aBoolean ,   aBoolean   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = EnterpriseMapPublisherCreateWithValueCodec.encodeResponse(   aListOfEntry   );
+    ClientMessage clientMessage = ContinuousQueryPublisherCreateWithValueCodec.encodeResponse(   aListOfEntry   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 
 
 {
-    ClientMessage clientMessage = EnterpriseMapPublisherCreateCodec.encodeRequest(   aString ,   aString ,   aData ,   anInt ,   anInt ,   aLong ,   aBoolean ,   aBoolean   );
+    ClientMessage clientMessage = ContinuousQueryPublisherCreateCodec.encodeRequest(   aString ,   aString ,   aData ,   anInt ,   anInt ,   aLong ,   aBoolean ,   aBoolean   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = EnterpriseMapPublisherCreateCodec.encodeResponse(   datas   );
+    ClientMessage clientMessage = ContinuousQueryPublisherCreateCodec.encodeResponse(   datas   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 
 
 {
-    ClientMessage clientMessage = EnterpriseMapMadePublishableCodec.encodeRequest(   aString ,   aString   );
+    ClientMessage clientMessage = ContinuousQueryMadePublishableCodec.encodeRequest(   aString ,   aString   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = EnterpriseMapMadePublishableCodec.encodeResponse(   aBoolean   );
+    ClientMessage clientMessage = ContinuousQueryMadePublishableCodec.encodeResponse(   aBoolean   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 
 
 {
-    ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeRequest(   aString ,   aBoolean   );
+    ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeRequest(   aString ,   aBoolean   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeResponse(   aString   );
+    ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeResponse(   aString   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
     {
-        ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeQueryCacheSingleEvent(  aQueryCacheEventData   );
+        ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeQueryCacheSingleEvent(  aQueryCacheEventData   );
         outputStream.writeInt(clientMessage.getFrameLength());
         outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
      }
     {
-        ClientMessage clientMessage = EnterpriseMapAddListenerCodec.encodeQueryCacheBatchEvent(  queryCacheEventDatas ,   aString ,   anInt   );
+        ClientMessage clientMessage = ContinuousQueryAddListenerCodec.encodeQueryCacheBatchEvent(  queryCacheEventDatas ,   aString ,   anInt   );
         outputStream.writeInt(clientMessage.getFrameLength());
         outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
      }
@@ -4380,24 +4178,24 @@ public class BinaryCompatibilityNullFileGenerator {
 
 
 {
-    ClientMessage clientMessage = EnterpriseMapSetReadCursorCodec.encodeRequest(   aString ,   aString ,   aLong   );
+    ClientMessage clientMessage = ContinuousQuerySetReadCursorCodec.encodeRequest(   aString ,   aString ,   aLong   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = EnterpriseMapSetReadCursorCodec.encodeResponse(   aBoolean   );
+    ClientMessage clientMessage = ContinuousQuerySetReadCursorCodec.encodeResponse(   aBoolean   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 
 
 {
-    ClientMessage clientMessage = EnterpriseMapDestroyCacheCodec.encodeRequest(   aString ,   aString   );
+    ClientMessage clientMessage = ContinuousQueryDestroyCacheCodec.encodeRequest(   aString ,   aString   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = EnterpriseMapDestroyCacheCodec.encodeResponse(   aBoolean   );
+    ClientMessage clientMessage = ContinuousQueryDestroyCacheCodec.encodeResponse(   aBoolean   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
@@ -4505,7 +4303,7 @@ public class BinaryCompatibilityNullFileGenerator {
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = RingbufferReadManyCodec.encodeResponse(   anInt ,   datas   );
+    ClientMessage clientMessage = RingbufferReadManyCodec.encodeResponse(   anInt ,   datas ,   null   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
@@ -4620,7 +4418,7 @@ public class BinaryCompatibilityNullFileGenerator {
 
 
 {
-    ClientMessage clientMessage = ScheduledExecutorSubmitToPartitionCodec.encodeRequest(   aString ,   aData   );
+    ClientMessage clientMessage = ScheduledExecutorSubmitToPartitionCodec.encodeRequest(   aString ,   aByte ,   aString ,   aData ,   aLong ,   aLong   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
@@ -4632,7 +4430,7 @@ public class BinaryCompatibilityNullFileGenerator {
 
 
 {
-    ClientMessage clientMessage = ScheduledExecutorSubmitToAddressCodec.encodeRequest(   aString ,   anAddress ,   aData   );
+    ClientMessage clientMessage = ScheduledExecutorSubmitToAddressCodec.encodeRequest(   aString ,   anAddress ,   aByte ,   aString ,   aData ,   aLong ,   aLong   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
@@ -4644,96 +4442,372 @@ public class BinaryCompatibilityNullFileGenerator {
 
 
 {
-    ClientMessage clientMessage = ScheduledExecutorGetAllScheduledFuturesCodec.encodeRequest(   aString ,   anAddress   );
+    ClientMessage clientMessage = ScheduledExecutorGetAllScheduledFuturesCodec.encodeRequest(   aString   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetAllScheduledFuturesCodec.encodeResponse(   strings   );
+    ClientMessage clientMessage = ScheduledExecutorGetAllScheduledFuturesCodec.encodeResponse(   taskHandlers   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 
 
 {
-    ClientMessage clientMessage = ScheduledExecutorGetStatsCodec.encodeRequest(   aString   );
+    ClientMessage clientMessage = ScheduledExecutorGetStatsFromPartitionCodec.encodeRequest(   aString ,   aString   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetStatsCodec.encodeResponse(   aLong ,   aLong ,   aLong ,   aLong   );
+    ClientMessage clientMessage = ScheduledExecutorGetStatsFromPartitionCodec.encodeResponse(   aLong ,   aLong ,   aLong ,   aLong   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 
 
 {
-    ClientMessage clientMessage = ScheduledExecutorGetDelayCodec.encodeRequest(   aString ,   aString   );
+    ClientMessage clientMessage = ScheduledExecutorGetStatsFromAddressCodec.encodeRequest(   aString ,   aString ,   anAddress   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetDelayCodec.encodeResponse(   aLong   );
+    ClientMessage clientMessage = ScheduledExecutorGetStatsFromAddressCodec.encodeResponse(   aLong ,   aLong ,   aLong ,   aLong   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 
 
 {
-    ClientMessage clientMessage = ScheduledExecutorCancelCodec.encodeRequest(   aString ,   aBoolean   );
+    ClientMessage clientMessage = ScheduledExecutorGetDelayFromPartitionCodec.encodeRequest(   aString ,   aString   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorCancelCodec.encodeResponse(   aBoolean   );
+    ClientMessage clientMessage = ScheduledExecutorGetDelayFromPartitionCodec.encodeResponse(   aLong   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 
 
 {
-    ClientMessage clientMessage = ScheduledExecutorIsCancelledCodec.encodeRequest(   aString   );
+    ClientMessage clientMessage = ScheduledExecutorGetDelayFromAddressCodec.encodeRequest(   aString ,   aString ,   anAddress   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorIsCancelledCodec.encodeResponse(   aBoolean   );
+    ClientMessage clientMessage = ScheduledExecutorGetDelayFromAddressCodec.encodeResponse(   aLong   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 
 
 {
-    ClientMessage clientMessage = ScheduledExecutorIsDoneCodec.encodeRequest(   aString   );
+    ClientMessage clientMessage = ScheduledExecutorCancelFromPartitionCodec.encodeRequest(   aString ,   aString ,   aBoolean   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorIsDoneCodec.encodeResponse(   aBoolean   );
+    ClientMessage clientMessage = ScheduledExecutorCancelFromPartitionCodec.encodeResponse(   aBoolean   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 
 
 {
-    ClientMessage clientMessage = ScheduledExecutorGetResultCodec.encodeRequest(   aString   );
+    ClientMessage clientMessage = ScheduledExecutorCancelFromAddressCodec.encodeRequest(   aString ,   aString ,   anAddress ,   aBoolean   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorGetResultCodec.encodeResponse(   null   );
+    ClientMessage clientMessage = ScheduledExecutorCancelFromAddressCodec.encodeResponse(   aBoolean   );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 
 
 {
-    ClientMessage clientMessage = ScheduledExecutorDisposeCodec.encodeRequest(   aString   );
+    ClientMessage clientMessage = ScheduledExecutorIsCancelledFromPartitionCodec.encodeRequest(   aString ,   aString   );
      outputStream.writeInt(clientMessage.getFrameLength());
      outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
 {
-    ClientMessage clientMessage = ScheduledExecutorDisposeCodec.encodeResponse( );
+    ClientMessage clientMessage = ScheduledExecutorIsCancelledFromPartitionCodec.encodeResponse(   aBoolean   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = ScheduledExecutorIsCancelledFromAddressCodec.encodeRequest(   aString ,   aString ,   anAddress   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorIsCancelledFromAddressCodec.encodeResponse(   aBoolean   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = ScheduledExecutorIsDoneFromPartitionCodec.encodeRequest(   aString ,   aString   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorIsDoneFromPartitionCodec.encodeResponse(   aBoolean   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = ScheduledExecutorIsDoneFromAddressCodec.encodeRequest(   aString ,   aString ,   anAddress   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorIsDoneFromAddressCodec.encodeResponse(   aBoolean   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = ScheduledExecutorGetResultFromPartitionCodec.encodeRequest(   aString ,   aString   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorGetResultFromPartitionCodec.encodeResponse(   null   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = ScheduledExecutorGetResultFromAddressCodec.encodeRequest(   aString ,   aString ,   anAddress   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorGetResultFromAddressCodec.encodeResponse(   null   );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = ScheduledExecutorDisposeFromPartitionCodec.encodeRequest(   aString ,   aString   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorDisposeFromPartitionCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = ScheduledExecutorDisposeFromAddressCodec.encodeRequest(   aString ,   aString ,   anAddress   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = ScheduledExecutorDisposeFromAddressCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddMultiMapConfigCodec.encodeRequest(   aString ,   aString ,   null ,   aBoolean ,   anInt ,   anInt ,   aBoolean   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddMultiMapConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddRingbufferConfigCodec.encodeRequest(   aString ,   anInt ,   anInt ,   anInt ,   anInt ,   aString ,   null   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddRingbufferConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddCardinalityEstimatorConfigCodec.encodeRequest(   aString ,   anInt ,   anInt   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddCardinalityEstimatorConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddLockConfigCodec.encodeRequest(   aString ,   null   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddLockConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddListConfigCodec.encodeRequest(   aString ,   null ,   anInt ,   anInt ,   anInt ,   aBoolean   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddListConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddSetConfigCodec.encodeRequest(   aString ,   null ,   anInt ,   anInt ,   anInt ,   aBoolean   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddSetConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddReplicatedMapConfigCodec.encodeRequest(   aString ,   aString ,   aBoolean ,   aBoolean ,   aString ,   null   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddReplicatedMapConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddTopicConfigCodec.encodeRequest(   aString ,   aBoolean ,   aBoolean ,   aBoolean ,   null   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddTopicConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddExecutorConfigCodec.encodeRequest(   aString ,   anInt ,   anInt ,   aBoolean   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddExecutorConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddDurableExecutorConfigCodec.encodeRequest(   aString ,   anInt ,   anInt ,   anInt   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddDurableExecutorConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddScheduledExecutorConfigCodec.encodeRequest(   aString ,   anInt ,   anInt ,   anInt   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddScheduledExecutorConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddSemaphoreConfigCodec.encodeRequest(   aString ,   anInt ,   anInt ,   anInt   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddSemaphoreConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddQueueConfigCodec.encodeRequest(   aString ,   null ,   anInt ,   anInt ,   anInt ,   anInt ,   aBoolean ,   null ,   null   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddQueueConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddMapConfigCodec.encodeRequest(   aString ,   anInt ,   anInt ,   anInt ,   anInt ,   aString ,   aBoolean ,   aString ,   aString ,   aString ,   null ,   null ,   aBoolean ,   null ,   null ,   aString ,   anInt ,   null ,   null ,   null ,   null ,   null ,   null ,   null ,   null ,   null   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddMapConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddReliableTopicConfigCodec.encodeRequest(   aString ,   null ,   anInt ,   aBoolean ,   aString ,   null   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddReliableTopicConfigCodec.encodeResponse( );
+    outputStream.writeInt(clientMessage.getFrameLength());
+    outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+
+
+{
+    ClientMessage clientMessage = DynamicConfigAddCacheConfigCodec.encodeRequest(   aString ,   null ,   null ,   aBoolean ,   aBoolean ,   aBoolean ,   aBoolean ,   null ,   null ,   null ,   null ,   anInt ,   anInt ,   aString ,   null ,   null ,   aBoolean ,   null ,   null ,   null ,   null ,   null ,   null ,   null   );
+     outputStream.writeInt(clientMessage.getFrameLength());
+     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
+}
+{
+    ClientMessage clientMessage = DynamicConfigAddCacheConfigCodec.encodeResponse( );
     outputStream.writeInt(clientMessage.getFrameLength());
     outputStream.write(clientMessage.buffer().byteArray(), 0 , clientMessage.getFrameLength());
 }
@@ -4743,4 +4817,5 @@ public class BinaryCompatibilityNullFileGenerator {
 
     }
 }
+
 

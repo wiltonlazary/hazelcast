@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,40 +16,27 @@
 
 package com.hazelcast.internal.networking.spinning;
 
-import com.hazelcast.internal.networking.IOOutOfMemoryHandler;
-import com.hazelcast.internal.networking.SocketChannelWrapper;
-import com.hazelcast.internal.networking.SocketConnection;
+import com.hazelcast.internal.networking.Channel;
+import com.hazelcast.internal.networking.ChannelErrorHandler;
 import com.hazelcast.logging.ILogger;
-
-import java.io.EOFException;
 
 public abstract class AbstractHandler {
 
-    protected final SocketConnection connection;
+    protected final Channel channel;
     protected final ILogger logger;
-    protected final SocketChannelWrapper socketChannel;
-    private final IOOutOfMemoryHandler oomeHandler;
+    private final ChannelErrorHandler errorHandler;
 
-    public AbstractHandler(SocketConnection connection, ILogger logger, IOOutOfMemoryHandler oomeHandler) {
-        this.connection = connection;
-        this.oomeHandler = oomeHandler;
+    AbstractHandler(Channel channel, ILogger logger, ChannelErrorHandler errorHandler) {
+        this.channel = channel;
+        this.errorHandler = errorHandler;
         this.logger = logger;
-        this.socketChannel = connection.getSocketChannel();
     }
 
-    public SocketChannelWrapper getSocketChannel() {
-        return socketChannel;
+    public Channel getChannel() {
+        return channel;
     }
 
     public void onFailure(Throwable e) {
-        if (e instanceof OutOfMemoryError) {
-            oomeHandler.handle((OutOfMemoryError) e);
-        }
-
-        if (e instanceof EOFException) {
-            connection.close("Connection closed by the other side", e);
-        } else {
-            connection.close("Exception in " + getClass().getSimpleName(), e);
-        }
+        errorHandler.onError(channel, e);
     }
 }

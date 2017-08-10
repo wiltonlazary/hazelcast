@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ import com.hazelcast.map.MapInterceptor;
 import com.hazelcast.map.impl.event.MapEventPublisher;
 import com.hazelcast.map.impl.event.MapEventPublisherImpl;
 import com.hazelcast.map.impl.eviction.ExpirationManager;
+import com.hazelcast.map.impl.journal.MapEventJournal;
+import com.hazelcast.map.impl.journal.RingbufferMapEventJournalImpl;
 import com.hazelcast.map.impl.mapstore.MapDataStore;
 import com.hazelcast.map.impl.nearcache.MapNearCacheManager;
 import com.hazelcast.map.impl.operation.BasePutOperation;
@@ -39,6 +41,8 @@ import com.hazelcast.map.impl.query.AggregationResult;
 import com.hazelcast.map.impl.query.AggregationResultProcessor;
 import com.hazelcast.map.impl.query.CallerRunsAccumulationExecutor;
 import com.hazelcast.map.impl.query.CallerRunsPartitionScanExecutor;
+import com.hazelcast.map.impl.query.DefaultIndexProvider;
+import com.hazelcast.map.impl.query.IndexProvider;
 import com.hazelcast.map.impl.query.MapQueryEngine;
 import com.hazelcast.map.impl.query.MapQueryEngineImpl;
 import com.hazelcast.map.impl.query.ParallelAccumulationExecutor;
@@ -100,6 +104,7 @@ import static com.hazelcast.spi.properties.GroupProperty.QUERY_PREDICATE_PARALLE
  * Default implementation of map service context.
  */
 class MapServiceContextImpl implements MapServiceContext {
+
     protected static final long DESTROY_TIMEOUT_SECONDS = 30;
 
     protected final NodeEngine nodeEngine;
@@ -131,11 +136,13 @@ class MapServiceContextImpl implements MapServiceContext {
     protected final ContextMutexFactory contextMutexFactory = new ContextMutexFactory();
     protected final PartitioningStrategyFactory partitioningStrategyFactory;
     protected final QueryCacheContext queryCacheContext;
-    protected MapEventPublisher mapEventPublisher;
+    protected final MapEventJournal eventJournal;
+    protected final MapEventPublisher mapEventPublisher;
+    protected final EventService eventService;
+    protected final MapOperationProviders operationProviders;
+    protected final ResultProcessorRegistry resultProcessorRegistry;
     protected MapService mapService;
-    protected EventService eventService;
-    protected MapOperationProviders operationProviders;
-    protected ResultProcessorRegistry resultProcessorRegistry;
+    protected IndexProvider indexProvider;
 
     MapServiceContextImpl(NodeEngine nodeEngine) {
         this.nodeEngine = nodeEngine;
@@ -148,6 +155,7 @@ class MapServiceContextImpl implements MapServiceContext {
         this.localMapStatsProvider = createLocalMapStatsProvider();
         this.mergePolicyProvider = new MergePolicyProvider(nodeEngine);
         this.mapEventPublisher = createMapEventPublisherSupport();
+        this.eventJournal = createEventJournal();
         this.queryOptimizer = newOptimizer(nodeEngine.getProperties());
         this.resultProcessorRegistry = createResultProcessorRegistry(nodeEngine.getSerializationService());
         this.partitionScanRunner = createPartitionScanRunner();
@@ -155,6 +163,7 @@ class MapServiceContextImpl implements MapServiceContext {
         this.mapQueryRunner = createMapQueryRunner(nodeEngine, queryOptimizer, resultProcessorRegistry, partitionScanRunner);
         this.eventService = nodeEngine.getEventService();
         this.operationProviders = createOperationProviders();
+        this.indexProvider = new DefaultIndexProvider();
         this.partitioningStrategyFactory = new PartitioningStrategyFactory(nodeEngine.getConfigClassLoader());
     }
 
@@ -170,6 +179,10 @@ class MapServiceContextImpl implements MapServiceContext {
     // this method is overridden in another context.
     MapEventPublisherImpl createMapEventPublisherSupport() {
         return new MapEventPublisherImpl(this);
+    }
+
+    private MapEventJournal createEventJournal() {
+        return new RingbufferMapEventJournalImpl(getNodeEngine());
     }
 
     private LocalMapStatsProvider createLocalMapStatsProvider() {
@@ -261,8 +274,10 @@ class MapServiceContextImpl implements MapServiceContext {
             Iterator<RecordStore> iter = container.getMaps().values().iterator();
             while (iter.hasNext()) {
                 RecordStore recordStore = iter.next();
-                if (backupCount > recordStore.getMapContainer().getTotalBackupCount()) {
+                final MapContainer mapContainer = recordStore.getMapContainer();
+                if (backupCount > mapContainer.getTotalBackupCount()) {
                     recordStore.clearPartition(false);
+                    eventJournal.destroy(mapContainer.getObjectNamespace(), partitionId);
                     iter.remove();
                 }
             }
@@ -275,6 +290,7 @@ class MapServiceContextImpl implements MapServiceContext {
         if (container != null) {
             for (RecordStore mapPartition : container.getMaps().values()) {
                 mapPartition.clearPartition(false);
+                eventJournal.destroy(mapPartition.getMapContainer().getObjectNamespace(), partitionId);
             }
             container.getMaps().clear();
         }
@@ -329,15 +345,16 @@ class MapServiceContextImpl implements MapServiceContext {
 
     @Override
     public void destroyMap(String mapName) {
+        // on LiteMembers we don't have a MapContainer, but we may have a Near Cache and listeners
+        mapNearCacheManager.destroyNearCache(mapName);
+        nodeEngine.getEventService().deregisterAllListeners(SERVICE_NAME, mapName);
+
         MapContainer mapContainer = mapContainers.get(mapName);
         if (mapContainer == null) {
             return;
         }
         mapContainer.getMapStoreContext().stop();
-        mapNearCacheManager.destroyNearCache(mapName);
-        nodeEngine.getEventService().deregisterAllListeners(SERVICE_NAME, mapName);
         localMapStatsProvider.destroyLocalMapStatsImpl(mapContainer.getName());
-
         destroyPartitionsAndMapContainer(mapContainer);
     }
 
@@ -398,9 +415,6 @@ class MapServiceContextImpl implements MapServiceContext {
     public void reloadOwnedPartitions() {
         IPartitionService partitionService = nodeEngine.getPartitionService();
         Collection<Integer> partitions = partitionService.getMemberPartitions(nodeEngine.getThisAddress());
-        if (partitions == null) {
-            partitions = Collections.emptySet();
-        }
         ownedPartitions.set(Collections.unmodifiableSet(new LinkedHashSet<Integer>(partitions)));
     }
 
@@ -427,6 +441,11 @@ class MapServiceContextImpl implements MapServiceContext {
     @Override
     public MapEventPublisher getMapEventPublisher() {
         return mapEventPublisher;
+    }
+
+    @Override
+    public MapEventJournal getEventJournal() {
+        return eventJournal;
     }
 
     @Override
@@ -648,6 +667,11 @@ class MapServiceContextImpl implements MapServiceContext {
     }
 
     @Override
+    public IndexProvider getIndexProvider(MapConfig mapConfig) {
+        return indexProvider;
+    }
+
+    @Override
     public Extractors getExtractors(String mapName) {
         MapContainer mapContainer = getMapContainer(mapName);
         return mapContainer.getExtractors();
@@ -655,13 +679,13 @@ class MapServiceContextImpl implements MapServiceContext {
 
     @Override
     public void incrementOperationStats(long startTime, LocalMapStatsImpl localMapStats, String mapName, Operation operation) {
-        final long duration = System.currentTimeMillis() - startTime;
+        final long durationNanos = System.nanoTime() - startTime;
         if (operation instanceof BasePutOperation) {
-            localMapStats.incrementPuts(duration);
+            localMapStats.incrementPutLatencyNanos(durationNanos);
         } else if (operation instanceof BaseRemoveOperation) {
-            localMapStats.incrementRemoves(duration);
+            localMapStats.incrementRemoveLatencyNanos(durationNanos);
         } else if (operation instanceof GetOperation) {
-            localMapStats.incrementGets(duration);
+            localMapStats.incrementGetLatencyNanos(durationNanos);
         }
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@
 package com.hazelcast.internal.cluster.impl;
 
 import com.hazelcast.cluster.ClusterState;
-import com.hazelcast.internal.cluster.impl.operations.ChangeClusterStateOperation;
-import com.hazelcast.internal.cluster.impl.operations.LockClusterStateOperation;
-import com.hazelcast.internal.cluster.impl.operations.RollbackClusterStateOperation;
+import com.hazelcast.internal.cluster.impl.operations.CommitClusterStateOp;
+import com.hazelcast.internal.cluster.impl.operations.LockClusterStateOp;
+import com.hazelcast.internal.cluster.impl.operations.RollbackClusterStateOp;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -72,17 +72,17 @@ public class ClusterStateTransactionLogRecord implements TargetAwareTransactionL
 
     @Override
     public Operation newPrepareOperation() {
-        return new LockClusterStateOperation(stateChange, initiator, txnId, leaseTime, partitionStateVersion);
+        return new LockClusterStateOp(stateChange, initiator, txnId, leaseTime, partitionStateVersion);
     }
 
     @Override
     public Operation newCommitOperation() {
-        return new ChangeClusterStateOperation(stateChange, initiator, txnId, isTransient);
+        return new CommitClusterStateOp(stateChange, initiator, txnId, isTransient);
     }
 
     @Override
     public Operation newRollbackOperation() {
-        return new RollbackClusterStateOperation(initiator, txnId);
+        return new RollbackClusterStateOp(initiator, txnId);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ public class LocalLockCleanupOperation extends UnlockOperation implements Notifi
             ILogger logger = getLogger();
             if (logger.isFinestEnabled()) {
                 logger.finest(
-                        "Unlocking lock owned by uuid: " + uuid + ", thread-id: " + lock.getThreadId() + ", count: "
+                        "Unlocking lock owned by UUID: " + uuid + ", thread ID: " + lock.getThreadId() + ", count: "
                                 + lock.getLockCount());
             }
             response = lockStore.forceUnlock(key);

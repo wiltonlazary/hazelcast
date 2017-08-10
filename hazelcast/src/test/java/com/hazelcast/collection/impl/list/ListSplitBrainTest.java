@@ -1,162 +1,85 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.collection.impl.list;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.config.JoinConfig;
-import com.hazelcast.config.NetworkConfig;
-import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IList;
-import com.hazelcast.core.LifecycleEvent;
-import com.hazelcast.core.LifecycleListener;
-import com.hazelcast.core.MemberAttributeEvent;
-import com.hazelcast.core.MembershipEvent;
-import com.hazelcast.core.MembershipListener;
-import com.hazelcast.instance.HazelcastInstanceFactory;
-import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.NightlyTest;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import com.hazelcast.test.SplitBrainTestSupport;
+import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.QuickTest;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.IOException;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastSerialClassRunner.class)
-@Category(NightlyTest.class)
-public class ListSplitBrainTest extends HazelcastTestSupport {
+@Category({QuickTest.class, ParallelTest.class})
+public class ListSplitBrainTest extends SplitBrainTestSupport {
 
-    @Before
-    @After
-    public void killAllHazelcastInstances() throws IOException {
-        HazelcastInstanceFactory.shutdownAll();
+    private String name = randomString();
+    private int initialCount = 100;
+    private int finalCount = initialCount + 50;
+
+    @Override
+    protected int[] brains() {
+        // 2nd merges to the 1st
+        return new int[]{2, 1};
     }
 
-    @Test
-    public void testListSplitBrain_Multicast() throws InterruptedException {
-        testListSplitBrain(true);
-    }
+    @Override
+    protected void onBeforeSplitBrainCreated(HazelcastInstance[] instances) throws Exception {
+        IList<Object> list = instances[0].getList(name);
 
-    @Test
-    public void testListSplitBrain_TcpIp() throws InterruptedException {
-        testListSplitBrain(false);
-    }
-
-    private void testListSplitBrain(boolean multicast) throws InterruptedException {
-        String name = randomString();
-        Config config = getConfig(multicast);
-        HazelcastInstance h1 = Hazelcast.newHazelcastInstance(config);
-        HazelcastInstance h2 = Hazelcast.newHazelcastInstance(config);
-        HazelcastInstance h3 = Hazelcast.newHazelcastInstance(config);
-        IList<Object> list = h1.getList(name);
-
-        TestMemberShipListener memberShipListener = new TestMemberShipListener(2);
-        h3.getCluster().addMembershipListener(memberShipListener);
-        TestLifeCycleListener lifeCycleListener = new TestLifeCycleListener(1);
-        h3.getLifecycleService().addLifecycleListener(lifeCycleListener);
-
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < initialCount; i++) {
             list.add("item" + i);
         }
 
-        assertSizeEventually(100, list);
-
-        waitAllForSafeState();
-
-        closeConnectionBetween(h1, h3);
-        closeConnectionBetween(h2, h3);
-
-        assertTrue(memberShipListener.splitLatch.await(10, TimeUnit.SECONDS));
-        assertEquals(2, h1.getCluster().getMembers().size());
-        assertEquals(2, h2.getCluster().getMembers().size());
-        assertEquals(1, h3.getCluster().getMembers().size());
-
-        for (int i = 100; i < 200; i++) {
-            list.add("item" + i);
-        }
-
-        assertSizeEventually(200, list);
-
-        IList<Object> list3 = h3.getList(name);
-        for (int i = 0; i < 50; i++) {
-            list3.add("lostListItem" + i);
-        }
-
-        assertTrue(lifeCycleListener.mergeLatch.await(60, TimeUnit.SECONDS));
-        assertEquals(3, h1.getCluster().getMembers().size());
-        assertEquals(3, h2.getCluster().getMembers().size());
-        assertEquals(3, h3.getCluster().getMembers().size());
-
-        IList<Object> testList = h1.getList(name);
-        assertFalse(testList.contains("lostListItem0"));
-        assertFalse(testList.contains("lostListItem49"));
-        assertTrue(testList.contains("item0"));
-        assertTrue(testList.contains("item199"));
-        assertTrue(testList.contains("item121"));
-        assertTrue(testList.contains("item45"));
+        waitAllForSafeState(instances);
     }
 
+    @Override
+    protected void onAfterSplitBrainCreated(HazelcastInstance[] firstBrain, HazelcastInstance[] secondBrain)
+            throws Exception {
 
-    private Config getConfig(boolean multicast) {
-        Config config = new Config();
-        config.setProperty(GroupProperty.MERGE_FIRST_RUN_DELAY_SECONDS.getName(), "30");
-        config.setProperty(GroupProperty.MERGE_NEXT_RUN_DELAY_SECONDS.getName(), "3");
-
-        NetworkConfig networkConfig = config.getNetworkConfig();
-        JoinConfig join = networkConfig.getJoin();
-        join.getMulticastConfig().setEnabled(multicast);
-        join.getTcpIpConfig().setEnabled(!multicast);
-        join.getTcpIpConfig().addMember("127.0.0.1");
-
-        return config;
-    }
-
-    private class TestLifeCycleListener implements LifecycleListener {
-
-        CountDownLatch mergeLatch;
-
-        TestLifeCycleListener(int latch) {
-            mergeLatch = new CountDownLatch(latch);
+        IList<Object> list1 = firstBrain[0].getList(name);
+        for (int i = initialCount; i < finalCount; i++) {
+            list1.add("item" + i);
         }
 
-        @Override
-        public void stateChanged(LifecycleEvent event) {
-            if (event.getState() == LifecycleEvent.LifecycleState.MERGED) {
-                mergeLatch.countDown();
-            }
+        IList<Object> list2 = secondBrain[0].getList(name);
+        for (int i = initialCount; i < finalCount + 10; i++) {
+            list2.add("lost-item" + i);
         }
     }
 
-    private class TestMemberShipListener implements MembershipListener {
-
-        final CountDownLatch splitLatch;
-
-        TestMemberShipListener(int latch) {
-            splitLatch = new CountDownLatch(latch);
+    @Override
+    protected void onAfterSplitBrainHealed(HazelcastInstance[] instances) throws Exception {
+        for (HazelcastInstance instance : instances) {
+            IList<Object> list = instance.getList(name);
+            assertListContents(list);
         }
+    }
 
-        @Override
-        public void memberAdded(MembershipEvent membershipEvent) {
+    private void assertListContents(IList<Object> list) {
+        assertEquals(finalCount, list.size());
 
-        }
-
-        @Override
-        public void memberRemoved(MembershipEvent membershipEvent) {
-            splitLatch.countDown();
-        }
-
-        @Override
-        public void memberAttributeChanged(MemberAttributeEvent memberAttributeEvent) {
-
+        for (int i = 0; i < finalCount; i++) {
+            assertEquals("item" + i, list.get(i));
         }
     }
 }
-

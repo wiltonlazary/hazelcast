@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -104,7 +104,7 @@ public interface ObjectDataInput extends DataInput, VersionAware {
 
     /**
      * @param <T> type of the object in array to be read
-     * @param aClass The type of the class to use when reading
+     * @param aClass the type of the class to use when reading
      * @return object array read
      * @throws IOException if it reaches end of file before finish reading
      */

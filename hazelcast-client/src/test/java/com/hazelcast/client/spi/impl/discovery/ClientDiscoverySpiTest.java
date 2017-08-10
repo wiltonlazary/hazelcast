@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ import com.hazelcast.spi.discovery.integration.DiscoveryService;
 import com.hazelcast.spi.discovery.integration.DiscoveryServiceProvider;
 import com.hazelcast.spi.discovery.integration.DiscoveryServiceSettings;
 import com.hazelcast.spi.partitiongroup.PartitionGroupStrategy;
-import com.hazelcast.test.AssertTask;
+import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
@@ -77,6 +77,10 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
@@ -89,7 +93,7 @@ public class ClientDiscoverySpiTest extends HazelcastTestSupport {
         String xmlFileName = "hazelcast-client-discovery-spi-test.xml";
 
         SchemaFactory factory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
-        URL schemaResource = ClientDiscoverySpiTest.class.getClassLoader().getResource("hazelcast-client-config-3.6.xsd");
+        URL schemaResource = ClientDiscoverySpiTest.class.getClassLoader().getResource("hazelcast-client-config-3.9.xsd");
         Schema schema = factory.newSchema(schemaResource);
 
         InputStream xmlResource = ClientDiscoverySpiTest.class.getClassLoader().getResourceAsStream(xmlFileName);
@@ -165,17 +169,7 @@ public class ClientDiscoverySpiTest extends HazelcastTestSupport {
             assertNotNull(hazelcastInstance3);
             assertNotNull(client);
 
-            assertTrueEventually(new AssertTask() {
-                @Override
-                public void run()
-                        throws Exception {
-
-                    assertEquals(3, hazelcastInstance1.getCluster().getMembers().size());
-                    assertEquals(3, hazelcastInstance2.getCluster().getMembers().size());
-                    assertEquals(3, hazelcastInstance3.getCluster().getMembers().size());
-                    assertEquals(3, client.getCluster().getMembers().size());
-                }
-            });
+            assertClusterSizeEventually(3, hazelcastInstance1, hazelcastInstance2, hazelcastInstance3, client);
         } finally {
             HazelcastClient.shutdownAll();
             Hazelcast.shutdownAll();
@@ -304,6 +298,80 @@ public class ClientDiscoverySpiTest extends HazelcastTestSupport {
         assertEquals(publicAddress, translator.translate(privateAddress));
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void test_enabled_whenDiscoveryConfigIsNull() {
+        ClientConfig config = new ClientConfig();
+        config.setProperty(GroupProperty.DISCOVERY_SPI_ENABLED.getName(), "true");
+
+        ClientNetworkConfig networkConfig = config.getNetworkConfig();
+        networkConfig.setDiscoveryConfig(null);
+    }
+
+    @Test
+    public void test_enabled_whenDiscoveryConfigIsEmpty() {
+        ClientConfig config = new ClientConfig();
+        config.setProperty(GroupProperty.DISCOVERY_SPI_ENABLED.getName(), "true");
+
+        ClientNetworkConfig networkConfig = config.getNetworkConfig();
+        networkConfig.setConnectionAttemptLimit(1);
+        networkConfig.setConnectionAttemptPeriod(1);
+
+        try {
+            HazelcastClient.newHazelcastClient(config);
+        } catch (IllegalStateException expected) {
+            // no server available
+        }
+    }
+
+    @Test
+    public void test_CustomDiscoveryService_whenDiscoveredNodes_isNull() {
+        ClientConfig config = new ClientConfig();
+        config.setProperty(GroupProperty.DISCOVERY_SPI_ENABLED.getName(), "true");
+
+        final DiscoveryService discoveryService = mock(DiscoveryService.class);
+        DiscoveryServiceProvider discoveryServiceProvider = new DiscoveryServiceProvider() {
+            public DiscoveryService newDiscoveryService(DiscoveryServiceSettings arg0) {
+                return discoveryService;
+            }
+        };
+        ClientNetworkConfig networkConfig = config.getNetworkConfig();
+        networkConfig.setConnectionAttemptLimit(1);
+        networkConfig.setConnectionAttemptPeriod(1);
+        networkConfig.getDiscoveryConfig().setDiscoveryServiceProvider(discoveryServiceProvider);
+
+        try {
+            HazelcastClient.newHazelcastClient(config);
+            fail("Client cannot start, discovery nodes is null!");
+        } catch (NullPointerException expected) {
+            // discovered nodes is null
+        }
+        verify(discoveryService).discoverNodes();
+    }
+
+    @Test
+    public void test_CustomDiscoveryService_whenDiscoveredNodes_isEmpty() {
+        ClientConfig config = new ClientConfig();
+        config.setProperty(GroupProperty.DISCOVERY_SPI_ENABLED.getName(), "true");
+
+        final DiscoveryService discoveryService = mock(DiscoveryService.class);
+        DiscoveryServiceProvider discoveryServiceProvider = new DiscoveryServiceProvider() {
+            public DiscoveryService newDiscoveryService(DiscoveryServiceSettings arg0) {
+                when(discoveryService.discoverNodes()).thenReturn(Collections.<DiscoveryNode>emptyList());
+                return discoveryService;
+            }
+        };
+        ClientNetworkConfig networkConfig = config.getNetworkConfig();
+        networkConfig.setConnectionAttemptLimit(1);
+        networkConfig.setConnectionAttemptPeriod(1);
+        networkConfig.getDiscoveryConfig().setDiscoveryServiceProvider(discoveryServiceProvider);
+
+        try {
+            HazelcastClient.newHazelcastClient(config);
+        } catch (IllegalStateException expected) {
+            // no server available
+        }
+        verify(discoveryService).discoverNodes();
+    }
 
     private DiscoveryServiceSettings buildDiscoveryServiceSettings(DiscoveryConfig config) {
         return new DiscoveryServiceSettings().setConfigClassLoader(ClientDiscoverySpiTest.class.getClassLoader())

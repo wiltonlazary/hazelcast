@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,18 @@ public class PermissionConfig {
         this.type = type;
         this.name = name;
         this.principal = principal;
+    }
+
+    public PermissionConfig(PermissionConfig permissionConfig) {
+        this.type = permissionConfig.type;
+        this.name = permissionConfig.getName();
+        this.principal = permissionConfig.getPrincipal();
+        for (String endpoint : permissionConfig.getEndpoints()) {
+            this.getEndpoints().add(endpoint);
+        }
+        for (String action : permissionConfig.getActions()) {
+            this.getActions().add(action);
+        }
     }
 
     /**
@@ -106,11 +118,22 @@ public class PermissionConfig {
          * Scheduled executor service
          */
         SCHEDULED_EXECUTOR("scheduled-executor-permission"),
-
+        /**
+         * JCache/ICache
+         */
+        CACHE("cache-permission"),
+        /**
+         * User code deployment
+         */
+        USER_CODE_DEPLOYMENT("user-code-deployment-permission"),
         /**
          * All
          */
-        ALL("all-permissions");
+        ALL("all-permissions"),
+        /**
+         * Configuration permission
+         */
+        CONFIG("config-permission");
 
         private final String nodeName;
 

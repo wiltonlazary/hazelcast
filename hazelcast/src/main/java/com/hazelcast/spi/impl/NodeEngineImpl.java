@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,29 +19,30 @@ package com.hazelcast.spi.impl;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastException;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.Member;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.cluster.ClusterService;
-import com.hazelcast.internal.distributedclassloading.DistributedClassloadingService;
-import com.hazelcast.internal.distributedclassloading.DistributedClassLoader;
-import com.hazelcast.internal.management.ManagementCenterService;
-import com.hazelcast.internal.metrics.MetricsRegistry;
-import com.hazelcast.internal.metrics.ProbeLevel;
-import com.hazelcast.internal.metrics.impl.MetricsRegistryImpl;
 import com.hazelcast.internal.diagnostics.BuildInfoPlugin;
 import com.hazelcast.internal.diagnostics.ConfigPropertiesPlugin;
 import com.hazelcast.internal.diagnostics.Diagnostics;
 import com.hazelcast.internal.diagnostics.InvocationPlugin;
 import com.hazelcast.internal.diagnostics.MemberHazelcastInstanceInfoPlugin;
+import com.hazelcast.internal.diagnostics.MemberHeartbeatPlugin;
 import com.hazelcast.internal.diagnostics.MetricsPlugin;
+import com.hazelcast.internal.diagnostics.NetworkingImbalancePlugin;
+import com.hazelcast.internal.diagnostics.OperationHeartbeatPlugin;
 import com.hazelcast.internal.diagnostics.OverloadedConnectionsPlugin;
 import com.hazelcast.internal.diagnostics.PendingInvocationsPlugin;
 import com.hazelcast.internal.diagnostics.SlowOperationPlugin;
 import com.hazelcast.internal.diagnostics.StoreLatencyPlugin;
 import com.hazelcast.internal.diagnostics.SystemLogPlugin;
 import com.hazelcast.internal.diagnostics.SystemPropertiesPlugin;
+import com.hazelcast.internal.dynamicconfig.ClusterWideConfigurationService;
+import com.hazelcast.internal.dynamicconfig.DynamicConfigListener;
+import com.hazelcast.internal.management.ManagementCenterService;
+import com.hazelcast.internal.metrics.MetricsRegistry;
+import com.hazelcast.internal.metrics.ProbeLevel;
+import com.hazelcast.internal.metrics.impl.MetricsRegistryImpl;
 import com.hazelcast.internal.metrics.metricsets.ClassLoadingMetricSet;
 import com.hazelcast.internal.metrics.metricsets.FileMetricSet;
 import com.hazelcast.internal.metrics.metricsets.GarbageCollectionMetricSet;
@@ -50,6 +51,8 @@ import com.hazelcast.internal.metrics.metricsets.RuntimeMetricSet;
 import com.hazelcast.internal.metrics.metricsets.ThreadMetricSet;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.internal.partition.MigrationInfo;
+import com.hazelcast.internal.usercodedeployment.UserCodeDeploymentClassLoader;
+import com.hazelcast.internal.usercodedeployment.UserCodeDeploymentService;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.LoggingService;
 import com.hazelcast.logging.LoggingServiceImpl;
@@ -59,7 +62,9 @@ import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.quorum.impl.QuorumServiceImpl;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.PartitionAwareOperation;
 import com.hazelcast.spi.PostJoinAwareService;
+import com.hazelcast.spi.PreJoinAwareService;
 import com.hazelcast.spi.SharedService;
 import com.hazelcast.spi.exception.RetryableHazelcastException;
 import com.hazelcast.spi.exception.ServiceNotFoundException;
@@ -71,8 +76,6 @@ import com.hazelcast.spi.impl.operationparker.OperationParker;
 import com.hazelcast.spi.impl.operationparker.impl.OperationParkerImpl;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
 import com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl;
-import com.hazelcast.spi.impl.packetdispatcher.PacketDispatcher;
-import com.hazelcast.spi.impl.packetdispatcher.impl.PacketDispatcherImpl;
 import com.hazelcast.spi.impl.proxyservice.InternalProxyService;
 import com.hazelcast.spi.impl.proxyservice.impl.ProxyServiceImpl;
 import com.hazelcast.spi.impl.servicemanager.ServiceInfo;
@@ -115,13 +118,14 @@ public class NodeEngineImpl implements NodeEngine {
     private final TransactionManagerServiceImpl transactionManagerService;
     private final ProxyServiceImpl proxyService;
     private final WanReplicationService wanReplicationService;
-    private final PacketDispatcher packetDispatcher;
+    private final PacketHandler packetDispatcher;
     private final QuorumServiceImpl quorumService;
     private final MetricsRegistryImpl metricsRegistry;
     private final SerializationService serializationService;
     private final LoggingServiceImpl loggingService;
     private final Diagnostics diagnostics;
-    private final DistributedClassloadingService distributedClassloadingService;
+    private final UserCodeDeploymentService userCodeDeploymentService;
+    private final ClusterWideConfigurationService configurationService;
 
     @SuppressWarnings("checkstyle:executablestatementcount")
     public NodeEngineImpl(final Node node) {
@@ -136,14 +140,16 @@ public class NodeEngineImpl implements NodeEngine {
         this.operationService = new OperationServiceImpl(this);
         this.eventService = new EventServiceImpl(this);
         this.operationParker = new OperationParkerImpl(this);
-        this.distributedClassloadingService = new DistributedClassloadingService();
+        this.userCodeDeploymentService = new UserCodeDeploymentService();
+        DynamicConfigListener dynamicConfigListener = node.getNodeExtension().createDynamicConfigListener();
+        this.configurationService = new ClusterWideConfigurationService(this, dynamicConfigListener);
         ClassLoader configClassLoader = node.getConfigClassLoader();
-        if (configClassLoader instanceof DistributedClassLoader) {
-            ((DistributedClassLoader) configClassLoader).setDistributedClassloadingService(distributedClassloadingService);
+        if (configClassLoader instanceof UserCodeDeploymentClassLoader) {
+            ((UserCodeDeploymentClassLoader) configClassLoader).setUserCodeDeploymentService(userCodeDeploymentService);
         }
         this.transactionManagerService = new TransactionManagerServiceImpl(this);
         this.wanReplicationService = node.getNodeExtension().createService(WanReplicationService.class);
-        this.packetDispatcher = new PacketDispatcherImpl(
+        this.packetDispatcher = new PacketDispatcher(
                 logger,
                 operationService.getOperationExecutor(),
                 operationService.getAsyncInboundResponseHandler(),
@@ -156,7 +162,8 @@ public class NodeEngineImpl implements NodeEngine {
 
         serviceManager.registerService(InternalOperationService.SERVICE_NAME, operationService);
         serviceManager.registerService(OperationParker.SERVICE_NAME, operationParker);
-        serviceManager.registerService(DistributedClassloadingService.SERVICE_NAME, distributedClassloadingService);
+        serviceManager.registerService(UserCodeDeploymentService.SERVICE_NAME, userCodeDeploymentService);
+        serviceManager.registerService(ClusterWideConfigurationService.SERVICE_NAME, configurationService);
     }
 
     private PacketHandler newJetPacketHandler() {
@@ -181,19 +188,18 @@ public class NodeEngineImpl implements NodeEngine {
 
     private MetricsRegistryImpl newMetricRegistry(Node node) {
         ProbeLevel probeLevel = node.getProperties().getEnum(METRICS_LEVEL, ProbeLevel.class);
-        return new MetricsRegistryImpl(node.getLogger(MetricsRegistryImpl.class), probeLevel);
+        return new MetricsRegistryImpl(getHazelcastInstance().getName(), node.getLogger(MetricsRegistry.class), probeLevel);
     }
 
     private Diagnostics newDiagnostics() {
-        Member localMember = node.getLocalMember();
-        Address address = localMember.getAddress();
+        Address address = node.getThisAddress();
         String addressString = address.getHost().replace(":", "_") + "_" + address.getPort();
         String name = "diagnostics-" + addressString + "-" + currentTimeMillis();
 
         return new Diagnostics(
                 name,
                 loggingService.getLogger(Diagnostics.class),
-                node.getHazelcastThreadGroup(),
+                getHazelcastInstance().getName(),
                 node.getProperties());
     }
 
@@ -210,15 +216,11 @@ public class NodeEngineImpl implements NodeEngine {
         return loggingService;
     }
 
-    public HazelcastThreadGroup getHazelcastThreadGroup() {
-        return node.getHazelcastThreadGroup();
-    }
-
     public MetricsRegistry getMetricsRegistry() {
         return metricsRegistry;
     }
 
-    public PacketDispatcher getPacketDispatcher() {
+    public PacketHandler getPacketDispatcher() {
         return packetDispatcher;
     }
 
@@ -252,10 +254,17 @@ public class NodeEngineImpl implements NodeEngine {
         diagnostics.register(new MemberHazelcastInstanceInfoPlugin(this));
         diagnostics.register(new SystemLogPlugin(this));
         diagnostics.register(new StoreLatencyPlugin(this));
+        diagnostics.register(new MemberHeartbeatPlugin(this));
+        diagnostics.register(new NetworkingImbalancePlugin(this));
+        diagnostics.register(new OperationHeartbeatPlugin(this));
     }
 
     public Diagnostics getDiagnostics() {
         return diagnostics;
+    }
+
+    public ClusterWideConfigurationService getConfigurationService() {
+        return configurationService;
     }
 
     public ServiceManager getServiceManager() {
@@ -447,25 +456,26 @@ public class NodeEngineImpl implements NodeEngine {
     }
 
     /**
-     * Post join operations must be lock free; means no locks at all;
-     * no partition locks, no key-based locks, no service level locks!
-     * <p/>
-     * Post join operations should return response, at least a null response.
-     * <p/>
+     * Collects all post-join operations from {@link PostJoinAwareService}s.
+     * <p>
+     * Post join operations should return response, at least a {@code null} response.
+     * <p>
+     * <b>NOTE</b>: Post join operations must be lock free, meaning no locks at all:
+     * no partition locks, no key-based locks, no service level locks, no database interaction!
+     * The {@link Operation#getPartitionId()} method should return a negative value.
+     * This means that the operations should not implement {@link PartitionAwareOperation}.
+     *
+     * @return the operations to be executed at the end of a finalized join
      */
     public Operation[] getPostJoinOperations() {
         final Collection<Operation> postJoinOps = new LinkedList<Operation>();
-        Operation eventPostJoinOp = eventService.getPostJoinOperation();
-        if (eventPostJoinOp != null) {
-            postJoinOps.add(eventPostJoinOp);
-        }
         Collection<PostJoinAwareService> services = getServices(PostJoinAwareService.class);
         for (PostJoinAwareService service : services) {
-            final Operation postJoinOperation = service.getPostJoinOperation();
+            Operation postJoinOperation = service.getPostJoinOperation();
             if (postJoinOperation != null) {
                 if (postJoinOperation.getPartitionId() >= 0) {
                     logger.severe(
-                            "Post-join operations cannot implement PartitionAwareOperation! Service: "
+                            "Post-join operations should not have partition ID set! Service: "
                                     + service + ", Operation: "
                                     + postJoinOperation);
                     continue;
@@ -474,6 +484,25 @@ public class NodeEngineImpl implements NodeEngine {
             }
         }
         return postJoinOps.isEmpty() ? null : postJoinOps.toArray(new Operation[postJoinOps.size()]);
+    }
+
+    public Operation[] getPreJoinOperations() {
+        final Collection<Operation> preJoinOps = new LinkedList<Operation>();
+        Collection<PreJoinAwareService> services = getServices(PreJoinAwareService.class);
+        for (PreJoinAwareService service : services) {
+            final Operation preJoinOperation = service.getPreJoinOperation();
+            if (preJoinOperation != null) {
+                if (preJoinOperation.getPartitionId() >= 0) {
+                    logger.severe(
+                            "Pre-join operations operations should not have partition ID set! Service: "
+                                    + service + ", Operation: "
+                                    + preJoinOperation);
+                    continue;
+                }
+                preJoinOps.add(preJoinOperation);
+            }
+        }
+        return preJoinOps.isEmpty() ? null : preJoinOps.toArray(new Operation[preJoinOps.size()]);
     }
 
     public void reset() {

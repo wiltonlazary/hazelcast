@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -97,7 +97,7 @@ public interface ClientClusterService {
 
     /**
      * @param listener The listener to be registered.
-     * @return The registration id.
+     * @return The registration ID
      */
     String addMembershipListener(MembershipListener listener);
 
@@ -107,11 +107,4 @@ public interface ClientClusterService {
      */
     boolean removeMembershipListener(String registrationId);
 
-    /**
-     * The owner connection is opened to owner member of the client in the cluster.
-     * If the owner member dies, other members of the cluster assumes this client is dead.
-     *
-     * @return The address of the owner connection.
-     */
-    Address getOwnerConnectionAddress();
 }

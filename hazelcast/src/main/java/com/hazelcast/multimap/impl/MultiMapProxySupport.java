@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import com.hazelcast.multimap.impl.operations.RemoveAllOperation;
 import com.hazelcast.multimap.impl.operations.RemoveOperation;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.AbstractDistributedObject;
-import com.hazelcast.spi.DefaultObjectNamespace;
+import com.hazelcast.spi.DistributedObjectNamespace;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.util.ExceptionUtil;
@@ -52,7 +52,7 @@ public abstract class MultiMapProxySupport extends AbstractDistributedObject<Mul
         this.config = nodeEngine.getConfig().findMultiMapConfig(name);
         this.name = name;
 
-        lockSupport = new LockProxySupport(new DefaultObjectNamespace(MultiMapService.SERVICE_NAME, name),
+        lockSupport = new LockProxySupport(new DistributedObjectNamespace(MultiMapService.SERVICE_NAME, name),
                 LockServiceImpl.getMaxLeaseTimeInMillis(nodeEngine.getProperties()));
     }
 
@@ -246,17 +246,17 @@ public abstract class MultiMapProxySupport extends AbstractDistributedObject<Mul
             Future f;
             Object o;
             if (config.isStatisticsEnabled()) {
-                long time = System.currentTimeMillis();
+                long startTimeNanos = System.nanoTime();
                 f = nodeEngine.getOperationService()
                         .invokeOnPartition(MultiMapService.SERVICE_NAME, operation, partitionId);
                 o = f.get();
                 if (operation instanceof PutOperation) {
                     //TODO @ali should we remove statics from operations ?
-                    getService().getLocalMultiMapStatsImpl(name).incrementPuts(System.currentTimeMillis() - time);
+                    getService().getLocalMultiMapStatsImpl(name).incrementPutLatencyNanos(System.nanoTime() - startTimeNanos);
                 } else if (operation instanceof RemoveOperation || operation instanceof RemoveAllOperation) {
-                    getService().getLocalMultiMapStatsImpl(name).incrementRemoves(System.currentTimeMillis() - time);
+                    getService().getLocalMultiMapStatsImpl(name).incrementRemoveLatencyNanos(System.nanoTime() - startTimeNanos);
                 } else if (operation instanceof GetAllOperation) {
-                    getService().getLocalMultiMapStatsImpl(name).incrementGets(System.currentTimeMillis() - time);
+                    getService().getLocalMultiMapStatsImpl(name).incrementGetLatencyNanos(System.nanoTime() - startTimeNanos);
                 }
             } else {
                 f = nodeEngine.getOperationService()

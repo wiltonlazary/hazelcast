@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,15 +37,15 @@ public class ReplicatedMapEntryListenerOnReconnectTest extends AbstractListeners
         final EntryAdapter<String, String> listener = new EntryAdapter<String, String>() {
             @Override
             public void onEntryEvent(EntryEvent<String, String> event) {
-                eventCount.incrementAndGet();
+                onEvent(event.getKey());
             }
         };
         return replicatedMap.addEntryListener(listener);
     }
 
     @Override
-    public void produceEvent() {
-        replicatedMap.put(randomString(), randomString());
+    public void produceEvent(String event) {
+        replicatedMap.put(event, randomString());
     }
 
     @Override

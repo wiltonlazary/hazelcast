@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.hazelcast.client.impl.protocol.task.map;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.codec.EnterpriseMapDestroyCacheCodec;
+import com.hazelcast.client.impl.protocol.codec.ContinuousQueryDestroyCacheCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
 import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.Node;
@@ -39,11 +39,11 @@ import java.util.concurrent.TimeUnit;
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
 
 /**
- * Client Protocol Task for handling messages with type id:
- * {@link com.hazelcast.client.impl.protocol.codec.EnterpriseMapMessageType#ENTERPRISEMAP_DESTROYCACHE}
+ * Client Protocol Task for handling messages with type ID:
+ * {@link com.hazelcast.client.impl.protocol.codec.ContinuousQueryMessageType#CONTINUOUSQUERY_DESTROYCACHE}
  */
 public class MapDestroyCacheMessageTask
-        extends AbstractCallableMessageTask<EnterpriseMapDestroyCacheCodec.RequestParameters> {
+        extends AbstractCallableMessageTask<ContinuousQueryDestroyCacheCodec.RequestParameters> {
 
     public MapDestroyCacheMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -77,13 +77,13 @@ public class MapDestroyCacheMessageTask
     }
 
     @Override
-    protected EnterpriseMapDestroyCacheCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
-        return EnterpriseMapDestroyCacheCodec.decodeRequest(clientMessage);
+    protected ContinuousQueryDestroyCacheCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+        return ContinuousQueryDestroyCacheCodec.decodeRequest(clientMessage);
     }
 
     @Override
     protected ClientMessage encodeResponse(Object response) {
-        return EnterpriseMapDestroyCacheCodec.encodeResponse((Boolean) response);
+        return ContinuousQueryDestroyCacheCodec.encodeResponse((Boolean) response);
     }
 
     @Override

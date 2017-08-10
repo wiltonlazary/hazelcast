@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,27 +26,30 @@ import com.hazelcast.map.impl.recordstore.RecordStore;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.impl.Indexes;
 import com.hazelcast.query.impl.QueryableEntry;
-import com.hazelcast.spi.MigrationAwareService;
+import com.hazelcast.spi.FragmentedMigrationAwareService;
+import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PartitionReplicationEvent;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.spi.partition.MigrationEndpoint;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.Clock;
 
+import java.util.Collection;
 import java.util.Iterator;
 
-import static com.hazelcast.spi.partition.MigrationEndpoint.DESTINATION;
-import static com.hazelcast.spi.partition.MigrationEndpoint.SOURCE;
 import static com.hazelcast.map.impl.querycache.publisher.AccumulatorSweeper.flushAccumulator;
 import static com.hazelcast.map.impl.querycache.publisher.AccumulatorSweeper.removeAccumulator;
+import static com.hazelcast.spi.partition.MigrationEndpoint.DESTINATION;
+import static com.hazelcast.spi.partition.MigrationEndpoint.SOURCE;
 
 /**
  * Defines migration behavior of map service.
  *
  * @see MapService
  */
-class MapMigrationAwareService implements MigrationAwareService {
+class MapMigrationAwareService implements FragmentedMigrationAwareService {
 
     protected final MapServiceContext mapServiceContext;
     protected final SerializationService serializationService;
@@ -54,6 +57,17 @@ class MapMigrationAwareService implements MigrationAwareService {
     MapMigrationAwareService(MapServiceContext mapServiceContext) {
         this.mapServiceContext = mapServiceContext;
         this.serializationService = mapServiceContext.getNodeEngine().getSerializationService();
+    }
+
+    @Override
+    public Collection<ServiceNamespace> getAllServiceNamespaces(PartitionReplicationEvent event) {
+        PartitionContainer container = mapServiceContext.getPartitionContainer(event.getPartitionId());
+        return container.getAllNamespaces(event.getReplicaIndex());
+    }
+
+    @Override
+    public boolean isKnownServiceNamespace(ServiceNamespace namespace) {
+        return namespace instanceof ObjectNamespace && MapService.SERVICE_NAME.equals(namespace.getServiceName());
     }
 
     @Override
@@ -65,10 +79,32 @@ class MapMigrationAwareService implements MigrationAwareService {
         int partitionId = event.getPartitionId();
         PartitionContainer container = mapServiceContext.getPartitionContainer(partitionId);
 
-        MapReplicationOperation operation = new MapReplicationOperation(container, partitionId, event.getReplicaIndex());
+        Operation operation = new MapReplicationOperation(container, partitionId, event.getReplicaIndex());
         operation.setService(mapServiceContext.getService());
 
         return operation;
+    }
+
+    @Override
+    public Operation prepareReplicationOperation(PartitionReplicationEvent event,
+            Collection<ServiceNamespace> namespaces) {
+
+        assert assertAllKnownNamespaces(namespaces);
+
+        int partitionId = event.getPartitionId();
+        PartitionContainer container = mapServiceContext.getPartitionContainer(partitionId);
+
+        Operation operation = new MapReplicationOperation(container, namespaces, partitionId, event.getReplicaIndex());
+        operation.setService(mapServiceContext.getService());
+
+        return operation;
+    }
+
+    private boolean assertAllKnownNamespaces(Collection<ServiceNamespace> namespaces) {
+        for (ServiceNamespace namespace : namespaces) {
+            assert isKnownServiceNamespace(namespace) : namespace + " is not a MapService namespace!";
+        }
+        return true;
     }
 
     @Override
@@ -77,9 +113,11 @@ class MapMigrationAwareService implements MigrationAwareService {
 
         if (SOURCE == event.getMigrationEndpoint()) {
             clearMapsHavingLesserBackupCountThan(event.getPartitionId(), event.getNewReplicaIndex());
-            getMetaDataGenerator().resetMetadata(event.getPartitionId());
+            getMetaDataGenerator().removeUuidAndSequence(event.getPartitionId());
         } else if (DESTINATION == event.getMigrationEndpoint()) {
-            getMetaDataGenerator().getOrCreateUuid(event.getPartitionId());
+            if (event.getNewReplicaIndex() != 0) {
+                getMetaDataGenerator().regenerateUuid(event.getPartitionId());
+            }
         }
 
         PartitionContainer partitionContainer = mapServiceContext.getPartitionContainer(event.getPartitionId());
@@ -104,9 +142,7 @@ class MapMigrationAwareService implements MigrationAwareService {
     public void rollbackMigration(PartitionMigrationEvent event) {
         if (DESTINATION == event.getMigrationEndpoint()) {
             clearMapsHavingLesserBackupCountThan(event.getPartitionId(), event.getCurrentReplicaIndex());
-            getMetaDataGenerator().resetMetadata(event.getPartitionId());
-        } else if (SOURCE == event.getMigrationEndpoint()) {
-            getMetaDataGenerator().getOrCreateUuid(event.getPartitionId());
+            getMetaDataGenerator().removeUuidAndSequence(event.getPartitionId());
         }
 
         mapServiceContext.reloadOwnedPartitions();
@@ -130,7 +166,7 @@ class MapMigrationAwareService implements MigrationAwareService {
         final PartitionContainer container = mapServiceContext.getPartitionContainer(event.getPartitionId());
         for (RecordStore recordStore : container.getMaps().values()) {
             final MapContainer mapContainer = mapServiceContext.getMapContainer(recordStore.getName());
-            final Indexes indexes = mapContainer.getIndexes();
+            final Indexes indexes = mapContainer.getIndexes(event.getPartitionId());
             if (!indexes.hasIndex()) {
                 continue;
             }
@@ -157,5 +193,4 @@ class MapMigrationAwareService implements MigrationAwareService {
     protected long getNow() {
         return Clock.currentTimeMillis();
     }
-
 }

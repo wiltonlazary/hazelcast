@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,13 +30,6 @@ public class ConsoleCommandRequest implements ConsoleRequest {
 
     private String command;
 
-    public ConsoleCommandRequest() {
-    }
-
-    public ConsoleCommandRequest(String command) {
-        this.command = command;
-    }
-
     @Override
     public int getType() {
         return ConsoleRequestConstants.REQUEST_TYPE_CONSOLE_COMMAND;
@@ -53,18 +46,6 @@ public class ConsoleCommandRequest implements ConsoleRequest {
             result.add("output", "Error: " + e.getClass().getSimpleName() + "[" + e.getMessage() + "]");
         }
         root.add("result", result);
-    }
-
-    @Override
-    public Object readResponse(JsonObject json) {
-        return getString(json, "output", "Error while reading response " + ConsoleCommandRequest.class.getName());
-    }
-
-    @Override
-    public JsonObject toJson() {
-        final JsonObject root = new JsonObject();
-        root.add("command", command);
-        return root;
     }
 
     @Override

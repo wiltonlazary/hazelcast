@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -146,7 +146,7 @@ public class ClientCacheConfigTest {
 
         HazelcastInstance client = HazelcastClient.newHazelcastClient(clientConfig);
         assertEquals(instanceName, client.getName());
-        
+
         URI uri1 = new URI("MY-SCOPE");
         Properties properties = new Properties();
         properties.setProperty(HazelcastCachingProvider.HAZELCAST_INSTANCE_NAME, instanceName);

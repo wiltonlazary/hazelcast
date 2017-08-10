@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.query.impl.extractor.specification;
 
 import com.hazelcast.config.Config;
@@ -22,12 +38,12 @@ import static com.hazelcast.query.impl.extractor.AbstractExtractionSpecification
 import static com.hazelcast.query.impl.extractor.AbstractExtractionSpecification.Index.ORDERED;
 import static com.hazelcast.query.impl.extractor.AbstractExtractionSpecification.Index.UNORDERED;
 import static com.hazelcast.query.impl.extractor.AbstractExtractionSpecification.Multivalue.PORTABLE;
-import static com.hazelcast.query.impl.extractor.specification.ComplexDataStructure.Finger;
-import static com.hazelcast.query.impl.extractor.specification.ComplexDataStructure.Person;
-import static com.hazelcast.query.impl.extractor.specification.ComplexDataStructure.finger;
-import static com.hazelcast.query.impl.extractor.specification.ComplexDataStructure.limb;
-import static com.hazelcast.query.impl.extractor.specification.ComplexDataStructure.person;
-import static com.hazelcast.query.impl.extractor.specification.ComplexDataStructure.tattoos;
+import static com.hazelcast.query.impl.extractor.specification.ComplexTestDataStructure.Finger;
+import static com.hazelcast.query.impl.extractor.specification.ComplexTestDataStructure.Person;
+import static com.hazelcast.query.impl.extractor.specification.ComplexTestDataStructure.finger;
+import static com.hazelcast.query.impl.extractor.specification.ComplexTestDataStructure.limb;
+import static com.hazelcast.query.impl.extractor.specification.ComplexTestDataStructure.person;
+import static com.hazelcast.query.impl.extractor.specification.ComplexTestDataStructure.tattoos;
 import static java.util.Arrays.asList;
 
 /**
@@ -66,7 +82,7 @@ public class ExtractionInPortableSpecTest extends AbstractExtractionTest {
         return new Configurator() {
             @Override
             public void doWithConfig(Config config, Multivalue mv) {
-                config.getSerializationConfig().addPortableFactory(ComplexDataStructure.PersonPortableFactory.ID, new ComplexDataStructure.PersonPortableFactory());
+                config.getSerializationConfig().addPortableFactory(ComplexTestDataStructure.PersonPortableFactory.ID, new ComplexTestDataStructure.PersonPortableFactory());
             }
         };
     }

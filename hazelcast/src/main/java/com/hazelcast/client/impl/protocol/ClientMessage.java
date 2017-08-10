@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,8 @@ import com.hazelcast.client.impl.protocol.util.ClientProtocolBuffer;
 import com.hazelcast.client.impl.protocol.util.MessageFlyweight;
 import com.hazelcast.client.impl.protocol.util.SafeBuffer;
 import com.hazelcast.client.impl.protocol.util.UnsafeBuffer;
+import com.hazelcast.internal.networking.OutboundFrame;
 import com.hazelcast.nio.Bits;
-import com.hazelcast.nio.OutboundFrame;
 
 import java.nio.ByteBuffer;
 
@@ -113,7 +113,7 @@ public class ClientMessage
 
     protected void wrapForEncode(ClientProtocolBuffer buffer, int offset) {
         ensureHeaderSize(offset, buffer.capacity());
-        super.wrap(buffer, offset);
+        super.wrap(buffer.byteArray(), offset, USE_UNSAFE);
         setDataOffset(HEADER_SIZE);
         setFrameLength(HEADER_SIZE);
         index(getDataOffset());
@@ -129,7 +129,7 @@ public class ClientMessage
 
     protected void wrapForDecode(ClientProtocolBuffer buffer, int offset) {
         ensureHeaderSize(offset, buffer.capacity());
-        super.wrap(buffer, offset);
+        super.wrap(buffer.byteArray(), offset, USE_UNSAFE);
         index(getDataOffset());
     }
 
@@ -223,19 +223,19 @@ public class ClientMessage
     }
 
     /**
-     * Returns the correlation id field.
+     * Returns the correlation ID field.
      *
-     * @return The correlation id field.
+     * @return The correlation ID field.
      */
     public long getCorrelationId() {
         return int64Get(CORRELATION_ID_FIELD_OFFSET);
     }
 
     /**
-     * Sets the correlation id field.
+     * Sets the correlation ID field.
      *
-     * @param correlationId The value to set in the correlation id field.
-     * @return The ClientMessage with the new correlation id field value.
+     * @param correlationId The value to set in the correlation ID field.
+     * @return The ClientMessage with the new correlation ID field value.
      */
     public ClientMessage setCorrelationId(final long correlationId) {
         int64Set(CORRELATION_ID_FIELD_OFFSET, correlationId);
@@ -243,19 +243,19 @@ public class ClientMessage
     }
 
     /**
-     * Returns the partition id field.
+     * Returns the partition ID field.
      *
-     * @return The partition id field.
+     * @return The partition ID field.
      */
     public int getPartitionId() {
         return int32Get(PARTITION_ID_FIELD_OFFSET);
     }
 
     /**
-     * Sets the partition id field.
+     * Sets the partition ID field.
      *
-     * @param partitionId The value to set in the partitions id field.
-     * @return The ClientMessage with the new partitions id field value.
+     * @param partitionId The value to set in the partitions ID field.
+     * @return The ClientMessage with the new partitions ID field value.
      */
     public ClientMessage setPartitionId(final int partitionId) {
         int32Set(PARTITION_ID_FIELD_OFFSET, partitionId);
@@ -328,27 +328,24 @@ public class ClientMessage
                 // we don't have even the frame length ready
                 return false;
             }
-            frameLength = Bits.readIntL(src.array(), src.position());
+            frameLength = Bits.readIntL(src);
+            // we need to restore the position; as if we didn't read the frame-length
+            src.position(src.position() - Bits.INT_SIZE_IN_BYTES);
             if (frameLength < HEADER_SIZE) {
                 throw new IllegalArgumentException("Client message frame length cannot be smaller than header size.");
             }
-            if (USE_UNSAFE) {
-                wrap(new UnsafeBuffer(new byte[frameLength]), 0);
-            } else {
-                wrap(new SafeBuffer(new byte[frameLength]), 0);
-            }
+            wrap(new byte[frameLength], 0, USE_UNSAFE);
         }
         frameLength = frameLength > 0 ? frameLength : getFrameLength();
         accumulate(src, frameLength - index());
         return isComplete();
     }
 
-    private int accumulate(ByteBuffer byteBuffer, int length) {
-        final int remaining = byteBuffer.remaining();
-        final int readLength = remaining < length ? remaining : length;
+    private int accumulate(ByteBuffer src, int length) {
+        int remaining = src.remaining();
+        int readLength = remaining < length ? remaining : length;
         if (readLength > 0) {
-            buffer.putBytes(index(), byteBuffer.array(), byteBuffer.position(), readLength);
-            byteBuffer.position(byteBuffer.position() + readLength);
+            buffer.putBytes(index(), src, readLength);
             index(index() + readLength);
             return readLength;
         }

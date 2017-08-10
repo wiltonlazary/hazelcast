@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.core;
 
 import com.hazelcast.query.Predicate;
+import com.hazelcast.transaction.TransactionTimedOutException;
 import com.hazelcast.transaction.TransactionalObject;
 
 import java.util.Collection;
@@ -93,8 +94,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * Locks the key and then gets and returns the value to which the specified key is mapped.
      * Lock will be released at the end of the transaction (either commit or rollback).
      *
+     * @throws NullPointerException         if the specified key is null.
+     * @throws TransactionTimedOutException if the key could not be locked for update in the transaction timeout
      * @see IMap#get(Object)
-     * @throws NullPointerException if the specified key is null.
      */
     V getForUpdate(Object key);
 
@@ -119,8 +121,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * <p/>
      * The object to be put will be accessible only in the current transaction context till transaction is committed.
      *
+     * @throws NullPointerException         if the specified key or value is null.
+     * @throws TransactionTimedOutException if the key could not be locked for update in the transaction timeout
      * @see IMap#put(Object, Object)
-     * @throws NullPointerException if the specified key or value is null.
      */
     @Override
     V put(K key, V value);
@@ -130,9 +133,11 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * <p/>
      * The object to be put will be accessible only in the current transaction context till transaction is committed.
      *
+     * @throws NullPointerException         if the specified key, value or timeunit is null.
+     * @throws TransactionTimedOutException if the key could not be locked for update in the transaction timeout
      * @see IMap#put(Object, Object, long, java.util.concurrent.TimeUnit)
-     * @throws NullPointerException if the specified key, value or timeunit is null.
      */
+    @Override
     V put(K key, V value, long ttl, TimeUnit timeunit);
 
     /**
@@ -140,8 +145,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * <p/>
      * The object to be set will be accessible only in the current transaction context till transaction is committed.
      *
+     * @throws NullPointerException         if the specified key or value is null.
+     * @throws TransactionTimedOutException if the key could not be locked for update in the transaction timeout
      * @see IMap#set(Object, Object)
-     * @throws NullPointerException if the specified key or value is null.
      */
     @Override
     void set(K key, V value);
@@ -151,8 +157,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * <p/>
      * The object to be put will be accessible only in the current transaction context until the transaction is committed.
      *
+     * @throws NullPointerException         if the specified key or value is null.
+     * @throws TransactionTimedOutException if the key could not be locked for update in the transaction timeout
      * @see IMap#putIfAbsent(Object, Object)
-     * @throws NullPointerException if the specified key or value is null.
      */
     @Override
     V putIfAbsent(K key, V value);
@@ -162,8 +169,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * <p/>
      * The object to be replaced will be accessible only in the current transaction context until the transaction is committed.
      *
+     * @throws NullPointerException         if the specified key or null.
+     * @throws TransactionTimedOutException if the key could not be locked for update in the transaction timeout
      * @see IMap#replace(Object, Object)
-     * @throws NullPointerException if the specified key or null.
      */
     @Override
     V replace(K key, V value);
@@ -173,8 +181,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * <p/>
      * The object to be replaced will be accessible only in the current transaction context until the transaction is committed.
      *
+     * @throws NullPointerException         if the specified key, oldValue or newValue is null.
+     * @throws TransactionTimedOutException if the key could not be locked for update in the transaction timeout
      * @see IMap#replace(Object, Object, Object)
-     * @throws NullPointerException if the specified key, oldValue or newValue is null.
      */
     @Override
     boolean replace(K key, V oldValue, V newValue);
@@ -184,8 +193,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * <p/>
      * The object to be removed will be removed from only the current transaction context until the transaction is committed.
      *
+     * @throws NullPointerException         if the specified key is null.
+     * @throws TransactionTimedOutException if the key could not be locked for update in the transaction timeout
      * @see IMap#remove(Object)
-     * @throws NullPointerException if the specified key is null.
      */
     @Override
     V remove(Object key);
@@ -195,8 +205,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * <p/>
      * The object to be deleted will be removed from only the current transaction context until the transaction is committed.
      *
+     * @throws NullPointerException         if the specified key is null.
+     * @throws TransactionTimedOutException if the key could not be locked for update in the transaction timeout
      * @see IMap#delete(Object)
-     * @throws NullPointerException if the specified key is null.
      */
     @Override
     void delete(Object key);
@@ -206,8 +217,9 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * <p/>
      * The object to be removed will be removed from only the current transaction context until the transaction is committed.
      *
+     * @throws NullPointerException         if the specified key or value null.
+     * @throws TransactionTimedOutException if the key could not be locked for update in the transaction timeout
      * @see IMap#remove(Object, Object)
-     * @throws NullPointerException if the specified key or value null.
      */
     @Override
     boolean remove(Object key, Object value);
@@ -217,6 +229,7 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      *
      * @see IMap#keySet()
      */
+    @Override
     Set<K> keySet();
 
     /**
@@ -225,6 +238,7 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * @see IMap#keySet(com.hazelcast.query.Predicate)
      * @throws NullPointerException if the specified predicate is null.
      */
+    @Override
     Set<K> keySet(Predicate predicate);
 
     /**
@@ -232,6 +246,7 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      *
      * @see IMap#values()
      */
+    @Override
     Collection<V> values();
 
     /**
@@ -240,5 +255,6 @@ public interface TransactionalMap<K, V> extends TransactionalObject, BaseMap<K, 
      * @see IMap#values(com.hazelcast.query.Predicate)
      * @throws NullPointerException if the specified predicate is null.
      */
+    @Override
     Collection<V> values(Predicate predicate);
 }

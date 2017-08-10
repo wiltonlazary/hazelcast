@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+
+import static com.hazelcast.test.HazelcastTestSupport.sleepMillis;
 
 public final class TestUtil {
 
@@ -61,29 +63,32 @@ public final class TestUtil {
     }
 
     public static void terminateInstance(HazelcastInstance hz) {
-        final Node node = getNode(hz);
-        node.getConnectionManager().shutdown();
-        node.shutdown(true);
         hz.getLifecycleService().terminate();
     }
 
-    public static void warmUpPartitions(HazelcastInstance... instances) throws InterruptedException {
+    public static void warmUpPartitions(HazelcastInstance... instances) {
         for (HazelcastInstance instance : instances) {
+            if (instance == null) {
+                continue;
+            }
             final PartitionService ps = instance.getPartitionService();
             for (Partition partition : ps.getPartitions()) {
                 while (partition.getOwner() == null) {
-                    Thread.sleep(10);
+                    sleepMillis(10);
                 }
             }
         }
     }
 
-    public static void warmUpPartitions(Collection<HazelcastInstance> instances) throws InterruptedException {
+    public static void warmUpPartitions(Collection<HazelcastInstance> instances) {
         for (HazelcastInstance instance : instances) {
+            if (instance == null) {
+                continue;
+            }
             final PartitionService ps = instance.getPartitionService();
             for (Partition partition : ps.getPartitions()) {
                 while (partition.getOwner() == null) {
-                    Thread.sleep(10);
+                    sleepMillis(10);
                 }
             }
         }

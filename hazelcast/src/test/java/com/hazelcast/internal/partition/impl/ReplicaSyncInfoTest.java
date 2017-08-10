@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.internal.partition.impl;
 
+import com.hazelcast.internal.partition.NonFragmentedServiceNamespace;
 import com.hazelcast.nio.Address;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
@@ -33,12 +34,12 @@ import static org.junit.Assert.assertNotNull;
 @Category({QuickTest.class, ParallelTest.class})
 public class ReplicaSyncInfoTest {
 
-    private ReplicaSyncInfo replicaSyncInfo;
-    private ReplicaSyncInfo replicaSyncInfoSameAttributes;
+    private ReplicaFragmentSyncInfo replicaSyncInfo;
+    private ReplicaFragmentSyncInfo replicaSyncInfoSameAttributes;
 
-    private ReplicaSyncInfo replicaSyncInfoOtherTarget;
-    private ReplicaSyncInfo replicaSyncInfoOtherPartitionId;
-    private ReplicaSyncInfo replicaSyncInfoOtherReplicaIndex;
+    private ReplicaFragmentSyncInfo replicaSyncInfoOtherTarget;
+    private ReplicaFragmentSyncInfo replicaSyncInfoOtherPartitionId;
+    private ReplicaFragmentSyncInfo replicaSyncInfoOtherReplicaIndex;
 
     @Before
     public void setUp() throws Exception {
@@ -47,12 +48,12 @@ public class ReplicaSyncInfoTest {
         Address target = new Address("127.0.0.1", 5701);
         Address otherTarget = new Address("127.0.0.1", 5702);
 
-        replicaSyncInfo = new ReplicaSyncInfo(partitionId, replicaIndex, target);
-        replicaSyncInfoSameAttributes = new ReplicaSyncInfo(partitionId, replicaIndex, target);
+        replicaSyncInfo = new ReplicaFragmentSyncInfo(partitionId, NonFragmentedServiceNamespace.INSTANCE, replicaIndex, target);
+        replicaSyncInfoSameAttributes = new ReplicaFragmentSyncInfo(partitionId, NonFragmentedServiceNamespace.INSTANCE, replicaIndex, target);
 
-        replicaSyncInfoOtherTarget = new ReplicaSyncInfo(partitionId, replicaIndex, otherTarget);
-        replicaSyncInfoOtherPartitionId = new ReplicaSyncInfo(24, replicaIndex, target);
-        replicaSyncInfoOtherReplicaIndex = new ReplicaSyncInfo(partitionId, 43, target);
+        replicaSyncInfoOtherTarget = new ReplicaFragmentSyncInfo(partitionId, NonFragmentedServiceNamespace.INSTANCE, replicaIndex, otherTarget);
+        replicaSyncInfoOtherPartitionId = new ReplicaFragmentSyncInfo(24, NonFragmentedServiceNamespace.INSTANCE, replicaIndex, target);
+        replicaSyncInfoOtherReplicaIndex = new ReplicaFragmentSyncInfo(partitionId, NonFragmentedServiceNamespace.INSTANCE, 43, target);
     }
 
     @Test

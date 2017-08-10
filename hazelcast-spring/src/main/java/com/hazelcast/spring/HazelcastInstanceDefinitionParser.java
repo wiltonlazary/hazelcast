@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,8 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
 /**
- * BeanDefinitionParser for Hazelcast Instance Configuration
- * <p/>
- *
+ * BeanDefinitionParser for Hazelcast Instance Configuration.
+ * <p>
  * <b>Sample Spring XML for Hazelcast Instance:</b>
  * <pre>
  * &lt;hz:hazelcast id="instance"&gt;

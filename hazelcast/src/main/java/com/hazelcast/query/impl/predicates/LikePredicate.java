@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.query.impl.predicates;
 
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 import java.io.IOException;
 import java.util.Map;
@@ -52,7 +52,7 @@ public class LikePredicate extends AbstractPredicate {
         } else {
             if (pattern == null) {
                 // we quote the input string then escape then replace % and _
-                // at the end we have a regex pattern look like : \QSOME_STRING\E.*\QSOME_OTHER_STRING\E
+                // at the end we have a regex pattern look like: \QSOME_STRING\E.*\QSOME_OTHER_STRING\E
                 final String quotedExpression = Pattern.quote(expression);
                 String regex = quotedExpression
                         //escaped %

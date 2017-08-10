@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -110,7 +110,7 @@ public class TopicAddMessageListenerMessageTask
         ClientMessage eventMessage = TopicAddMessageListenerCodec.encodeTopicEvent(messageData,
                 message.getPublishTime(), publisherUuid);
 
-        boolean isMultithreaded = nodeEngine.getConfig().getTopicConfig(parameters.name).isMultiThreadingEnabled();
+        boolean isMultithreaded = nodeEngine.getConfig().findTopicConfig(parameters.name).isMultiThreadingEnabled();
         if (isMultithreaded) {
             int key = rand.nextInt();
             int partitionId = hashToIndex(key, nodeEngine.getPartitionService().getPartitionCount());

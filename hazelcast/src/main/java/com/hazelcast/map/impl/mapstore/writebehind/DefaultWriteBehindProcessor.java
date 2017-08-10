@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -243,14 +244,22 @@ class DefaultWriteBehindProcessor extends AbstractWriteBehindProcessor<DelayedEn
             public boolean run() throws Exception {
                 callBeforeStoreListeners(batchMap.values());
                 final Map map = convertToObject(batchMap);
-                final boolean result = operationType.processBatch(map, mapStore);
+                boolean result;
+                try {
+                    result = operationType.processBatch(map, mapStore);
+                } catch (Exception ex) {
+                    Iterator<Object> keys = batchMap.keySet().iterator();
+                    while (keys.hasNext()) {
+                        if (!map.containsKey(toObject(keys.next()))) {
+                            keys.remove();
+                        }
+                    }
+                    throw ex;
+                }
                 callAfterStoreListeners(batchMap.values());
                 return result;
             }
 
-            /**
-             * Call when store failed.
-             */
             @Override
             public List<DelayedEntry> failureList() {
                 failedDelayedEntries = new ArrayList<DelayedEntry>(batchMap.values().size());

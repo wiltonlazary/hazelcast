@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,11 +45,12 @@ import java.util.concurrent.ConcurrentMap;
 public final class ClientEndpointImpl implements ClientEndpoint {
 
     private final ClientEngineImpl clientEngine;
-    private final Connection conn;
+    private final Connection connection;
     private final ConcurrentMap<String, TransactionContext> transactionContextMap
             = new ConcurrentHashMap<String, TransactionContext>();
     private final ConcurrentHashMap<String, Callable> removeListenerActions = new ConcurrentHashMap<String, Callable>();
     private final SocketAddress socketAddress;
+    private final long creationTime;
 
     private LoginContext loginContext;
     private ClientPrincipal principal;
@@ -59,23 +60,25 @@ public final class ClientEndpointImpl implements ClientEndpoint {
     private int clientVersion;
     private String clientVersionString;
     private long authenticationCorrelationId;
+    private volatile String stats;
 
-    public ClientEndpointImpl(ClientEngineImpl clientEngine, Connection conn) {
+    public ClientEndpointImpl(ClientEngineImpl clientEngine, Connection connection) {
         this.clientEngine = clientEngine;
-        this.conn = conn;
-        if (conn instanceof TcpIpConnection) {
-            TcpIpConnection tcpIpConnection = (TcpIpConnection) conn;
-            socketAddress = tcpIpConnection.getSocketChannel().socket().getRemoteSocketAddress();
+        this.connection = connection;
+        if (connection instanceof TcpIpConnection) {
+            TcpIpConnection tcpIpConnection = (TcpIpConnection) connection;
+            socketAddress = tcpIpConnection.getRemoteSocketAddress();
         } else {
             socketAddress = null;
         }
         this.clientVersion = BuildInfo.UNKNOWN_HAZELCAST_VERSION;
         this.clientVersionString = "Unknown";
+        this.creationTime = System.currentTimeMillis();
     }
 
     @Override
     public Connection getConnection() {
-        return conn;
+        return connection;
     }
 
     @Override
@@ -85,15 +88,7 @@ public final class ClientEndpointImpl implements ClientEndpoint {
 
     @Override
     public boolean isAlive() {
-        if (conn.isAlive()) {
-            return true;
-        }
-        String clientUuid = getUuid();
-        if (null != clientUuid) {
-            Connection connection = clientEngine.getEndpointManager().findLiveConnectionFor(clientUuid);
-            return null != connection;
-        }
-        return false;
+        return connection.isAlive();
     }
 
     @Override
@@ -143,8 +138,14 @@ public final class ClientEndpointImpl implements ClientEndpoint {
         clientVersion = BuildInfo.calculateVersion(version);
     }
 
-    public ClientPrincipal getPrincipal() {
-        return principal;
+    @Override
+    public void setClientStatistics(String stats) {
+        this.stats = stats;
+    }
+
+    @Override
+    public String getClientStatistics() {
+        return stats;
     }
 
     @Override
@@ -155,7 +156,7 @@ public final class ClientEndpointImpl implements ClientEndpoint {
     @Override
     public ClientType getClientType() {
         ClientType type;
-        switch (conn.getType()) {
+        switch (connection.getType()) {
             case JAVA_CLIENT:
                 type = ClientType.JAVA;
                 break;
@@ -178,7 +179,7 @@ public final class ClientEndpointImpl implements ClientEndpoint {
                 type = ClientType.OTHER;
                 break;
             default:
-                throw new IllegalArgumentException("Invalid connection type: " + conn.getType());
+                throw new IllegalArgumentException("Invalid connection type: " + connection.getType());
         }
         return type;
     }
@@ -240,11 +241,6 @@ public final class ClientEndpointImpl implements ClientEndpoint {
         removeListenerActions.clear();
     }
 
-    @Override
-    public boolean resourcesExist() {
-        return !removeListenerActions.isEmpty() || !transactionContextMap.isEmpty();
-    }
-
     public void destroy() throws LoginException {
         clearAllListeners();
 
@@ -274,11 +270,13 @@ public final class ClientEndpointImpl implements ClientEndpoint {
     @Override
     public String toString() {
         return "ClientEndpoint{"
-                + "conn=" + conn
-                + ", principal='" + principal + '\''
+                + "connection=" + connection
+                + ", principal='" + principal
                 + ", firstConnection=" + firstConnection
                 + ", authenticated=" + authenticated
                 + ", clientVersion=" + clientVersionString
+                + ", creationTime=" + creationTime
+                + ", latest statistics=" + stats
                 + '}';
     }
 

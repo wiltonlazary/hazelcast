@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -270,11 +270,13 @@ public class CompletableFutureTest extends HazelcastTestSupport {
 
 
     private static void assertTestExceptionThrown(AtomicReference<?>... refs) {
-        for (AtomicReference<?> ref : refs)
+        for (AtomicReference<?> ref : refs) {
             assertThat("ExecutionException expected", ref.get(), instanceOf(ExecutionException.class));
-        for (AtomicReference<?> ref : refs)
+        }
+        for (AtomicReference<?> ref : refs) {
             assertThat("TEST_EXCEPTION expected as cause", ((Throwable) ref.get()).getCause(),
                     Matchers.<Throwable>sameInstance(THROW_TEST_EXCEPTION));
+        }
     }
 
     private ICompletableFuture<String> submitAwaitingTaskNoCallbacks(final Exception exception) {

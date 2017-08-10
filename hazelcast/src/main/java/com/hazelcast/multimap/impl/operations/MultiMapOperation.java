@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,18 +25,17 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.EventRegistration;
-import com.hazelcast.spi.EventService;
+import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionAwareOperation;
+import com.hazelcast.spi.ServiceNamespaceAware;
 
 import java.io.IOException;
-import java.util.Collection;
 
 import static com.hazelcast.util.Preconditions.checkNotNull;
 
 public abstract class MultiMapOperation extends Operation
-        implements PartitionAwareOperation, IdentifiedDataSerializable {
+        implements PartitionAwareOperation, ServiceNamespaceAware, IdentifiedDataSerializable {
 
     protected String name;
     protected transient Object response;
@@ -57,12 +56,6 @@ public abstract class MultiMapOperation extends Operation
     @Override
     public final String getServiceName() {
         return MultiMapService.SERVICE_NAME;
-    }
-
-    public final boolean hasListener() {
-        EventService eventService = getNodeEngine().getEventService();
-        Collection<EventRegistration> registrations = eventService.getRegistrations(getServiceName(), name);
-        return registrations.size() > 0;
     }
 
     public final void publishEvent(EntryEventType eventType, Data key, Object newValue, Object oldValue) {
@@ -99,11 +92,17 @@ public abstract class MultiMapOperation extends Operation
     }
 
     public final int getSyncBackupCount() {
-        return getOrCreateContainer().getConfig().getSyncBackupCount();
+        return getOrCreateContainer().getConfig().getBackupCount();
     }
 
     public final int getAsyncBackupCount() {
         return getOrCreateContainer().getConfig().getAsyncBackupCount();
+    }
+
+    @Override
+    public ObjectNamespace getServiceNamespace() {
+        MultiMapContainer container = getOrCreateContainer();
+        return container.getObjectNamespace();
     }
 
     @Override

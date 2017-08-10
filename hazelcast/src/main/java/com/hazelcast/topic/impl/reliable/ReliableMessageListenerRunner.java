@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -113,6 +113,13 @@ class ReliableMessageListenerRunner<E> implements ExecutionCallback<ReadResultSe
         next();
     }
 
+    /**
+     * Processes the message by increasing the local topic stats and
+     * calling the user supplied listener.
+     *
+     * @param message the reliable topic message
+     * @throws Throwable
+     */
     private void process(ReliableTopicMessage message) throws Throwable {
         proxy.localTopicStats.incrementReceives();
         listener.onMessage(toMessage(message));

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.spi.impl.operationservice.impl.operations;
 
 import com.hazelcast.internal.partition.InternalPartitionService;
+import com.hazelcast.internal.partition.PartitionReplicaVersionManager;
 import com.hazelcast.internal.partition.ReplicaErrorLogger;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
@@ -25,13 +26,13 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.BackupOperation;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.OperationAccessor;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.SpiDataSerializerHook;
 import com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl;
-import com.hazelcast.spi.impl.operationservice.impl.responses.BackupAckResponse;
 import com.hazelcast.spi.partition.IPartition;
 import com.hazelcast.util.Clock;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -45,6 +46,7 @@ import static com.hazelcast.spi.partition.IPartition.MAX_BACKUP_COUNT;
 public final class Backup extends Operation implements BackupOperation, IdentifiedDataSerializable {
 
     private Address originalCaller;
+    private ServiceNamespace namespace;
     private long[] replicaVersions;
     private boolean sync;
 
@@ -93,15 +95,21 @@ public final class Backup extends Operation implements BackupOperation, Identifi
 
         IPartition partition = partitionService.getPartition(partitionId);
         Address owner = partition.getReplicaAddress(getReplicaIndex());
+
+        ensureBackupOperationInitialized();
+        PartitionReplicaVersionManager versionManager = partitionService.getPartitionReplicaVersionManager();
+        namespace = versionManager.getServiceNamespace(backupOp);
+
         if (!nodeEngine.getThisAddress().equals(owner)) {
             valid = false;
             if (logger.isFinestEnabled()) {
                 logger.finest("Wrong target! " + toString() + " cannot be processed! Target should be: " + owner);
             }
-        } else if (partitionService.isPartitionReplicaVersionStale(getPartitionId(), replicaVersions, getReplicaIndex())) {
+        } else if (versionManager.isPartitionReplicaVersionStale(getPartitionId(), namespace,
+                replicaVersions, getReplicaIndex())) {
             valid = false;
             if (logger.isFineEnabled()) {
-                long[] currentVersions = partitionService.getPartitionReplicaVersions(partitionId);
+                long[] currentVersions = versionManager.getPartitionReplicaVersions(partitionId, namespace);
                 logger.fine("Ignoring stale backup! Current-versions: " + Arrays.toString(currentVersions)
                         + ", Backup-versions: " + Arrays.toString(replicaVersions));
             }
@@ -134,8 +142,8 @@ public final class Backup extends Operation implements BackupOperation, Identifi
         backupOp.afterRun();
 
         NodeEngineImpl nodeEngine = (NodeEngineImpl) getNodeEngine();
-        InternalPartitionService partitionService = nodeEngine.getPartitionService();
-        partitionService.updatePartitionReplicaVersions(getPartitionId(), replicaVersions, getReplicaIndex());
+        PartitionReplicaVersionManager versionManager = nodeEngine.getPartitionService().getPartitionReplicaVersionManager();
+        versionManager.updatePartitionReplicaVersions(getPartitionId(), namespace, replicaVersions, getReplicaIndex());
     }
 
     @Override
@@ -151,8 +159,7 @@ public final class Backup extends Operation implements BackupOperation, Identifi
         if (nodeEngine.getThisAddress().equals(originalCaller)) {
             operationService.getInboundResponseHandler().notifyBackupComplete(callId);
         } else {
-            BackupAckResponse backupAckResponse = new BackupAckResponse(callId, backupOp.isUrgent());
-            operationService.getOutboundResponseHandler().send(backupAckResponse, originalCaller);
+            operationService.getOutboundResponseHandler().sendBackupAck(originalCaller, callId, backupOp.isUrgent());
         }
     }
 
@@ -170,9 +177,9 @@ public final class Backup extends Operation implements BackupOperation, Identifi
     public void onExecutionFailure(Throwable e) {
         if (backupOp != null) {
             try {
-                // Be sure that backup operation is initialized.
+                // Ensure that backup operation is initialized.
                 // If there is an exception before `run` (for example caller is not valid anymore),
-                // backup operation is initialized. So, we are initializing it here ourselves.
+                // backup operation will not be initialized.
                 ensureBackupOperationInitialized();
                 backupOp.onExecutionFailure(e);
             } catch (Throwable t) {
@@ -184,9 +191,9 @@ public final class Backup extends Operation implements BackupOperation, Identifi
     @Override
     public void logError(Throwable e) {
         if (backupOp != null) {
-            // Be sure that backup operation is initialized.
+            // Ensure that backup operation is initialized.
             // If there is an exception before `run` (for example caller is not valid anymore),
-            // backup operation is initialized. So, we are initializing it here ourselves.
+            // backup operation will not be initialized.
             ensureBackupOperationInitialized();
             backupOp.logError(e);
         } else {

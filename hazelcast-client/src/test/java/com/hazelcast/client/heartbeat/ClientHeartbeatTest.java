@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2015, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,13 @@ package com.hazelcast.client.heartbeat;
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.connection.ClientConnectionManager;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
-import com.hazelcast.client.spi.impl.ClusterListenerSupport;
+import com.hazelcast.client.impl.protocol.ClientMessage;
+import com.hazelcast.client.impl.protocol.codec.ClientAddPartitionLostListenerCodec;
+import com.hazelcast.client.impl.protocol.codec.ClientRemovePartitionLostListenerCodec;
+import com.hazelcast.client.spi.ClientListenerService;
+import com.hazelcast.client.spi.EventHandler;
 import com.hazelcast.client.spi.impl.ConnectionHeartbeatListener;
+import com.hazelcast.client.spi.impl.ListenerMessageCodec;
 import com.hazelcast.client.spi.properties.ClientProperty;
 import com.hazelcast.client.test.ClientTestSupport;
 import com.hazelcast.client.test.TestHazelcastFactory;
@@ -29,6 +34,7 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.core.LifecycleListener;
+import com.hazelcast.core.LifecycleService;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.Partition;
 import com.hazelcast.logging.Logger;
@@ -49,6 +55,7 @@ import org.junit.runner.RunWith;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.hamcrest.Matchers.containsString;
@@ -125,7 +132,7 @@ public class ClientHeartbeatTest extends ClientTestSupport {
             @Override
             public void run()
                     throws Exception {
-                assertNotNull(connectionManager.getConnection(instance2.getCluster().getLocalMember().getAddress()));
+                assertNotNull(connectionManager.getActiveConnection(instance2.getCluster().getLocalMember().getAddress()));
             }
         });
 
@@ -227,8 +234,7 @@ public class ClientHeartbeatTest extends ClientTestSupport {
         config.setProperty(ClientProperty.SHUFFLE_MEMBER_LIST.getName(), "false");
         final HazelcastInstance client = hazelcastFactory.newHazelcastClient(config);
         HazelcastClientInstanceImpl hazelcastClientInstanceImpl = getHazelcastClientInstanceImpl(client);
-        final ClusterListenerSupport clientClusterService =
-                (ClusterListenerSupport) hazelcastClientInstanceImpl.getClientClusterService();
+        final ClientConnectionManager clientConnectionManager = hazelcastClientInstanceImpl.getConnectionManager();
 
         final CountDownLatch countDownLatch = new CountDownLatch(2);
         client.getLifecycleService().addLifecycleListener(new LifecycleListener() {
@@ -255,8 +261,8 @@ public class ClientHeartbeatTest extends ClientTestSupport {
                 String uuid = instance3.getLocalEndpoint().getUuid();
                 assertEquals(uuid, getClientEngineImpl(instance3).getOwnerUuid(client.getLocalEndpoint().getUuid()));
                 assertEquals(uuid, getClientEngineImpl(instance2).getOwnerUuid(client.getLocalEndpoint().getUuid()));
-                assertEquals(uuid, clientClusterService.getPrincipal().getOwnerUuid());
-                assertEquals(instance3.getCluster().getLocalMember().getAddress(), clientClusterService.getOwnerConnectionAddress());
+                assertEquals(uuid, clientConnectionManager.getPrincipal().getOwnerUuid());
+                assertEquals(instance3.getCluster().getLocalMember().getAddress(), clientConnectionManager.getOwnerConnectionAddress());
             }
         });
 
@@ -270,8 +276,8 @@ public class ClientHeartbeatTest extends ClientTestSupport {
                 String uuid = instance3.getLocalEndpoint().getUuid();
                 assertEquals(uuid, getClientEngineImpl(instance3).getOwnerUuid(client.getLocalEndpoint().getUuid()));
                 assertEquals(uuid, getClientEngineImpl(instance2).getOwnerUuid(client.getLocalEndpoint().getUuid()));
-                assertEquals(uuid, clientClusterService.getPrincipal().getOwnerUuid());
-                assertEquals(instance3.getCluster().getLocalMember().getAddress(), clientClusterService.getOwnerConnectionAddress());
+                assertEquals(uuid, clientConnectionManager.getPrincipal().getOwnerUuid());
+                assertEquals(instance3.getCluster().getLocalMember().getAddress(), clientConnectionManager.getOwnerConnectionAddress());
             }
         });
     }
@@ -284,24 +290,19 @@ public class ClientHeartbeatTest extends ClientTestSupport {
         HazelcastInstance hazelcastInstance = hazelcastFactory.newHazelcastInstance(config);
 
         ClientConfig clientConfig = new ClientConfig();
-        clientConfig.setProperty(ClientProperty.HEARTBEAT_TIMEOUT.getName(), "4000");
+        clientConfig.setProperty(ClientProperty.HEARTBEAT_TIMEOUT.getName(), "10000");
         clientConfig.setProperty(ClientProperty.HEARTBEAT_INTERVAL.getName(), "1000");
 
         HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
-        final AtomicLong stateChangeCount = new AtomicLong();
 
         final CountDownLatch disconnectedLatch = new CountDownLatch(1);
-        final CountDownLatch connectedLatch = new CountDownLatch(1);
-        client.getLifecycleService().addLifecycleListener(new LifecycleListener() {
+
+        LifecycleService lifecycleService = client.getLifecycleService();
+        lifecycleService.addLifecycleListener(new LifecycleListener() {
             @Override
             public void stateChanged(LifecycleEvent event) {
-                stateChangeCount.incrementAndGet();
-                Logger.getLogger(this.getClass()).info("state event : " + event);
                 if (LifecycleEvent.LifecycleState.CLIENT_DISCONNECTED == event.getState()) {
                     disconnectedLatch.countDown();
-                }
-                if (LifecycleEvent.LifecycleState.CLIENT_CONNECTED == event.getState()) {
-                    connectedLatch.countDown();
                 }
             }
         });
@@ -309,6 +310,20 @@ public class ClientHeartbeatTest extends ClientTestSupport {
         blockMessagesFromInstance(hazelcastInstance, client);
         //Wait for client to disconnect because of hearBeat problem.
         assertOpenEventually(disconnectedLatch);
+
+        final CountDownLatch connectedLatch = new CountDownLatch(1);
+        final AtomicLong stateChangeCount = new AtomicLong();
+        lifecycleService.addLifecycleListener(new LifecycleListener() {
+            @Override
+            public void stateChanged(LifecycleEvent event) {
+                stateChangeCount.incrementAndGet();
+                Logger.getLogger(this.getClass()).info("state event: " + event);
+                if (LifecycleEvent.LifecycleState.CLIENT_CONNECTED == event.getState()) {
+                    connectedLatch.countDown();
+                }
+            }
+        });
+
         unblockMessagesFromInstance(hazelcastInstance, client);
         //Wait for client to connect back after heartbeat issue is resolved
         assertOpenEventually(connectedLatch);
@@ -318,8 +333,97 @@ public class ClientHeartbeatTest extends ClientTestSupport {
         assertTrueAllTheTime(new AssertTask() {
             @Override
             public void run() throws Exception {
-                assertEquals(2, stateChangeCount.get());
+                assertEquals(1, stateChangeCount.get());
             }
         }, delaySeconds * 2);
+    }
+
+    @Test
+    public void testAddingListenerToNewConnectionFailedBecauseOfHeartbeat() throws Exception {
+        hazelcastFactory.newHazelcastInstance();
+
+        ClientConfig clientConfig = new ClientConfig();
+        clientConfig.setProperty(ClientProperty.HEARTBEAT_TIMEOUT.getName(), "10000");
+        clientConfig.setProperty(ClientProperty.HEARTBEAT_INTERVAL.getName(), "1000");
+
+        final HazelcastInstance client = hazelcastFactory.newHazelcastClient(clientConfig);
+
+        HazelcastClientInstanceImpl clientInstanceImpl = getHazelcastClientInstanceImpl(client);
+        final ClientListenerService clientListenerService = clientInstanceImpl.getListenerService();
+        final CountDownLatch blockIncoming = new CountDownLatch(1);
+        final CountDownLatch heartbeatStopped = new CountDownLatch(1);
+        final CountDownLatch onListenerRegister = new CountDownLatch(2);
+        clientInstanceImpl.getConnectionManager().addConnectionHeartbeatListener(new ConnectionHeartbeatListener() {
+            @Override
+            public void heartbeatResumed(Connection connection) {
+
+            }
+
+            @Override
+            public void heartbeatStopped(Connection connection) {
+                heartbeatStopped.countDown();
+            }
+        });
+
+        clientListenerService.registerListener(createPartitionLostListenerCodec(), new EventHandler() {
+            AtomicInteger count = new AtomicInteger(0);
+
+            @Override
+            public void handle(Object event) {
+
+            }
+
+            @Override
+            public void beforeListenerRegister() {
+                if (count.incrementAndGet() == 2) {
+                    try {
+                        blockIncoming.await();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+
+            @Override
+            public void onListenerRegister() {
+                onListenerRegister.countDown();
+            }
+
+        });
+
+        HazelcastInstance hazelcastInstance2 = hazelcastFactory.newHazelcastInstance();
+
+        assertSizeEventually(2, clientInstanceImpl.getConnectionManager().getActiveConnections());
+
+        blockMessagesFromInstance(hazelcastInstance2, client);
+        assertOpenEventually(heartbeatStopped);
+        blockIncoming.countDown();
+
+        unblockMessagesFromInstance(hazelcastInstance2, client);
+        assertOpenEventually(onListenerRegister);
+    }
+
+    private ListenerMessageCodec createPartitionLostListenerCodec() {
+        return new ListenerMessageCodec() {
+            @Override
+            public ClientMessage encodeAddRequest(boolean localOnly) {
+                return ClientAddPartitionLostListenerCodec.encodeRequest(localOnly);
+            }
+
+            @Override
+            public String decodeAddResponse(ClientMessage clientMessage) {
+                return ClientAddPartitionLostListenerCodec.decodeResponse(clientMessage).response;
+            }
+
+            @Override
+            public ClientMessage encodeRemoveRequest(String realRegistrationId) {
+                return ClientRemovePartitionLostListenerCodec.encodeRequest(realRegistrationId);
+            }
+
+            @Override
+            public boolean decodeRemoveResponse(ClientMessage clientMessage) {
+                return ClientRemovePartitionLostListenerCodec.decodeResponse(clientMessage).response;
+            }
+        };
     }
 }

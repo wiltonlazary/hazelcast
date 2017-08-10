@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,11 @@ import java.util.UUID;
 public interface NearCacheRecord<V> extends Expirable, Evictable<V> {
 
     int TIME_NOT_SET = -1;
+
+    long NOT_RESERVED = -1;
+    long RESERVED = -2;
+    long UPDATE_STARTED = -3;
+    long READ_PERMITTED = -4;
 
     /**
      * Sets the value of this {@link NearCacheRecord}.
@@ -83,6 +88,29 @@ public interface NearCacheRecord<V> extends Expirable, Evictable<V> {
     boolean isIdleAt(long maxIdleMilliSeconds, long now);
 
     /**
+     * @return current state of this record.
+     */
+    long getRecordState();
+
+    /**
+     * @param expect expected value
+     * @param update updated value
+     * @return {@code true} if successful. False return indicates that
+     * the actual value was not equal to the expected value.
+     */
+    boolean casRecordState(long expect, long update);
+
+    /**
+     * @return the partition ID of this record
+     */
+    int getPartitionId();
+
+    /**
+     * @param partitionId the partition ID of this record
+     */
+    void setPartitionId(int partitionId);
+
+    /**
      * @return last known invalidation sequence at time of this records' creation
      */
     long getInvalidationSequence();
@@ -93,7 +121,7 @@ public interface NearCacheRecord<V> extends Expirable, Evictable<V> {
     void setInvalidationSequence(long sequence);
 
     /**
-     * @param uuid last known uuid of invalidation source at time of this records' creation
+     * @param uuid last known UUID of invalidation source at time of this records' creation
      */
     void setUuid(UUID uuid);
 
@@ -102,5 +130,4 @@ public interface NearCacheRecord<V> extends Expirable, Evictable<V> {
      * or existing is null returns {@code false}
      */
     boolean hasSameUuid(UUID uuid);
-
 }

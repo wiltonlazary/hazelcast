@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ public class MyServiceConfigParser extends AbstractXmlConfigHelper implements Se
         for (Node configNode : childElements(element)) {
             if ("my-service".equals(cleanNodeName(configNode))) {
                 for (Node node : childElements(configNode)) {
-                    final String name = cleanNodeName(node);
+                    String name = cleanNodeName(node);
                     if ("string-prop".equals(name)) {
                         config.stringProp = getTextContent(node);
                     } else if ("int-prop".equals(name)) {
@@ -42,5 +42,4 @@ public class MyServiceConfigParser extends AbstractXmlConfigHelper implements Se
         }
         return config;
     }
-
 }

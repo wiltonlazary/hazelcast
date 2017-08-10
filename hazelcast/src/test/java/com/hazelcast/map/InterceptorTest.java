@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
@@ -74,7 +75,7 @@ public class InterceptorTest extends HazelcastTestSupport {
         }
 
         assertEquals(6, map.size());
-        assertEquals(null, map.get(1));
+        assertNull(map.get(1));
         assertEquals(map.get(2), "ISTANBUL:");
         assertEquals(map.get(3), "TOKYO:");
         assertEquals(map.get(4), "LONDON:");
@@ -85,14 +86,14 @@ public class InterceptorTest extends HazelcastTestSupport {
         map.removeInterceptor(id);
         map.put(8, "Moscow");
 
-        assertEquals(map.get(8), "Moscow");
-        assertEquals(map.get(1), null);
+        assertNull(map.get(1));
         assertEquals(map.get(2), "ISTANBUL");
         assertEquals(map.get(3), "TOKYO");
         assertEquals(map.get(4), "LONDON");
         assertEquals(map.get(5), "PARIS");
         assertEquals(map.get(6), "CAIRO");
         assertEquals(map.get(7), "HONG KONG");
+        assertEquals(map.get(8), "Moscow");
     }
 
     @Test
@@ -265,8 +266,9 @@ public class InterceptorTest extends HazelcastTestSupport {
 
         @Override
         public Object interceptGet(Object value) {
-            if (value == null)
+            if (value == null) {
                 return null;
+            }
             return value + ":";
         }
 
@@ -285,8 +287,9 @@ public class InterceptorTest extends HazelcastTestSupport {
 
         @Override
         public Object interceptRemove(Object removedValue) {
-            if (removedValue.equals("ISTANBUL"))
+            if (removedValue.equals("ISTANBUL")) {
                 throw new RuntimeException("you can not remove this");
+            }
             return removedValue;
         }
 

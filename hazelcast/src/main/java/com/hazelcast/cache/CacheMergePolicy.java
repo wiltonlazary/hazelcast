@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.hazelcast.cache;
 
+import com.hazelcast.nio.serialization.BinaryInterface;
+
 import java.io.Serializable;
 
 /**
@@ -29,6 +31,7 @@ import java.io.Serializable;
  * (s)he should use {@link StorageTypeAwareCacheMergePolicy} which is sub-type of this interface.
  * </p>
  */
+@BinaryInterface
 public interface CacheMergePolicy extends Serializable {
 
     /**

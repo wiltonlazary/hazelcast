@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,7 +70,7 @@ public class ClientCacheClearTest extends CacheClearTest {
                 .setCacheLocalEntries(false)
                 .setEvictionConfig(new EvictionConfig(10000, MaxSizePolicy.ENTRY_COUNT, EvictionPolicy.LFU))
                 .setInvalidateOnChange(true)
-                .setLocalUpdatePolicy(NearCacheConfig.LocalUpdatePolicy.CACHE)
+                .setLocalUpdatePolicy(NearCacheConfig.LocalUpdatePolicy.CACHE_ON_UPDATE)
                 .setMaxIdleSeconds(600)
                 .setTimeToLiveSeconds(60);
 

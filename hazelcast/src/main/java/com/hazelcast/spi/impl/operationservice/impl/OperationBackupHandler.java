@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,14 @@ package com.hazelcast.spi.impl.operationservice.impl;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.partition.InternalPartition;
 import com.hazelcast.internal.partition.InternalPartitionService;
+import com.hazelcast.internal.partition.PartitionReplicaVersionManager;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.BackupAwareOperation;
+import com.hazelcast.spi.FragmentedMigrationAwareService;
 import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.ServiceNamespaceAware;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.operationservice.impl.operations.Backup;
 
@@ -36,13 +40,15 @@ import static java.lang.Math.min;
  */
 final class OperationBackupHandler {
 
+    private static final boolean ASSERTION_ENABLED = OperationBackupHandler.class.desiredAssertionStatus();
+
     private final Node node;
-    private final OperationServiceImpl operationService;
     private final NodeEngineImpl nodeEngine;
     private final BackpressureRegulator backpressureRegulator;
+    private final OutboundOperationHandler outboundOperationHandler;
 
-    OperationBackupHandler(OperationServiceImpl operationService) {
-        this.operationService = operationService;
+    OperationBackupHandler(OperationServiceImpl operationService, OutboundOperationHandler outboundOperationHandler) {
+        this.outboundOperationHandler = outboundOperationHandler;
         this.node = operationService.node;
         this.nodeEngine = operationService.nodeEngine;
         this.backpressureRegulator = operationService.backpressureRegulator;
@@ -79,8 +85,9 @@ final class OperationBackupHandler {
         }
 
         Operation op = (Operation) backupAwareOp;
-        InternalPartitionService partitionService = node.getPartitionService();
-        long[] replicaVersions = partitionService.incrementPartitionReplicaVersions(op.getPartitionId(),
+        PartitionReplicaVersionManager versionManager = node.getPartitionService().getPartitionReplicaVersionManager();
+        ServiceNamespace namespace = versionManager.getServiceNamespace(op);
+        long[] replicaVersions = versionManager.incrementPartitionReplicaVersions(op.getPartitionId(), namespace,
                 requestedTotalBackups);
 
         boolean syncForced = backpressureRegulator.isSyncForced(backupAwareOp);
@@ -207,7 +214,7 @@ final class OperationBackupHandler {
             boolean isSyncBackup = syncBackups == 1;
 
             Backup backup = newBackup(backupAwareOp, backupOp, replicaVersions, 1, isSyncBackup);
-            operationService.send(backup, target);
+            outboundOperationHandler.send(backup, target);
 
             if (isSyncBackup) {
                 return 1;
@@ -234,7 +241,7 @@ final class OperationBackupHandler {
             boolean isSyncBackup = replicaIndex <= syncBackups;
 
             Backup backup = newBackup(backupAwareOp, backupOpData, replicaVersions, replicaIndex, isSyncBackup);
-            operationService.send(backup, target);
+            outboundOperationHandler.send(backup, target);
 
             if (isSyncBackup) {
                 sendSyncBackups++;
@@ -249,12 +256,45 @@ final class OperationBackupHandler {
         if (backupOp == null) {
             throw new IllegalArgumentException("Backup operation should not be null! " + backupAwareOp);
         }
+        if (ASSERTION_ENABLED) {
+            checkServiceNamespaces(backupAwareOp, backupOp);
+        }
+
         Operation op = (Operation) backupAwareOp;
         // set service name of backup operation.
         // if getServiceName() method is overridden to return the same name
         // then this will have no effect.
         backupOp.setServiceName(op.getServiceName());
         return backupOp;
+    }
+
+    private void checkServiceNamespaces(BackupAwareOperation backupAwareOp, Operation backupOp) {
+        Operation op = (Operation) backupAwareOp;
+        Object service;
+        try {
+            service = op.getService();
+        } catch (Exception ignored) {
+            // operation doesn't know its service name
+            return;
+        }
+
+        if (service instanceof FragmentedMigrationAwareService) {
+            assert backupAwareOp instanceof ServiceNamespaceAware
+                    : service + " is instance of FragmentedMigrationAwareService, "
+                    + backupAwareOp + " should implement ReplicaFragmentAware!";
+
+            assert backupOp instanceof ServiceNamespaceAware
+                    : service + " is instance of FragmentedMigrationAwareService, "
+                    + backupOp + " should implement ReplicaFragmentAware!";
+        } else {
+            assert !(backupAwareOp instanceof ServiceNamespaceAware)
+                    : service + " is NOT instance of FragmentedMigrationAwareService, "
+                    + backupAwareOp + " should NOT implement ReplicaFragmentAware!";
+
+            assert !(backupOp instanceof ServiceNamespaceAware)
+                    : service + " is NOT instance of FragmentedMigrationAwareService, "
+                    + backupOp + " should NOT implement ReplicaFragmentAware!";
+        }
     }
 
     private static Backup newBackup(BackupAwareOperation backupAwareOp, Object backupOp, long[] replicaVersions,

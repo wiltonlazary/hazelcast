@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,21 @@ package com.hazelcast.test;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.test.annotation.Repeat;
+import com.hazelcast.test.bounce.BounceMemberRule;
 import com.hazelcast.util.EmptyStatement;
-import org.apache.log4j.MDC;
+import net.bytebuddy.agent.ByteBuddyAgent;
+import net.bytebuddy.agent.builder.AgentBuilder;
+import net.bytebuddy.description.type.TypeDescription;
+import net.bytebuddy.dynamic.DynamicType;
+import net.bytebuddy.jar.asm.Opcodes;
+import net.bytebuddy.matcher.ElementMatcher;
+import net.bytebuddy.utility.JavaModule;
 import org.junit.After;
+import org.junit.AssumptionViolatedException;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.internal.runners.statements.RunAfters;
+import org.junit.internal.runners.statements.RunBefores;
 import org.junit.rules.TestRule;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
@@ -32,6 +42,7 @@ import org.junit.runners.model.Statement;
 import org.junit.runners.model.TestClass;
 
 import java.lang.annotation.Annotation;
+import java.lang.instrument.Instrumentation;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
@@ -44,7 +55,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import static java.lang.Boolean.getBoolean;
+import static com.hazelcast.test.TestEnvironment.isRunningCompatibilityTest;
 import static java.lang.Integer.getInteger;
 
 /**
@@ -55,25 +66,18 @@ import static java.lang.Integer.getInteger;
 public abstract class AbstractHazelcastClassRunner extends AbstractParameterizedHazelcastClassRunner {
 
     private static final int DEFAULT_TEST_TIMEOUT_IN_SECONDS = getInteger("hazelcast.test.defaultTestTimeoutInSeconds", 300);
-    private static final boolean THREAD_DUMP_ON_FAILURE = getBoolean("hazelcast.test.threadDumpOnFailure");
+    private static final boolean THREAD_DUMP_ON_FAILURE;
 
     private static final ThreadLocal<String> TEST_NAME_THREAD_LOCAL = new InheritableThreadLocal<String>();
     private static final boolean THREAD_CPU_TIME_INFO_AVAILABLE;
     private static final boolean THREAD_CONTENTION_INFO_AVAILABLE;
 
     static {
-        String logging = "hazelcast.logging.type";
-        if (System.getProperty(logging) == null) {
-            System.setProperty(logging, "log4j");
-        }
-        if (System.getProperty(TestEnvironment.HAZELCAST_TEST_USE_NETWORK) == null) {
-            System.setProperty(TestEnvironment.HAZELCAST_TEST_USE_NETWORK, "false");
-        }
-        System.setProperty("hazelcast.phone.home.enabled", "false");
-        System.setProperty("hazelcast.mancenter.enabled", "false");
-        System.setProperty("hazelcast.wait.seconds.before.join", "1");
-        System.setProperty("hazelcast.local.localAddress", "127.0.0.1");
-        System.setProperty("java.net.preferIPv4Stack", "true");
+        initialize();
+
+        final String threadDumpOnFailure = System.getProperty("hazelcast.test.threadDumpOnFailure");
+        THREAD_DUMP_ON_FAILURE = threadDumpOnFailure != null
+                ? Boolean.parseBoolean(threadDumpOnFailure) : JenkinsDetector.isOnJenkins();
 
         // randomize multicast group
         Random rand = new Random();
@@ -107,6 +111,52 @@ public abstract class AbstractHazelcastClassRunner extends AbstractParameterized
         THREAD_CONTENTION_INFO_AVAILABLE = threadContentionInfoAvailable;
     }
 
+    // initialize environment, logging and attach a final-modifier removing agent if required
+    private static void initialize() {
+        if (isRunningCompatibilityTest()) {
+            attachFinalRemovalAgent();
+            System.out.println("Running compatibility tests.");
+            // Mock network cannot be used for compatibility testing
+            System.setProperty(TestEnvironment.HAZELCAST_TEST_USE_NETWORK, "true");
+        } else {
+            TestLoggingUtils.initializeLogging();
+            if (System.getProperty(TestEnvironment.HAZELCAST_TEST_USE_NETWORK) == null) {
+                System.setProperty(TestEnvironment.HAZELCAST_TEST_USE_NETWORK, "false");
+            }
+        }
+        System.setProperty("hazelcast.phone.home.enabled", "false");
+        System.setProperty("hazelcast.mancenter.enabled", "false");
+        System.setProperty("hazelcast.wait.seconds.before.join", "1");
+        System.setProperty("hazelcast.local.localAddress", "127.0.0.1");
+        System.setProperty("java.net.preferIPv4Stack", "true");
+    }
+
+    // When running a compatibility test, all com.hazelcast.* classes are transformed so that none are
+    // loaded with final modifier to allow subclass proxying.
+    private static void attachFinalRemovalAgent() {
+        Instrumentation instrumentation = ByteBuddyAgent.install();
+        new AgentBuilder.Default()
+                .disableClassFormatChanges()
+                .type(new ElementMatcher<TypeDescription>() {
+                    @Override
+                    public boolean matches(TypeDescription target) {
+                        return target.getName().startsWith("com.hazelcast");
+                    }
+                })
+                .transform(new AgentBuilder.Transformer() {
+                    @Override
+                    public DynamicType.Builder<?> transform(DynamicType.Builder<?> builder,
+                                                            TypeDescription typeDescription,
+                                                            ClassLoader classLoader, JavaModule module) {
+                        int actualModifiers = typeDescription.getActualModifiers(false);
+                        // unset final modifier
+                        int nonFinalModifiers = actualModifiers & ~Opcodes.ACC_FINAL;
+                        return builder.modifiers(nonFinalModifiers);
+                    }
+                })
+                .installOn(instrumentation);
+    }
+
     /**
      * Creates a BlockJUnit4ClassRunner to run {@code clazz}
      *
@@ -125,13 +175,13 @@ public abstract class AbstractHazelcastClassRunner extends AbstractParameterized
     }
 
     static void setThreadLocalTestMethodName(String name) {
-        MDC.put("test-name", name);
+        TestLoggingUtils.setThreadLocalTestMethodName(name);
         TEST_NAME_THREAD_LOCAL.set(name);
     }
 
     static void removeThreadLocalTestMethodName() {
+        TestLoggingUtils.removeThreadLocalTestMethodName();
         TEST_NAME_THREAD_LOCAL.remove();
-        MDC.remove("test-name");
     }
 
     @Override
@@ -159,14 +209,43 @@ public abstract class AbstractHazelcastClassRunner extends AbstractParameterized
     @Override
     protected Statement withAfters(FrameworkMethod method, Object target, Statement statement) {
         List<FrameworkMethod> afters = getTestClass().getAnnotatedMethods(After.class);
+        Statement nextStatement = statement;
+        List<TestRule> testRules = getTestRules(target);
+        if (!testRules.isEmpty()) {
+            for (TestRule rule : testRules) {
+                if (rule instanceof BounceMemberRule) {
+                    nextStatement = ((BounceMemberRule) rule).stopBouncing(statement);
+                }
+            }
+        }
         if (THREAD_DUMP_ON_FAILURE) {
-            return new ThreadDumpAwareRunAfters(method, statement, afters, target);
+            return new ThreadDumpAwareRunAfters(method, nextStatement, afters, target);
         }
         if (afters.isEmpty()) {
-            return statement;
+            return nextStatement;
         } else {
-            return new RunAfters(statement, afters, target);
+            return new RunAfters(nextStatement, afters, target);
         }
+    }
+
+    // Override withBefores to accommodate spawning the member bouncing thread after @Before's have been executed and before @Test
+    // when MemberBounceRule is in use
+    @Override
+    protected Statement withBefores(FrameworkMethod method, Object target,
+                                    Statement statement) {
+        List<FrameworkMethod> befores = getTestClass().getAnnotatedMethods(
+                Before.class);
+        List<TestRule> testRules = getTestRules(target);
+        Statement nextStatement = statement;
+        if (!testRules.isEmpty()) {
+            for (TestRule rule : testRules) {
+                if (rule instanceof BounceMemberRule) {
+                    nextStatement = ((BounceMemberRule) rule).startBouncing(statement);
+                }
+            }
+        }
+        return befores.isEmpty() ? nextStatement : new RunBefores(nextStatement,
+                befores, target);
     }
 
     @Override
@@ -319,12 +398,15 @@ public abstract class AbstractHazelcastClassRunner extends AbstractParameterized
             try {
                 next.evaluate();
             } catch (Throwable e) {
-                System.err.println("THREAD DUMP FOR TEST FAILURE: \"" + e.getMessage() + "\" at \"" + method.getName() + "\"\n");
-                try {
-                    System.err.println(generateThreadDump());
-                } catch (Throwable t) {
-                    System.err.println("Unable to get thread dump!");
-                    e.printStackTrace();
+                if (!isJUnitAssumeException(e)) {
+                    System.err.println("THREAD DUMP FOR TEST FAILURE: \"" + e.getMessage()
+                            + "\" at \"" + method.getName() + "\"\n");
+                    try {
+                        System.err.println(generateThreadDump());
+                    } catch (Throwable t) {
+                        System.err.println("Unable to get thread dump!");
+                        e.printStackTrace();
+                    }
                 }
                 errors.add(e);
             } finally {
@@ -337,6 +419,10 @@ public abstract class AbstractHazelcastClassRunner extends AbstractParameterized
                 }
             }
             MultipleFailureException.assertEmpty(errors);
+        }
+
+        private boolean isJUnitAssumeException(Throwable e) {
+            return e instanceof AssumptionViolatedException;
         }
     }
 

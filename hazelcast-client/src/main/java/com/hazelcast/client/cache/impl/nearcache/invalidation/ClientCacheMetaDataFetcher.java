@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,33 +17,26 @@
 package com.hazelcast.client.cache.impl.nearcache.invalidation;
 
 
-import com.hazelcast.cache.impl.operation.CacheGetInvalidationMetaDataOperation;
 import com.hazelcast.client.impl.HazelcastClientInstanceImpl;
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.codec.CacheAssignAndGetUuidsCodec;
+import com.hazelcast.client.impl.protocol.codec.CacheFetchNearCacheInvalidationMetadataCodec.ResponseParameters;
 import com.hazelcast.client.spi.ClientClusterService;
 import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.client.spi.impl.ClientInvocation;
 import com.hazelcast.core.Member;
 import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataFetcher;
-import com.hazelcast.internal.nearcache.impl.invalidation.RepairingHandler;
 import com.hazelcast.logging.Logger;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.nio.Address;
 import com.hazelcast.spi.InternalCompletableFuture;
-import com.hazelcast.spi.serialization.SerializationService;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
 
 import static com.hazelcast.client.impl.protocol.codec.CacheFetchNearCacheInvalidationMetadataCodec.decodeResponse;
 import static com.hazelcast.client.impl.protocol.codec.CacheFetchNearCacheInvalidationMetadataCodec.encodeRequest;
 import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_SELECTOR;
 import static java.util.concurrent.TimeUnit.MINUTES;
-import static java.util.logging.Level.WARNING;
 
 /**
  * {@code MetaDataFetcher} for client side usage
@@ -51,14 +44,20 @@ import static java.util.logging.Level.WARNING;
 public class ClientCacheMetaDataFetcher extends MetaDataFetcher {
 
     private final ClientClusterService clusterService;
-    private final SerializationService serializationService;
     private final HazelcastClientInstanceImpl clientImpl;
 
     public ClientCacheMetaDataFetcher(ClientContext clientContext) {
         super(Logger.getLogger(ClientCacheMetaDataFetcher.class));
         this.clusterService = clientContext.getClusterService();
-        this.serializationService = clientContext.getSerializationService();
         this.clientImpl = (HazelcastClientInstanceImpl) clientContext.getHazelcastInstance();
+    }
+
+    @Override
+    protected void extractAndPopulateResult(InternalCompletableFuture future, ResultHolder resultHolder) throws Exception {
+        ClientMessage message = ((ClientMessage) future.get(ASYNC_RESULT_WAIT_TIMEOUT_MINUTES, MINUTES));
+        ResponseParameters response = decodeResponse(message);
+
+        resultHolder.populate(response.partitionUuidList, response.namePartitionSequenceList);
     }
 
     @Override
@@ -67,45 +66,18 @@ public class ClientCacheMetaDataFetcher extends MetaDataFetcher {
         List<InternalCompletableFuture> futures = new ArrayList<InternalCompletableFuture>(members.size());
 
         for (Member member : members) {
-            ClientMessage message = encodeRequest(names, member.getAddress());
-            ClientInvocation invocation = new ClientInvocation(clientImpl, message, member.getAddress());
-            futures.add(invocation.invoke());
+            Address address = member.getAddress();
+            ClientMessage message = encodeRequest(names, address);
+            ClientInvocation invocation = new ClientInvocation(clientImpl, message, address);
+            try {
+                futures.add(invocation.invoke());
+            } catch (Exception e) {
+                if (logger.isWarningEnabled()) {
+                    logger.warning("Cant fetch invalidation meta-data from address + " + address + " + [" + e.getMessage() + "]");
+                }
+            }
         }
 
         return futures;
-    }
-
-    @Override
-    protected void process(InternalCompletableFuture future, ConcurrentMap<String, RepairingHandler> handlers) {
-        try {
-            CacheGetInvalidationMetaDataOperation.MetaDataResponse response = extractResponse(future);
-            repairUuids(response.getPartitionUuidList(), handlers);
-            repairSequences(response.getNamePartitionSequenceList(), handlers);
-        } catch (Exception e) {
-            if (logger.isLoggable(WARNING)) {
-                logger.log(WARNING, "Cant fetch invalidation meta-data [" + e.getMessage() + "]");
-            }
-        }
-    }
-
-    private CacheGetInvalidationMetaDataOperation.MetaDataResponse extractResponse(InternalCompletableFuture future)
-            throws InterruptedException, ExecutionException, TimeoutException {
-
-        ClientMessage message = ((ClientMessage) future.get(1, MINUTES));
-        return serializationService.toObject(decodeResponse(message).response);
-    }
-
-    @Override
-    public List<Object> assignAndGetUuids() throws Exception {
-        ClientMessage request = CacheAssignAndGetUuidsCodec.encodeRequest();
-        ClientInvocation invocation = new ClientInvocation(clientImpl, request);
-        CacheAssignAndGetUuidsCodec.ResponseParameters responseParameters
-                = CacheAssignAndGetUuidsCodec.decodeResponse(invocation.invoke().get());
-        List<Data> response = responseParameters.response;
-        List<Object> objects = new ArrayList<Object>(response.size());
-        for (Data data : response) {
-            objects.add(serializationService.toObject(data));
-        }
-        return objects;
     }
 }

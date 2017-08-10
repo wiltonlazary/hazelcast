@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.monitor;
 
 import com.eclipsesource.json.JsonObject;
@@ -27,7 +43,7 @@ import static org.junit.Assert.assertTrue;
 public class TimedMemberStateTest extends HazelcastTestSupport {
 
     private TimedMemberState timedMemberState;
-    HazelcastInstance hz;
+    private HazelcastInstance hz;
 
     @Before
     public void setUp() {
@@ -41,6 +57,8 @@ public class TimedMemberStateTest extends HazelcastTestSupport {
         timedMemberState.setClusterName("ClusterName");
         timedMemberState.setTime(1827731);
         timedMemberState.setInstanceNames(instanceNames);
+        timedMemberState.setSslEnabled(true);
+        timedMemberState.setLite(true);
     }
 
     @Test
@@ -52,8 +70,10 @@ public class TimedMemberStateTest extends HazelcastTestSupport {
         assertEquals(1827731, cloned.getTime());
         assertNotNull(cloned.getInstanceNames());
         assertEquals(1, cloned.getInstanceNames().size());
-        assertTrue(cloned.getInstanceNames().contains("topicStats"));
+        assertContains(cloned.getInstanceNames(), "topicStats");
         assertNotNull(cloned.getMemberState());
+        assertTrue(cloned.isSslEnabled());
+        assertTrue(cloned.isLite());
         assertNotNull(cloned.toString());
     }
 
@@ -68,8 +88,10 @@ public class TimedMemberStateTest extends HazelcastTestSupport {
         assertEquals(1827731, deserialized.getTime());
         assertNotNull(deserialized.getInstanceNames());
         assertEquals(1, deserialized.getInstanceNames().size());
-        assertTrue(deserialized.getInstanceNames().contains("topicStats"));
+        assertContains(deserialized.getInstanceNames(), "topicStats");
         assertNotNull(deserialized.getMemberState());
+        assertTrue(deserialized.isSslEnabled());
+        assertTrue(deserialized.isLite());
         assertNotNull(deserialized.toString());
     }
 

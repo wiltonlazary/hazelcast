@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,9 @@ package com.hazelcast.map.impl.operation;
 import com.hazelcast.core.EntryView;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.impl.MapEntries;
+import com.hazelcast.map.impl.query.Query;
+import com.hazelcast.map.impl.query.QueryOperation;
+import com.hazelcast.map.impl.query.QueryPartitionOperation;
 import com.hazelcast.map.impl.tx.TxnDeleteOperation;
 import com.hazelcast.map.impl.tx.TxnLockAndGetOperation;
 import com.hazelcast.map.impl.tx.TxnSetOperation;
@@ -215,6 +218,16 @@ public class DefaultMapOperationProvider implements MapOperationProvider {
     }
 
     @Override
+    public MapOperation createQueryOperation(Query query) {
+        return new QueryOperation(query);
+    }
+
+    @Override
+    public MapOperation createQueryPartitionOperation(Query query) {
+        return new QueryPartitionOperation(query);
+    }
+
+    @Override
     public MapOperation createLoadAllOperation(String name, List<Data> keys, boolean replaceExistingValues) {
         return new LoadAllOperation(name, keys, replaceExistingValues);
     }
@@ -244,4 +257,8 @@ public class DefaultMapOperationProvider implements MapOperationProvider {
         return new MapFetchEntriesOperation(name, lastTableIndex, fetchSize);
     }
 
+    @Override
+    public MapOperation createFetchWithQueryOperation(String name, int lastTableIndex, int fetchSize, Query query) {
+        return new MapFetchWithQueryOperation(name, lastTableIndex, fetchSize, query);
+    }
 }

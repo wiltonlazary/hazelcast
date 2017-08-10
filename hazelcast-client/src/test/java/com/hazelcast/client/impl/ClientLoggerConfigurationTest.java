@@ -1,40 +1,60 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.client.impl;
 
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.test.TestHazelcastFactory;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.logging.ILogger;
+import com.hazelcast.logging.Log4j2Factory;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
+import com.hazelcast.test.SaveLoggingPropertiesRule;
 import com.hazelcast.test.annotation.QuickTest;
-import org.apache.log4j.PropertyConfigurator;
 import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.File;
 import java.io.IOException;
-import java.util.Properties;
-import java.util.Scanner;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertSame;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category({QuickTest.class})
 public class ClientLoggerConfigurationTest extends HazelcastTestSupport {
 
-    private static TestHazelcastFactory hazelcastFactory;
-    private static HazelcastInstance client;
-    private final String RANDOM_STRING = randomString();
-    private final String LOG_FILENAME = randomString();
-    private File logFile;
+    private TestHazelcastFactory hazelcastFactory;
+
+    @Rule
+    public SaveLoggingPropertiesRule saveLoggingPropertiesRule = new SaveLoggingPropertiesRule();
+
+    @Before
+    public void setUp() {
+        System.clearProperty("hazelcast.logging.type");
+        System.clearProperty("hazelcast.logging.class");
+    }
 
     @After
-    public void deleteLogFile () {
-        System.clearProperty("hazelcast.logging.type");
-        logFile = new File("./" + LOG_FILENAME);
-        logFile.delete();
+    public void tearDown() {
+        hazelcastFactory.shutdownAll();
     }
 
     @Test
@@ -43,50 +63,38 @@ public class ClientLoggerConfigurationTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testSystemPropertyConfiguration() throws IOException{
+    public void testSystemPropertyConfiguration() throws IOException {
         testLoggingWithConfiguration(false);
     }
 
     // Test with programmatic or system property configuration according to boolean parameter.
-    protected void testLoggingWithConfiguration(boolean programmaticConfiguration) throws IOException {
 
+    // the idea of the test is to configure a specific logging type for a client and then
+    // test its LoggingService produce instances of the expected Logger impl
+    protected void testLoggingWithConfiguration(boolean programmaticConfiguration) throws IOException {
         hazelcastFactory = new TestHazelcastFactory();
         Config cg = new Config();
-        cg.setProperty( "hazelcast.logging.type", "jdk" );
+        cg.setProperty("hazelcast.logging.type", "jdk");
         hazelcastFactory.newHazelcastInstance(cg);
 
-        //Setting log4j properties for logging to a file.
-        Properties props = new Properties();
-        props.setProperty("log4j.rootLogger" , "INFO, FILE");
-        props.setProperty("log4j.appender.FILE" , "org.apache.log4j.FileAppender");
-        props.setProperty("log4j.appender.FILE.layout" , "org.apache.log4j.PatternLayout");
-        props.setProperty("log4j.appender.FILE.layout.ConversionPattern",RANDOM_STRING + "\n");
-        props.setProperty("log4j.appender.FILE.File","./" + LOG_FILENAME);
-        props.setProperty("log4j.appender.FILE.ImmediateFlush" , "true");
-        PropertyConfigurator.configure(props);
-
-        ClientConfig config = new ClientConfig() ;
+        ClientConfig config = new ClientConfig();
         if (programmaticConfiguration) {
-            config.setProperty( "hazelcast.logging.type", "log4j" );
+            config.setProperty("hazelcast.logging.type", "log4j2");
+        } else {
+            System.setProperty("hazelcast.logging.type", "log4j2");
         }
-        else {
-            System.setProperty( "hazelcast.logging.type", "log4j" );
-        }
-        client = hazelcastFactory.newHazelcastClient(config);
-        client.shutdown();
-        hazelcastFactory.shutdownAll();
+        HazelcastInstance client = hazelcastFactory.newHazelcastClient(config);
 
-        boolean matchFound = false;
-        logFile = new File("./" + LOG_FILENAME);
-        Scanner scanner = new Scanner(logFile);
-        while (scanner.hasNextLine()) {
-            String line = scanner.nextLine();
-            if(line.contains(RANDOM_STRING)){
-                matchFound = true;
-                break;
-            }
-        }
-        assertTrue(matchFound);
+        ILogger clientLogger = client.getLoggingService().getLogger("loggerName");
+        // this part is fragile.
+        // client wraps the actual logger in its own class
+        ILogger actualLogger = (ILogger) getFromField(clientLogger, "logger");
+        Class<?> clientLoggerClass = actualLogger.getClass();
+
+        ILogger expectedLogger = new Log4j2Factory().getLogger("expectedLogger");
+        Class<?> expectedLoggerClass = expectedLogger.getClass();
+
+        assertSame(expectedLoggerClass, clientLoggerClass);
     }
 }
 

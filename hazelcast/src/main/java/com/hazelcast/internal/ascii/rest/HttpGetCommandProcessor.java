@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ public class HttpGetCommandProcessor extends HttpCommandProcessor<HttpGetCommand
             handleQueue(command, uri);
         } else if (uri.startsWith(URI_CLUSTER)) {
             handleCluster(command);
-        } else if (uri.startsWith(URI_HEALTH_URL)) {
+        } else if (uri.equals(URI_HEALTH_URL)) {
             handleHealthcheck(command);
         } else if (uri.startsWith(URI_CLUSTER_VERSION_URL)) {
             handleGetClusterVersion(command);
@@ -90,7 +90,7 @@ public class HttpGetCommandProcessor extends HttpCommandProcessor<HttpGetCommand
 
     private void handleCluster(HttpGetCommand command) {
         Node node = textCommandService.getNode();
-        StringBuilder res = new StringBuilder(node.getClusterService().membersString());
+        StringBuilder res = new StringBuilder(node.getClusterService().getMemberListString());
         res.append("\n");
         ConnectionManager connectionManager = node.getConnectionManager();
         res.append("ConnectionCount: ").append(connectionManager.getCurrentClientConnections());

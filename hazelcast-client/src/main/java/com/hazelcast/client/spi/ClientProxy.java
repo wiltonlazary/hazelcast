@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,13 +22,14 @@ import com.hazelcast.client.impl.protocol.codec.ClientDestroyProxyCodec;
 import com.hazelcast.client.spi.impl.ClientInvocation;
 import com.hazelcast.client.spi.impl.ListenerMessageCodec;
 import com.hazelcast.core.DistributedObject;
-import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.partition.strategy.StringPartitioningStrategy;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.ExceptionUtil;
 
 import java.util.concurrent.Future;
+
+import static com.hazelcast.util.ExceptionUtil.rethrow;
 
 /**
  * Base class for client proxies.
@@ -38,32 +39,66 @@ import java.util.concurrent.Future;
 public abstract class ClientProxy implements DistributedObject {
 
     protected final String name;
-    private final String serviceName;
-    private volatile ClientContext context;
 
+    private final String serviceName;
+    private final ClientContext context;
+    private final SerializationService serializationService;
+
+    // these fields are for the legacy constructor without ClientContext
+    private volatile ClientContext lazyContext;
+    private volatile SerializationService lazySerializationService;
+
+    /**
+     * @deprecated since 3.9, please use {@link #ClientProxy(String, String, ClientContext)}
+     */
+    @Deprecated
     protected ClientProxy(String serviceName, String name) {
+        this(serviceName, name, null);
+    }
+
+    protected ClientProxy(String serviceName, String name, ClientContext context) {
         this.serviceName = serviceName;
         this.name = name;
+        this.context = context;
+        this.serializationService = context == null ? null : context.getSerializationService();
     }
 
     protected final String registerListener(ListenerMessageCodec codec, EventHandler handler) {
-        return context.getListenerService().registerListener(codec, handler);
+        return getContext().getListenerService().registerListener(codec, handler);
     }
 
     protected final boolean deregisterListener(String registrationId) {
-        return context.getListenerService().deregisterListener(registrationId);
+        return getContext().getListenerService().deregisterListener(registrationId);
     }
 
-    protected final ClientContext getContext() {
-        return context;
+    // public for testing
+    public final ClientContext getContext() {
+        return context != null ? context : lazyContext;
     }
 
-    protected final void setContext(ClientContext context) {
-        this.context = context;
+    protected final ClientProxy setContext(ClientContext context) {
+        if (this.context != null) {
+            throw new IllegalStateException("The context has already been initialized!");
+        }
+        this.lazyContext = context;
+        this.lazySerializationService = context.getSerializationService();
+        return this;
+    }
+
+    protected SerializationService getSerializationService() {
+        return serializationService != null ? serializationService : lazySerializationService;
+    }
+
+    protected Data toData(Object o) {
+        return getSerializationService().toData(o);
+    }
+
+    protected <T> T toObject(Object data) {
+        return getSerializationService().toObject(data);
     }
 
     protected final HazelcastClientInstanceImpl getClient() {
-        return (HazelcastClientInstanceImpl) context.getHazelcastInstance();
+        return (HazelcastClientInstanceImpl) getContext().getHazelcastInstance();
     }
 
     @Deprecated
@@ -94,14 +129,13 @@ public abstract class ClientProxy implements DistributedObject {
     public final void destroy() {
         if (preDestroy()) {
             onDestroy();
-            ClientMessage clientMessage =
-                    ClientDestroyProxyCodec.encodeRequest(getDistributedObjectName(), getServiceName());
-            context.removeProxy(this);
+            ClientMessage clientMessage = ClientDestroyProxyCodec.encodeRequest(getDistributedObjectName(), getServiceName());
+            getContext().getProxyManager().removeProxy(getServiceName(), getDistributedObjectName());
             try {
                 new ClientInvocation(getClient(), clientMessage).invoke().get();
                 postDestroy();
             } catch (Exception e) {
-                throw ExceptionUtil.rethrow(e);
+                throw rethrow(e);
             }
         }
     }
@@ -144,7 +178,7 @@ public abstract class ClientProxy implements DistributedObject {
     }
 
     protected <T> T invoke(ClientMessage clientMessage, Object key) {
-        final int partitionId = context.getPartitionService().getPartitionId(key);
+        final int partitionId = getContext().getPartitionService().getPartitionId(key);
         return invokeOnPartition(clientMessage, partitionId);
     }
 
@@ -153,7 +187,7 @@ public abstract class ClientProxy implements DistributedObject {
             final Future future = new ClientInvocation(getClient(), clientMessage, partitionId).invoke();
             return (T) future.get();
         } catch (Exception e) {
-            throw ExceptionUtil.rethrow(e);
+            throw rethrow(e);
         }
     }
 
@@ -171,29 +205,8 @@ public abstract class ClientProxy implements DistributedObject {
             final Future future = new ClientInvocation(getClient(), clientMessage).invoke();
             return (T) future.get();
         } catch (Exception e) {
-            throw ExceptionUtil.rethrow(e);
+            throw rethrow(e);
         }
-    }
-
-    protected Data toData(Object o) {
-        return getContext().getSerializationService().toData(o);
-    }
-
-    protected SerializationService getSerializationService() {
-        return getContext().getSerializationService();
-    }
-
-    protected <T> T toObject(Object data) {
-        return getContext().getSerializationService().toObject(data);
-    }
-
-    private String getInstanceName() {
-        ClientContext ctx = context;
-        if (ctx != null) {
-            HazelcastInstance instance = ctx.getHazelcastInstance();
-            return instance.getName();
-        }
-        return "";
     }
 
     @Override
@@ -206,9 +219,7 @@ public abstract class ClientProxy implements DistributedObject {
         }
 
         ClientProxy that = (ClientProxy) o;
-
-        String instanceName = getInstanceName();
-        if (!instanceName.equals(that.getInstanceName())) {
+        if (!getInstanceName().equals(that.getInstanceName())) {
             return false;
         }
         if (!getDistributedObjectName().equals(that.getDistributedObjectName())) {
@@ -217,16 +228,19 @@ public abstract class ClientProxy implements DistributedObject {
         if (!serviceName.equals(that.serviceName)) {
             return false;
         }
-
         return true;
     }
 
     @Override
     public int hashCode() {
-        String instanceName = getInstanceName();
-        int result = instanceName.hashCode();
+        int result = getInstanceName().hashCode();
         result = 31 * result + serviceName.hashCode();
         result = 31 * result + getDistributedObjectName().hashCode();
         return result;
+    }
+
+    private String getInstanceName() {
+        ClientContext context = getContext();
+        return context != null ? context.getHazelcastInstance().getName() : "";
     }
 }

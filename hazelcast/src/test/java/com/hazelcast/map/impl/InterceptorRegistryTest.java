@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.hazelcast.map.impl;
 
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.instance.NodeExtension;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
@@ -177,7 +176,7 @@ public class InterceptorRegistryTest extends HazelcastTestSupport {
 
     private void assertInterceptorRegistryContainsInterceptor() {
         List<MapInterceptor> interceptors = registry.getInterceptors();
-        assertTrue(interceptors.contains(interceptor));
+        assertContains(interceptors, interceptor);
 
         Map<String, MapInterceptor> id2InterceptorMap = registry.getId2InterceptorMap();
         assertTrue(id2InterceptorMap.containsKey(interceptor.id));
@@ -186,7 +185,7 @@ public class InterceptorRegistryTest extends HazelcastTestSupport {
 
     private void assertInterceptorRegistryContainsNotInterceptor() {
         List<MapInterceptor> interceptors = registry.getInterceptors();
-        assertFalse(interceptors.contains(interceptor));
+        assertNotContains(interceptors, interceptor);
 
         Map<String, MapInterceptor> id2InterceptorMap = registry.getId2InterceptorMap();
         assertFalse(id2InterceptorMap.containsKey(interceptor.id));
@@ -194,14 +193,13 @@ public class InterceptorRegistryTest extends HazelcastTestSupport {
     }
 
     private PartitionOperationThread getPartitionOperationThread(OperationQueue queue) {
-        HazelcastThreadGroup hazelcastThreadGroup = new HazelcastThreadGroup("instanceName", LOGGER, getClass().getClassLoader());
         NodeExtension nodeExtension = mock(NodeExtension.class);
 
         OperationRunner operationRunner = mock(OperationRunner.class);
         OperationRunner[] operationRunners = new OperationRunner[]{operationRunner};
 
-        return new PartitionOperationThread("threadName", 0, queue, LOGGER, hazelcastThreadGroup,
-                nodeExtension, operationRunners);
+        return new PartitionOperationThread("threadName", 0, queue, LOGGER, nodeExtension,
+                operationRunners, getClass().getClassLoader());
     }
 
     private static class TestMapInterceptor implements MapInterceptor {

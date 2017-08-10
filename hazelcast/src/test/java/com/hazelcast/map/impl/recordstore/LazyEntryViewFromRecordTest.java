@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ import static org.mockito.Mockito.mock;
 @Category({QuickTest.class, ParallelTest.class})
 public class LazyEntryViewFromRecordTest {
 
-    private static final int ENTRY_VIEW_COST_IN_BYTES = 97 + 3 * REFERENCE_COST_IN_BYTES;
+    private static final int ENTRY_VIEW_COST_IN_BYTES = 97 + 4 * REFERENCE_COST_IN_BYTES;
 
     private final String key = "key";
     private final String value = "value";
@@ -172,5 +172,4 @@ public class LazyEntryViewFromRecordTest {
 
         assertEquals(expected, view.toString());
     }
-
 }

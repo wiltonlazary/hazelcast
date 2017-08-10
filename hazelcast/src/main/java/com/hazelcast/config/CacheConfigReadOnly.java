@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.config;
 
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
+import com.hazelcast.nio.serialization.BinaryInterface;
 
 import javax.cache.configuration.CacheEntryListenerConfiguration;
 import javax.cache.configuration.Factory;
@@ -33,7 +33,7 @@ import java.util.Set;
  * @param <K> type of the key
  * @param <V> type of the value
  *
- * @deprecated this class will be removed in 3.8; it is meant for internal usage only.
+ * @deprecated this class will be removed in 4.0; it is meant for internal usage only.
  */
 @BinaryInterface
 public class CacheConfigReadOnly<K, V> extends CacheConfig<K, V> {

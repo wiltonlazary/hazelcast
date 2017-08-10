@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.hazelcast.query;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
+import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.query.impl.QueryContext;
 import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.query.impl.predicates.PredicateDataSerializerHook;
@@ -102,7 +102,7 @@ public class PagingPredicate<K, V> implements IndexAwarePredicate<K, V>, Identif
      */
     public PagingPredicate(int pageSize) {
         if (pageSize <= 0) {
-            throw new IllegalArgumentException("pageSize should be greater than 0 !!!");
+            throw new IllegalArgumentException("pageSize should be greater than 0!");
         }
         this.pageSize = pageSize;
         anchorList = new ArrayList<Map.Entry<Integer, Map.Entry<K, V>>>();
@@ -163,7 +163,7 @@ public class PagingPredicate<K, V> implements IndexAwarePredicate<K, V>, Identif
 
     private void setInnerPredicate(Predicate<K, V> predicate) {
         if (predicate instanceof PagingPredicate) {
-            throw new IllegalArgumentException("Nested PagingPredicate is not supported!!!");
+            throw new IllegalArgumentException("Nested PagingPredicate is not supported!");
         }
         this.predicate = predicate;
     }

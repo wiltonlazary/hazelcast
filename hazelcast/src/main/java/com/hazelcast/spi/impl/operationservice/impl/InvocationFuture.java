@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,10 @@
 package com.hazelcast.spi.impl.operationservice.impl;
 
 import com.hazelcast.core.OperationTimeoutException;
+import com.hazelcast.nio.Packet;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.impl.AbstractInvocationFuture;
+import com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse;
 
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
@@ -89,6 +91,7 @@ final class InvocationFuture<E> extends AbstractInvocationFuture<E> {
         }
     }
 
+    @SuppressWarnings("checkstyle:npathcomplexity")
     @Override
     protected Object resolve(Object unresolved) {
         if (unresolved == null) {
@@ -99,6 +102,9 @@ final class InvocationFuture<E> extends AbstractInvocationFuture<E> {
             return newOperationTimeoutException(false);
         } else if (unresolved == HEARTBEAT_TIMEOUT) {
             return newOperationTimeoutException(true);
+        } else if (unresolved.getClass() == Packet.class) {
+            NormalResponse response = invocation.context.serializationService.toObject(unresolved);
+            unresolved = response.getValue();
         }
 
         Object value = unresolved;

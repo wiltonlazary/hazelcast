@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.client.config;
 
+import com.hazelcast.client.config.ClientConnectionStrategyConfig.ReconnectMode;
 import com.hazelcast.client.util.RandomLB;
 import com.hazelcast.client.util.RoundRobinLB;
 import com.hazelcast.config.AbstractConfigBuilder;
@@ -55,6 +56,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import static com.hazelcast.client.config.ClientXmlElements.CONNECTION_STRATEGY;
 import static com.hazelcast.client.config.ClientXmlElements.EXECUTOR_POOL_SIZE;
 import static com.hazelcast.client.config.ClientXmlElements.GROUP;
 import static com.hazelcast.client.config.ClientXmlElements.INSTANCE_NAME;
@@ -69,6 +71,7 @@ import static com.hazelcast.client.config.ClientXmlElements.PROXY_FACTORIES;
 import static com.hazelcast.client.config.ClientXmlElements.QUERY_CACHES;
 import static com.hazelcast.client.config.ClientXmlElements.SECURITY;
 import static com.hazelcast.client.config.ClientXmlElements.SERIALIZATION;
+import static com.hazelcast.client.config.ClientXmlElements.USER_CODE_DEPLOYMENT;
 import static com.hazelcast.client.config.ClientXmlElements.canOccurMultipleTimes;
 import static com.hazelcast.util.StringUtil.LINE_SEPARATOR;
 import static com.hazelcast.util.StringUtil.upperCaseInternal;
@@ -245,7 +248,47 @@ public class XmlClientConfigBuilder extends AbstractConfigBuilder {
             clientConfig.setLicenseKey(getTextContent(node));
         } else if (INSTANCE_NAME.isEqual(nodeName)) {
             clientConfig.setInstanceName(getTextContent(node));
+        } else if (CONNECTION_STRATEGY.isEqual(nodeName)) {
+            handleConnectionStrategy(node);
+        } else if (USER_CODE_DEPLOYMENT.isEqual(nodeName)) {
+            handleUserCodeDeployment(node);
         }
+    }
+
+    private void handleConnectionStrategy(Node node) {
+        ClientConnectionStrategyConfig strategyConfig = new ClientConnectionStrategyConfig();
+        String attrValue = getAttribute(node, "async-start");
+        strategyConfig.setAsyncStart(attrValue != null && getBooleanValue(attrValue.trim()));
+        attrValue = getAttribute(node, "reconnect-mode");
+        if (attrValue != null) {
+            strategyConfig.setReconnectMode(ReconnectMode.valueOf(upperCaseInternal(attrValue.trim())));
+        }
+        clientConfig.setConnectionStrategyConfig(strategyConfig);
+    }
+
+    private void handleUserCodeDeployment(Node node) {
+        NamedNodeMap atts = node.getAttributes();
+        Node enabledNode = atts.getNamedItem("enabled");
+        boolean enabled = enabledNode != null && getBooleanValue(getTextContent(enabledNode).trim());
+        ClientUserCodeDeploymentConfig userCodeDeploymentConfig = new ClientUserCodeDeploymentConfig();
+        userCodeDeploymentConfig.setEnabled(enabled);
+
+        for (Node child : childElements(node)) {
+            String childNodeName = cleanNodeName(child);
+            if ("classnames".equals(childNodeName)) {
+                for (Node classNameNode : childElements(child)) {
+                    userCodeDeploymentConfig.addClass(getTextContent(classNameNode));
+                }
+            } else if ("jarpaths".equals(childNodeName)) {
+                for (Node jarPathNode : childElements(child)) {
+                    userCodeDeploymentConfig.addJar(getTextContent(jarPathNode));
+                }
+            } else {
+                throw new InvalidConfigurationException("User code deployement can either be className or jarPath. "
+                        + childNodeName + " is invalid");
+            }
+        }
+        clientConfig.setUserCodeDeploymentConfig(userCodeDeploymentConfig);
     }
 
     private void handleExecutorPoolSize(Node node) {
@@ -256,6 +299,7 @@ public class XmlClientConfigBuilder extends AbstractConfigBuilder {
     private void handleNearCache(Node node) {
         String name = getAttribute(node, "name");
         NearCacheConfig nearCacheConfig = new NearCacheConfig(name);
+        Boolean serializeKeys = null;
         for (Node child : childElements(node)) {
             String nodeName = cleanNodeName(child);
             String value = getTextContent(child).trim();
@@ -271,6 +315,9 @@ public class XmlClientConfigBuilder extends AbstractConfigBuilder {
                 LOGGER.warning("The element <eviction-policy/> for <near-cache/> is deprecated, please use <eviction/> instead!");
             } else if ("in-memory-format".equals(nodeName)) {
                 nearCacheConfig.setInMemoryFormat(InMemoryFormat.valueOf(upperCaseInternal(value)));
+            } else if ("serialize-keys".equals(nodeName)) {
+                serializeKeys = Boolean.parseBoolean(value);
+                nearCacheConfig.setSerializeKeys(serializeKeys);
             } else if ("invalidate-on-change".equals(nodeName)) {
                 nearCacheConfig.setInvalidateOnChange(Boolean.parseBoolean(value));
             } else if ("cache-local-entries".equals(nodeName)) {
@@ -282,6 +329,10 @@ public class XmlClientConfigBuilder extends AbstractConfigBuilder {
             } else if ("preloader".equals(nodeName)) {
                 nearCacheConfig.setPreloaderConfig(getNearCachePreloaderConfig(child));
             }
+        }
+        if (serializeKeys != null && !serializeKeys && nearCacheConfig.getInMemoryFormat() == InMemoryFormat.NATIVE) {
+            LOGGER.warning("The Near Cache doesn't support keys by-reference with NATIVE in-memory-format."
+                    + " This setting will have no effect!");
         }
         clientConfig.addNearCacheConfig(nearCacheConfig);
     }
@@ -308,14 +359,14 @@ public class XmlClientConfigBuilder extends AbstractConfigBuilder {
     private NearCachePreloaderConfig getNearCachePreloaderConfig(Node node) {
         NearCachePreloaderConfig preloaderConfig = new NearCachePreloaderConfig();
         String enabled = getAttribute(node, "enabled");
-        String filename = getAttribute(node, "filename");
+        String directory = getAttribute(node, "directory");
         String storeInitialDelaySeconds = getAttribute(node, "store-initial-delay-seconds");
         String storeIntervalSeconds = getAttribute(node, "store-interval-seconds");
         if (enabled != null) {
             preloaderConfig.setEnabled(getBooleanValue(enabled));
         }
-        if (filename != null) {
-            preloaderConfig.setFilename(filename);
+        if (directory != null) {
+            preloaderConfig.setDirectory(directory);
         }
         if (storeInitialDelaySeconds != null) {
             preloaderConfig.setStoreInitialDelaySeconds(getIntegerValue("storage-initial-delay-seconds",
@@ -568,4 +619,6 @@ public class XmlClientConfigBuilder extends AbstractConfigBuilder {
         }
         clientConfig.setSecurityConfig(clientSecurityConfig);
     }
+
+
 }

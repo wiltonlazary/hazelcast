@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
+import java.util.List;
 
 /**
  * Contains the result of a query or projection evaluation.
@@ -40,7 +41,7 @@ import java.util.LinkedList;
  */
 public class QueryResult implements Result<QueryResult>, IdentifiedDataSerializable, Iterable<QueryResultRow> {
 
-    private final Collection<QueryResultRow> rows = new LinkedList<QueryResultRow>();
+    private final List<QueryResultRow> rows = new LinkedList<QueryResultRow>();
 
     private Collection<Integer> partitionIds;
 
@@ -124,10 +125,14 @@ public class QueryResult implements Result<QueryResult>, IdentifiedDataSerializa
 
     @Override
     public void combine(QueryResult result) {
-        if (partitionIds == null) {
-            partitionIds = new ArrayList<Integer>(result.getPartitionIds().size());
+        Collection<Integer> otherPartitionIds = result.getPartitionIds();
+        if (otherPartitionIds == null) {
+            return;
         }
-        partitionIds.addAll(result.getPartitionIds());
+        if (partitionIds == null) {
+            partitionIds = new ArrayList<Integer>(otherPartitionIds.size());
+        }
+        partitionIds.addAll(otherPartitionIds);
         rows.addAll(result.getRows());
     }
 
@@ -140,7 +145,7 @@ public class QueryResult implements Result<QueryResult>, IdentifiedDataSerializa
         this.partitionIds = new ArrayList<Integer>(partitionIds);
     }
 
-    public Collection<QueryResultRow> getRows() {
+    public List<QueryResultRow> getRows() {
         return rows;
     }
 

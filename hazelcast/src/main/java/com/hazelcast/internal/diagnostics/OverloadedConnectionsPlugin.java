@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,15 @@
 
 package com.hazelcast.internal.diagnostics;
 
+import com.hazelcast.internal.networking.OutboundFrame;
+import com.hazelcast.internal.networking.nio.NioChannel;
+import com.hazelcast.internal.networking.nio.NioChannelWriter;
+import com.hazelcast.internal.networking.spinning.SpinningChannel;
+import com.hazelcast.internal.networking.spinning.SpinningChannelWriter;
 import com.hazelcast.nio.ConnectionManager;
-import com.hazelcast.nio.OutboundFrame;
 import com.hazelcast.nio.Packet;
 import com.hazelcast.nio.tcp.TcpIpConnection;
 import com.hazelcast.nio.tcp.TcpIpConnectionManager;
-import com.hazelcast.internal.networking.nonblocking.NonBlockingSocketWriter;
-import com.hazelcast.internal.networking.spinning.SpinningSocketWriter;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.properties.HazelcastProperties;
@@ -150,11 +152,13 @@ public class OverloadedConnectionsPlugin extends DiagnosticsPlugin {
     }
 
     private Queue<OutboundFrame> getOutboundQueue(TcpIpConnection connection, boolean priority) {
-        if (connection.getSocketWriter() instanceof NonBlockingSocketWriter) {
-            NonBlockingSocketWriter writer = (NonBlockingSocketWriter) connection.getSocketWriter();
+        if (connection.getChannel() instanceof NioChannel) {
+            NioChannel nioChannel = (NioChannel) connection.getChannel();
+            NioChannelWriter writer = nioChannel.getWriter();
             return priority ? writer.urgentWriteQueue : writer.writeQueue;
-        } else if (connection.getSocketWriter() instanceof SpinningSocketWriter) {
-            SpinningSocketWriter writer = (SpinningSocketWriter) connection.getSocketWriter();
+        } else if (connection.getChannel() instanceof SpinningChannel) {
+            SpinningChannel spinningChannel = (SpinningChannel) connection.getChannel();
+            SpinningChannelWriter writer = spinningChannel.getWriter();
             return priority ? writer.urgentWriteQueue : writer.writeQueue;
         } else {
             return EMPTY_QUEUE;

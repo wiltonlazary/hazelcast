@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -117,9 +117,9 @@ public class ClientEngineImpl implements ClientEngine, CoreService, PostJoinAwar
     private final Executor queryExecutor;
 
     private final SerializationService serializationService;
-    // client uuid -> member uuid
+    // client UUID -> member UUID
     private final ConcurrentMap<String, String> ownershipMappings = new ConcurrentHashMap<String, String>();
-    //// client uuid -> last authentication correlation id
+    // client UUID -> last authentication correlation ID
     private final ConcurrentMap<String, AtomicLong> lastAuthenticationCorrelationIds
             = new ConcurrentHashMap<String, AtomicLong>();
 
@@ -143,9 +143,6 @@ public class ClientEngineImpl implements ClientEngine, CoreService, PostJoinAwar
         this.messageTaskFactory = new CompositeMessageTaskFactory(this.nodeEngine);
         this.clientExceptionFactory = initClientExceptionFactory();
         this.endpointRemoveDelaySeconds = node.getProperties().getInteger(GroupProperty.CLIENT_ENDPOINT_REMOVE_DELAY_SECONDS);
-        ClientHeartbeatMonitor heartbeatMonitor = new ClientHeartbeatMonitor(
-                endpointManager, this, nodeEngine.getExecutionService(), node.getProperties());
-        heartbeatMonitor.start();
     }
 
     private ClientExceptionFactory initClientExceptionFactory() {
@@ -304,7 +301,7 @@ public class ClientEngineImpl implements ClientEngine, CoreService, PostJoinAwar
         sendClientEvent(event);
     }
 
-    void sendClientEvent(ClientEvent event) {
+    private void sendClientEvent(ClientEvent event) {
         final EventService eventService = nodeEngine.getEventService();
         final Collection<EventRegistration> regs = eventService.getRegistrations(SERVICE_NAME, SERVICE_NAME);
         String uuid = event.getUuid();
@@ -356,6 +353,10 @@ public class ClientEngineImpl implements ClientEngine, CoreService, PostJoinAwar
     @Override
     public void init(NodeEngine nodeEngine, Properties properties) {
         node.getConnectionManager().addConnectionListener(connectionListener);
+
+        ClientHeartbeatMonitor heartbeatMonitor = new ClientHeartbeatMonitor(
+                endpointManager, this, nodeEngine.getExecutionService(), node.getProperties());
+        heartbeatMonitor.start();
     }
 
     @Override
@@ -400,7 +401,6 @@ public class ClientEngineImpl implements ClientEngine, CoreService, PostJoinAwar
         return ownershipMappings.remove(clientUuid, memberUuid);
     }
 
-    //implemented for test purpose
     public String getOwnerUuid(String clientUuid) {
         return ownershipMappings.get(clientUuid);
     }
@@ -420,32 +420,40 @@ public class ClientEngineImpl implements ClientEngine, CoreService, PostJoinAwar
 
         @Override
         public void connectionRemoved(Connection connection) {
-            if (connection.isClient() && nodeEngine.isRunning()) {
-                final ClientEndpointImpl endpoint = (ClientEndpointImpl) endpointManager.getEndpoint(connection);
-                if (endpoint == null) {
-                    logger.finest("connectionRemoved: No endpoint for connection:" + connection);
-                    return;
-                }
+            if (!connection.isClient() || !nodeEngine.isRunning()) {
+                return;
+            }
+            final ClientEndpointImpl endpoint = (ClientEndpointImpl) endpointManager.getEndpoint(connection);
+            if (endpoint == null) {
+                logger.finest("connectionRemoved: No endpoint for connection:" + connection);
+                return;
+            }
 
-                if (!endpoint.isFirstConnection()) {
-                    logger.finest("connectionRemoved: Not the owner conn:" + connection + " for endpoint " + endpoint);
-                    return;
-                }
+            endpointManager.removeEndpoint(endpoint);
+            ClientEvent event = new ClientEvent(endpoint.getUuid(),
+                    ClientEventType.DISCONNECTED,
+                    endpoint.getSocketAddress(),
+                    endpoint.getClientType());
+            sendClientEvent(event);
 
-                String localMemberUuid = node.getThisUuid();
-                String ownerUuid = endpoint.getPrincipal().getOwnerUuid();
-                if (localMemberUuid.equals(ownerUuid)) {
-                    try {
-                        nodeEngine.getExecutionService().schedule(new Runnable() {
-                            @Override
-                            public void run() {
-                                callDisconnectionOperation(endpoint);
-                            }
-                        }, endpointRemoveDelaySeconds, TimeUnit.SECONDS);
-                    } catch (RejectedExecutionException e) {
-                        if (logger.isFinestEnabled()) {
-                            logger.finest(e);
+            if (!endpoint.isFirstConnection()) {
+                logger.finest("connectionRemoved: Not the owner conn:" + connection + " for endpoint " + endpoint);
+                return;
+            }
+
+            String localMemberUuid = node.getThisUuid();
+            String ownerUuid = ownershipMappings.get(endpoint.getUuid());
+            if (localMemberUuid.equals(ownerUuid)) {
+                try {
+                    nodeEngine.getExecutionService().schedule(new Runnable() {
+                        @Override
+                        public void run() {
+                            callDisconnectionOperation(endpoint);
                         }
+                    }, endpointRemoveDelaySeconds, TimeUnit.SECONDS);
+                } catch (RejectedExecutionException e) {
+                    if (logger.isFinestEnabled()) {
+                        logger.finest(e);
                     }
                 }
             }
@@ -578,6 +586,19 @@ public class ClientEngineImpl implements ClientEngine, CoreService, PostJoinAwar
         resultMap.put(ClientType.OTHER, numberOfOtherClients);
 
         return resultMap;
+    }
+
+    @Override
+    public Map<String, String> getClientStatistics() {
+        Collection<ClientEndpoint> clientEndpoints = endpointManager.getEndpoints();
+        Map<String, String> statsMap = new HashMap<String, String>(clientEndpoints.size());
+        for (ClientEndpoint e : clientEndpoints) {
+            String statistics = e.getClientStatistics();
+            if (null != statistics) {
+                statsMap.put(e.getUuid(), statistics);
+            }
+        }
+        return statsMap;
     }
 
     private static class PriorityPartitionSpecificRunnable implements PartitionSpecificRunnable, UrgentSystemOperation {

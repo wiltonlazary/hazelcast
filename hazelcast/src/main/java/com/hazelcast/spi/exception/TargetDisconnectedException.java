@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,13 @@
 
 package com.hazelcast.spi.exception;
 
+import com.hazelcast.core.HazelcastException;
+
 /**
- * A {@link com.hazelcast.spi.exception.RetryableHazelcastException} that indicates that an operation is about to
- * be send to a non existing machine.
+ * Thrown when a client invocation is failed because related target is disconnected and
+ * whether the invocation is run or not, is indeterminate
  */
-public class TargetDisconnectedException extends RetryableHazelcastException {
+public class TargetDisconnectedException extends HazelcastException {
 
     public TargetDisconnectedException(String message) {
         super(message);

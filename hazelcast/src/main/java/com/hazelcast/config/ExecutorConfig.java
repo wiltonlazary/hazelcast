@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,16 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+
+import java.io.IOException;
+
 /**
  * Contains the configuration for an {@link com.hazelcast.core.IExecutorService}.
  */
-public class ExecutorConfig {
+public class ExecutorConfig implements IdentifiedDataSerializable {
 
     /**
      * The number of executor threads per Member for the Executor based on this configuration.
@@ -27,7 +33,7 @@ public class ExecutorConfig {
     public static final int DEFAULT_POOL_SIZE = 16;
 
     /**
-     * Capacity of Queue
+     * Capacity of queue.
      */
     public static final int DEFAULT_QUEUE_CAPACITY = Integer.MAX_VALUE;
 
@@ -39,7 +45,7 @@ public class ExecutorConfig {
 
     private boolean statisticsEnabled = true;
 
-    private ExecutorConfigReadOnly readOnly;
+    private transient ExecutorConfigReadOnly readOnly;
 
     public ExecutorConfig() {
     }
@@ -60,6 +66,12 @@ public class ExecutorConfig {
         this.statisticsEnabled = config.statisticsEnabled;
     }
 
+    /**
+     * Gets immutable version of this configuration.
+     *
+     * @return immutable version of this configuration
+     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
+     */
     public ExecutorConfigReadOnly getAsReadOnly() {
         if (readOnly == null) {
             readOnly = new ExecutorConfigReadOnly(this);
@@ -70,7 +82,7 @@ public class ExecutorConfig {
     /**
      * Gets the name of the executor task.
      *
-     * @return The name of the executor task.
+     * @return the name of the executor task
      */
     public String getName() {
         return name;
@@ -79,8 +91,8 @@ public class ExecutorConfig {
     /**
      * Sets the name of the executor task.
      *
-     * @param name The name of the executor task.
-     * @return This executor config instance.
+     * @param name the name of the executor task
+     * @return this executor config instance
      */
     public ExecutorConfig setName(String name) {
         this.name = name;
@@ -90,7 +102,7 @@ public class ExecutorConfig {
     /**
      * Gets the number of executor threads per member for the executor.
      *
-     * @return The number of executor threads per member for the executor.
+     * @return the number of executor threads per member for the executor
      */
     public int getPoolSize() {
         return poolSize;
@@ -99,8 +111,8 @@ public class ExecutorConfig {
     /**
      * Sets the number of executor threads per member for the executor.
      *
-     * @param poolSize The number of executor threads per member for the executor.
-     * @return This executor config instance.
+     * @param poolSize the number of executor threads per member for the executor
+     * @return this executor config instance
      */
     public ExecutorConfig setPoolSize(final int poolSize) {
         if (poolSize <= 0) {
@@ -111,19 +123,19 @@ public class ExecutorConfig {
     }
 
     /**
-     * Gets the queue capacity of the executor task. 0 means Integer.MAX_VALUE.
+     * Gets the queue capacity of the executor task. 0 means {@code Integer.MAX_VALUE}.
      *
-     * @return Queue capacity of the executor task. 0 means Integer.MAX_VALUE.
+     * @return Queue capacity of the executor task. 0 means {@code Integer.MAX_VALUE}
      */
     public int getQueueCapacity() {
         return queueCapacity;
     }
 
     /**
-     * Sets the queue capacity of the executor task. 0 means Integer.MAX_VALUE.
+     * Sets the queue capacity of the executor task. 0 means {@code Integer.MAX_VALUE}.
      *
-     * @param queueCapacity Queue capacity of the executor task. 0 means Integer.MAX_VALUE.
-     * @return This executor config instance.
+     * @param queueCapacity Queue capacity of the executor task. 0 means {@code Integer.MAX_VALUE}
+     * @return this executor config instance
      */
     public ExecutorConfig setQueueCapacity(int queueCapacity) {
         this.queueCapacity = queueCapacity;
@@ -133,7 +145,7 @@ public class ExecutorConfig {
     /**
      * Gets if statistics gathering is enabled or disabled on the executor task.
      *
-     * @return True (default) if statistics gathering is enabled on the executor task, false otherwise.
+     * @return {@code true} if statistics gathering is enabled on the executor task (default), {@code false} otherwise
      */
     public boolean isStatisticsEnabled() {
         return statisticsEnabled;
@@ -142,8 +154,8 @@ public class ExecutorConfig {
     /**
      * Enables or disables statistics gathering on the executor task.
      *
-     * @param statisticsEnabled True (default) if statistics gathering is enabled on the executor task, false otherwise.
-     * @return This executor config instance.
+     * @param statisticsEnabled {@code true} if statistics gathering is enabled on the executor task, {@code false} otherwise
+     * @return this executor config instance
      */
     public ExecutorConfig setStatisticsEnabled(boolean statisticsEnabled) {
         this.statisticsEnabled = statisticsEnabled;
@@ -157,5 +169,63 @@ public class ExecutorConfig {
                 + ", poolSize=" + poolSize
                 + ", queueCapacity=" + queueCapacity
                 + '}';
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ConfigDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ConfigDataSerializerHook.EXECUTOR_CONFIG;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(name);
+        out.writeInt(poolSize);
+        out.writeInt(queueCapacity);
+        out.writeBoolean(statisticsEnabled);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        name = in.readUTF();
+        poolSize = in.readInt();
+        queueCapacity = in.readInt();
+        statisticsEnabled = in.readBoolean();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        ExecutorConfig that = (ExecutorConfig) o;
+
+        if (poolSize != that.poolSize) {
+            return false;
+        }
+        if (queueCapacity != that.queueCapacity) {
+            return false;
+        }
+        if (statisticsEnabled != that.statisticsEnabled) {
+            return false;
+        }
+        return name.equals(that.name);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = name.hashCode();
+        result = 31 * result + poolSize;
+        result = 31 * result + queueCapacity;
+        result = 31 * result + (statisticsEnabled ? 1 : 0);
+        return result;
     }
 }

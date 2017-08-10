@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,8 +29,8 @@ import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.transaction.TransactionException;
 import com.hazelcast.util.Clock;
-import com.hazelcast.version.ClusterVersion;
 import com.hazelcast.version.MemberVersion;
+import com.hazelcast.version.Version;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -62,10 +62,11 @@ public class ClusterStateManagerTest {
     private static final String TXN = "txn";
     private static final String ANOTHER_TXN = "another-txn";
     private static final MemberVersion CURRENT_NODE_VERSION = MemberVersion.of(BuildInfoProvider.getBuildInfo().getVersion());
-    private static final ClusterVersion CURRENT_CLUSTER_VERSION = ClusterVersion.of(BuildInfoProvider.getBuildInfo().getVersion());
+    private static final Version CURRENT_CLUSTER_VERSION = Version.of(BuildInfoProvider.getBuildInfo().getVersion());
 
     private final Node node = mock(Node.class);
     private final InternalPartitionService partitionService = mock(InternalPartitionService.class);
+    private final MembershipManager membershipManager = mock(MembershipManager.class);
     private final ClusterServiceImpl clusterService = mock(ClusterServiceImpl.class);
     private final Lock lock = mock(Lock.class);
 
@@ -75,13 +76,16 @@ public class ClusterStateManagerTest {
     public void setup() {
         NodeExtension nodeExtension = mock(NodeExtension.class);
         when(nodeExtension.isStartCompleted()).thenReturn(true);
-        when(nodeExtension.isNodeVersionCompatibleWith(Matchers.any(ClusterVersion.class))).thenReturn(true);
+        when(nodeExtension.isNodeVersionCompatibleWith(Matchers.any(Version.class))).thenReturn(true);
 
         when(node.getPartitionService()).thenReturn(partitionService);
         when(node.getClusterService()).thenReturn(clusterService);
         when(node.getNodeExtension()).thenReturn(nodeExtension);
         when(node.getLogger(ClusterStateManager.class)).thenReturn(mock(ILogger.class));
         when(node.getVersion()).thenReturn(CURRENT_NODE_VERSION);
+
+        when(clusterService.getMembershipManager()).thenReturn(membershipManager);
+        when(clusterService.getClusterJoinManager()).thenReturn(mock(ClusterJoinManager.class));
 
         clusterStateManager = new ClusterStateManager(node, lock);
     }
@@ -319,7 +323,7 @@ public class ClusterStateManagerTest {
         clusterStateManager.commitClusterState(newState, initiator, TXN);
 
         assertEquals(newState.getNewState(), clusterStateManager.getState());
-        verify(clusterService, times(1)).removeMembersDeadWhileClusterIsNotActive();
+        verify(membershipManager, times(1)).removeMembersDeadInNotJoinableState();
     }
 
     private Address newAddress() throws UnknownHostException {

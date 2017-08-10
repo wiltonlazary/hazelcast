@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,22 @@
 
 package com.hazelcast.nio;
 
-import com.hazelcast.client.impl.protocol.ClientMessage;
+import com.hazelcast.client.ClientEngine;
 import com.hazelcast.config.SSLConfig;
-import com.hazelcast.config.SocketInterceptorConfig;
 import com.hazelcast.config.SymmetricEncryptionConfig;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.internal.ascii.TextCommandService;
+import com.hazelcast.internal.networking.ChannelFactory;
+import com.hazelcast.internal.networking.ChannelInboundHandler;
+import com.hazelcast.internal.networking.ChannelOutboundHandler;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.logging.LoggingService;
-import com.hazelcast.internal.networking.IOOutOfMemoryHandler;
-import com.hazelcast.internal.networking.ReadHandler;
-import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
 import com.hazelcast.nio.tcp.TcpIpConnection;
-import com.hazelcast.internal.networking.WriteHandler;
 import com.hazelcast.spi.EventService;
 import com.hazelcast.spi.annotation.PrivateApi;
 
+import java.io.IOException;
+import java.net.Socket;
+import java.net.SocketException;
 import java.util.Collection;
 
 @PrivateApi
@@ -41,23 +41,19 @@ public interface IOService {
 
     boolean isActive();
 
-    HazelcastThreadGroup getHazelcastThreadGroup();
+    String getHazelcastName();
 
     LoggingService getLoggingService();
-
-    IOOutOfMemoryHandler getIoOutOfMemoryHandler();
 
     Address getThisAddress();
 
     void onFatalError(Exception e);
 
-    SocketInterceptorConfig getSocketInterceptorConfig();
-
     SymmetricEncryptionConfig getSymmetricEncryptionConfig();
 
     SSLConfig getSSLConfig();
 
-    void handleClientMessage(ClientMessage cm, Connection connection);
+    ClientEngine getClientEngine();
 
     TextCommandService getTextCommandService();
 
@@ -83,7 +79,7 @@ public interface IOService {
 
     int getSocketSendBufferSize();
 
-    boolean isSocketBufferDirect();
+    boolean useDirectSocketBuffer();
 
     /**
      * Size of receive buffers for connections opened by clients
@@ -99,13 +95,13 @@ public interface IOService {
      */
     int getSocketClientSendBufferSize();
 
-    int getSocketLingerSeconds();
+    void configureSocket(Socket socket) throws SocketException;
+
+    void interceptSocket(Socket socket, boolean onAccept) throws IOException;
+
+    boolean isSocketInterceptorEnabled();
 
     int getSocketConnectTimeoutSeconds();
-
-    boolean getSocketKeepAlive();
-
-    boolean getSocketNoDelay();
 
     int getInputSelectorThreadCount();
 
@@ -122,8 +118,6 @@ public interface IOService {
 
     void onDisconnect(Address endpoint, Throwable cause);
 
-    boolean isClient();
-
     void executeAsync(Runnable runnable);
 
     EventService getEventService();
@@ -132,11 +126,11 @@ public interface IOService {
 
     InternalSerializationService getSerializationService();
 
-    SocketChannelWrapperFactory getSocketChannelWrapperFactory();
+    ChannelFactory getChannelFactory();
 
     MemberSocketInterceptor getMemberSocketInterceptor();
 
-    ReadHandler createReadHandler(TcpIpConnection connection);
+    ChannelInboundHandler createInboundHandler(TcpIpConnection connection);
 
-    WriteHandler createWriteHandler(TcpIpConnection connection);
+    ChannelOutboundHandler createOutboundHandler(TcpIpConnection connection);
 }

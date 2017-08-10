@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,10 +30,10 @@ import com.hazelcast.spi.OperationFactory;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.TransactionalDistributedObject;
 import com.hazelcast.spi.partition.IPartitionService;
-import com.hazelcast.transaction.TransactionException;
+import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.transaction.TransactionNotActiveException;
 import com.hazelcast.transaction.TransactionOptions.TransactionType;
-import com.hazelcast.transaction.TransactionalObject;
+import com.hazelcast.transaction.TransactionTimedOutException;
 import com.hazelcast.transaction.impl.Transaction;
 import com.hazelcast.util.ThreadUtil;
 
@@ -42,53 +42,68 @@ import java.util.Map;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import static com.hazelcast.internal.nearcache.NearCache.NULL_OBJECT;
+import static com.hazelcast.internal.nearcache.NearCache.CACHED_AS_NULL;
+import static com.hazelcast.internal.nearcache.NearCache.NOT_CACHED;
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
 import static com.hazelcast.util.ExceptionUtil.rethrow;
 
 /**
  * Base class contains proxy helper methods for {@link com.hazelcast.map.impl.tx.TransactionalMapProxy}
  */
-public abstract class TransactionalMapProxySupport
-        extends TransactionalDistributedObject<MapService> implements TransactionalObject {
+public abstract class TransactionalMapProxySupport extends TransactionalDistributedObject<MapService> {
 
     protected final Map<Data, VersionedValue> valueMap = new HashMap<Data, VersionedValue>();
 
     protected final String name;
     protected final MapServiceContext mapServiceContext;
     protected final MapNearCacheManager mapNearCacheManager;
-    protected final RecordFactory recordFactory;
     protected final MapOperationProvider operationProvider;
     protected final PartitioningStrategy partitionStrategy;
     protected final IPartitionService partitionService;
     protected final OperationService operationService;
-    protected final boolean nearCacheEnabled;
+    protected final SerializationService serializationService;
 
-    public TransactionalMapProxySupport(String name, MapService mapService, NodeEngine nodeEngine, Transaction transaction) {
+    private final RecordFactory recordFactory;
+    private final boolean nearCacheEnabled;
+    private final boolean serializeKeys;
+
+    TransactionalMapProxySupport(String name, MapService mapService, NodeEngine nodeEngine, Transaction transaction) {
         super(nodeEngine, mapService, transaction);
         this.name = name;
         this.mapServiceContext = mapService.getMapServiceContext();
         this.mapNearCacheManager = mapServiceContext.getMapNearCacheManager();
-        MapContainer mapContainer = mapServiceContext.getMapContainer(name);
-        this.recordFactory = mapContainer.getRecordFactoryConstructor().createNew(null);
         this.operationProvider = mapServiceContext.getMapOperationProvider(name);
+        MapContainer mapContainer = mapServiceContext.getMapContainer(name);
         this.partitionStrategy = mapContainer.getPartitioningStrategy();
         this.partitionService = nodeEngine.getPartitionService();
         this.operationService = nodeEngine.getOperationService();
+        this.serializationService = nodeEngine.getSerializationService();
+        this.recordFactory = mapContainer.getRecordFactoryConstructor().createNew(null);
         this.nearCacheEnabled = mapContainer.getMapConfig().isNearCacheEnabled();
+        this.serializeKeys = nearCacheEnabled && mapContainer.getMapConfig().getNearCacheConfig().isSerializeKeys();
     }
 
-    protected boolean isEquals(Object value1, Object value2) {
+    @Override
+    public String getName() {
+        return name;
+    }
+
+    @Override
+    public final String getServiceName() {
+        return SERVICE_NAME;
+    }
+
+    boolean isEquals(Object value1, Object value2) {
         return recordFactory.isEquals(value1, value2);
     }
 
-    protected void checkTransactionState() {
+    void checkTransactionState() {
         if (!tx.getState().equals(Transaction.State.ACTIVE)) {
             throw new TransactionNotActiveException("Transaction is not active!");
         }
     }
 
-    public boolean containsKeyInternal(Data key) {
+    boolean containsKeyInternal(Data key) {
         MapOperation operation = operationProvider.createContainsKeyOperation(name, key);
         operation.setThreadId(ThreadUtil.getThreadId());
         int partitionId = partitionService.getPartitionId(key);
@@ -100,19 +115,17 @@ public abstract class TransactionalMapProxySupport
         }
     }
 
-    public Object getInternal(Data key) {
+    Object getInternal(Object key, Data keyData) {
         if (nearCacheEnabled) {
-            Object cached = mapNearCacheManager.getFromNearCache(name, key);
-            if (cached != null) {
-                if (cached.equals(NULL_OBJECT)) {
-                    cached = null;
-                }
-                return cached;
+            Object value = getCachedValue(serializeKeys ? keyData : key);
+            if (value != NOT_CACHED) {
+                return value;
             }
         }
-        MapOperation operation = operationProvider.createGetOperation(name, key);
+
+        MapOperation operation = operationProvider.createGetOperation(name, keyData);
         operation.setThreadId(ThreadUtil.getThreadId());
-        int partitionId = partitionService.getPartitionId(key);
+        int partitionId = partitionService.getPartitionId(keyData);
         try {
             Future future = operationService.invokeOnPartition(SERVICE_NAME, operation, partitionId);
             return future.get();
@@ -121,13 +134,24 @@ public abstract class TransactionalMapProxySupport
         }
     }
 
-    public Object getForUpdateInternal(Data key) {
+    private Object getCachedValue(Object key) {
+        Object value = mapNearCacheManager.getFromNearCache(name, key);
+        if (value == null) {
+            return NOT_CACHED;
+        }
+        if (value == CACHED_AS_NULL) {
+            return null;
+        }
+        return serializationService.toData(value);
+    }
+
+    Object getForUpdateInternal(Data key) {
         VersionedValue versionedValue = lockAndGet(key, tx.getTimeoutMillis(), true);
         addUnlockTransactionRecord(key, versionedValue.version);
         return versionedValue.value;
     }
 
-    public int sizeInternal() {
+    int sizeInternal() {
         try {
             OperationFactory sizeOperationFactory = operationProvider.createMapSizeOperationFactory(name);
             Map<Integer, Object> results = operationService.invokeOnAllPartitions(SERVICE_NAME, sizeOperationFactory);
@@ -142,7 +166,7 @@ public abstract class TransactionalMapProxySupport
         }
     }
 
-    public Data putInternal(Data key, Data value, long ttl, TimeUnit timeUnit) {
+    Data putInternal(Data key, Data value, long ttl, TimeUnit timeUnit) {
         VersionedValue versionedValue = lockAndGet(key, tx.getTimeoutMillis());
         long timeInMillis = getTimeInMillis(ttl, timeUnit);
         MapOperation operation = operationProvider.createTxnSetOperation(name, key, value, versionedValue.version, timeInMillis);
@@ -150,7 +174,7 @@ public abstract class TransactionalMapProxySupport
         return versionedValue.value;
     }
 
-    public Data putIfAbsentInternal(Data key, Data value) {
+    Data putIfAbsentInternal(Data key, Data value) {
         boolean unlockImmediately = !valueMap.containsKey(key);
         VersionedValue versionedValue = lockAndGet(key, tx.getTimeoutMillis());
         if (versionedValue.value != null) {
@@ -167,7 +191,7 @@ public abstract class TransactionalMapProxySupport
         return versionedValue.value;
     }
 
-    public Data replaceInternal(Data key, Data value) {
+    Data replaceInternal(Data key, Data value) {
         boolean unlockImmediately = !valueMap.containsKey(key);
         VersionedValue versionedValue = lockAndGet(key, tx.getTimeoutMillis());
         if (versionedValue.value == null) {
@@ -183,7 +207,7 @@ public abstract class TransactionalMapProxySupport
         return versionedValue.value;
     }
 
-    public boolean replaceIfSameInternal(Data key, Object oldValue, Data newValue) {
+    boolean replaceIfSameInternal(Data key, Object oldValue, Data newValue) {
         boolean unlockImmediately = !valueMap.containsKey(key);
         VersionedValue versionedValue = lockAndGet(key, tx.getTimeoutMillis());
         if (!isEquals(oldValue, versionedValue.value)) {
@@ -199,7 +223,7 @@ public abstract class TransactionalMapProxySupport
         return true;
     }
 
-    public Data removeInternal(Data key) {
+    Data removeInternal(Data key) {
         VersionedValue versionedValue = lockAndGet(key, tx.getTimeoutMillis());
         tx.add(new MapTransactionLogRecord(name, key, getPartitionId(key),
                 operationProvider.createTxnDeleteOperation(name, key, versionedValue.version),
@@ -207,7 +231,7 @@ public abstract class TransactionalMapProxySupport
         return versionedValue.value;
     }
 
-    public boolean removeIfSameInternal(Data key, Object value) {
+    boolean removeIfSameInternal(Data key, Object value) {
         boolean unlockImmediately = !valueMap.containsKey(key);
         VersionedValue versionedValue = lockAndGet(key, tx.getTimeoutMillis());
         if (!isEquals(versionedValue.value, value)) {
@@ -269,7 +293,7 @@ public abstract class TransactionalMapProxySupport
             Future<VersionedValue> future = operationService.invokeOnPartition(SERVICE_NAME, operation, partitionId);
             versionedValue = future.get();
             if (versionedValue == null) {
-                throw new TransactionException("Transaction couldn't obtain lock for the key: " + toObjectIfNeeded(key));
+                throw new TransactionTimedOutException("Transaction couldn't obtain lock for the key: " + toObjectIfNeeded(key));
             }
             valueMap.put(key, versionedValue);
             return versionedValue;
@@ -278,17 +302,7 @@ public abstract class TransactionalMapProxySupport
         }
     }
 
-    protected long getTimeInMillis(long time, TimeUnit timeunit) {
+    private static long getTimeInMillis(long time, TimeUnit timeunit) {
         return timeunit != null ? timeunit.toMillis(time) : time;
-    }
-
-    @Override
-    public String getName() {
-        return name;
-    }
-
-    @Override
-    public final String getServiceName() {
-        return SERVICE_NAME;
     }
 }

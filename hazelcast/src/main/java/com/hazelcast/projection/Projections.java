@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ public final class Projections {
     /**
      * Returns a projection that extracts the value of the given attributePath
      *
-     * @param attributePath single attribute path
+     * @param attributePath single attribute path, path must not be null or empty
      * @param <O>           Output type
      * @return a projection that extracts the value of the given attributePath
      */
@@ -44,7 +44,7 @@ public final class Projections {
      * Returns a projection that extracts the value of the given attributePaths.
      * The attribute values will be returned as an Object[] array from each projection call.
      *
-     * @param attributePath 1 to N attribute Paths
+     * @param attributePath 1 to N attribute Paths, paths must not be null or empty
      * @return a projection that extracts the value of the given attributePaths.
      */
     public static <I> Projection<I, Object[]> multiAttribute(String... attributePath) {

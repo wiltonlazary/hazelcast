@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.hazelcast.config.EvictionConfig;
 import com.hazelcast.config.EvictionPolicy;
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.MapConfig;
+import com.hazelcast.config.NativeMemoryConfig;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.internal.eviction.EvictableEntryView;
 import com.hazelcast.internal.eviction.EvictionPolicyComparator;
@@ -34,13 +35,18 @@ import org.junit.runner.RunWith;
 import static com.hazelcast.config.InMemoryFormat.BINARY;
 import static com.hazelcast.config.InMemoryFormat.NATIVE;
 import static com.hazelcast.config.InMemoryFormat.OBJECT;
+import static com.hazelcast.config.NearCacheConfig.LocalUpdatePolicy.CACHE_ON_UPDATE;
+import static com.hazelcast.config.NearCacheConfig.LocalUpdatePolicy.INVALIDATE;
 import static com.hazelcast.internal.config.ConfigValidator.checkEvictionConfig;
 import static com.hazelcast.internal.config.ConfigValidator.checkMapConfig;
 import static com.hazelcast.internal.config.ConfigValidator.checkNearCacheConfig;
+import static com.hazelcast.internal.config.ConfigValidator.checkNearCacheNativeMemoryConfig;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class ConfigValidatorTest extends HazelcastTestSupport {
+
+    private static final String MAP_NAME = "default";
 
     @Test
     public void testConstructor() {
@@ -83,12 +89,12 @@ public class ConfigValidatorTest extends HazelcastTestSupport {
 
     @Test
     public void checkNearCacheConfig_BINARY() {
-        checkNearCacheConfig(getNearCacheConfig(BINARY), false);
+        checkNearCacheConfig(MAP_NAME, getNearCacheConfig(BINARY), null, false);
     }
 
     @Test
     public void checkNearCacheConfig_OBJECT() {
-        checkNearCacheConfig(getNearCacheConfig(OBJECT), false);
+        checkNearCacheConfig(MAP_NAME, getNearCacheConfig(OBJECT), null, false);
     }
 
     /**
@@ -96,7 +102,7 @@ public class ConfigValidatorTest extends HazelcastTestSupport {
      */
     @Test(expected = IllegalArgumentException.class)
     public void checkNearCacheConfig_NATIVE() {
-        checkNearCacheConfig(getNearCacheConfig(NATIVE), false);
+        checkNearCacheConfig(MAP_NAME, getNearCacheConfig(NATIVE), null, false);
     }
 
     /**
@@ -104,7 +110,7 @@ public class ConfigValidatorTest extends HazelcastTestSupport {
      */
     @Test(expected = IllegalArgumentException.class)
     public void checkNearCacheConfig_withUnsupportedClientConfig() {
-        checkNearCacheConfig(getNearCacheConfig(BINARY), true);
+        checkNearCacheConfig(MAP_NAME, getNearCacheConfig(BINARY), null, true);
     }
 
     @Test
@@ -262,7 +268,7 @@ public class ConfigValidatorTest extends HazelcastTestSupport {
                 .setStoreInitialDelaySeconds(1)
                 .setStoreInitialDelaySeconds(1);
 
-        checkNearCacheConfig(nearCacheConfig, true);
+        checkNearCacheConfig(MAP_NAME, nearCacheConfig, null, true);
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -273,7 +279,50 @@ public class ConfigValidatorTest extends HazelcastTestSupport {
                 .setStoreInitialDelaySeconds(1)
                 .setStoreInitialDelaySeconds(1);
 
-        checkNearCacheConfig(nearCacheConfig, false);
+        checkNearCacheConfig(MAP_NAME, nearCacheConfig, null, false);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void not_supports_near_cache_localUpdatePolicy_CACHE_ON_UPDATE() {
+        NearCacheConfig nearCacheConfig = new NearCacheConfig();
+        nearCacheConfig.setLocalUpdatePolicy(CACHE_ON_UPDATE);
+
+        checkNearCacheConfig(MAP_NAME, nearCacheConfig, null, false);
+    }
+
+    @Test
+    public void supports_near_cache_localUpdatePolicy_INVALIDATE() {
+        NearCacheConfig nearCacheConfig = new NearCacheConfig();
+        nearCacheConfig.setLocalUpdatePolicy(INVALIDATE);
+
+        checkNearCacheConfig(MAP_NAME, nearCacheConfig, null, false);
+    }
+
+    @Test
+    public void should_not_need_native_memory_config_when_on_heap_memory_used_on_os() {
+        checkNearCacheNativeMemoryConfig(InMemoryFormat.BINARY, null, false);
+    }
+
+    @Test
+    public void should_not_need_native_memory_config_when_on_heap_memory_used_on_ee() {
+        checkNearCacheNativeMemoryConfig(InMemoryFormat.BINARY, null, true);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void should_throw_exception_without_native_memory_config_when_native_memory_used_on_ee() {
+        checkNearCacheNativeMemoryConfig(InMemoryFormat.NATIVE, null, true);
+    }
+
+    @Test
+    public void should_not_throw_exception_without_native_memory_config_when_native_memory_used_on_os() {
+        checkNearCacheNativeMemoryConfig(InMemoryFormat.NATIVE, null, false);
+    }
+
+    @Test
+    public void should_not_throw_exception_with_native_memory_config_when_native_memory_used_on_ee() {
+        NativeMemoryConfig nativeMemoryConfig = new NativeMemoryConfig();
+        nativeMemoryConfig.setEnabled(true);
+        checkNearCacheNativeMemoryConfig(InMemoryFormat.NATIVE, nativeMemoryConfig, true);
     }
 
     private MapConfig getMapConfig(InMemoryFormat inMemoryFormat) {

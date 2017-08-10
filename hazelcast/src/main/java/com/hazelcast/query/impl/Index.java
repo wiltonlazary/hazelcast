@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,15 @@ import java.util.Set;
  */
 public interface Index {
 
+    /**
+     * Clear out entries from the index
+     */
     void clear();
+
+    /**
+     * Release all resources hold by the index. (ie. Native memory for HD)
+     */
+    void destroy();
 
     /**
      * Add entry to this index.

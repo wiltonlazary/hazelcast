@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -133,7 +133,9 @@ public interface NodeEngine {
     /**
      * Returns the local member.
      * <p/>
-     * The returned value will never change and will never be null.
+     * The returned value will never be null but it may change when local lite member is promoted to a data member
+     * or when this member merges to a new cluster after split-brain detected. Returned value should not be
+     * cached but instead this method should be called each time when local member is needed.
      *
      * @return the local member.
      */
@@ -285,4 +287,5 @@ public interface NodeEngine {
      * @since 3.8
      */
     MemberVersion getVersion();
+
 }

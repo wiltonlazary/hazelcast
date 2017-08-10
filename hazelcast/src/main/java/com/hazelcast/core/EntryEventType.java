@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,7 +61,7 @@ public enum EntryEventType {
     }
 
     /**
-     * These constants represent type-id and bit-mask of events.
+     * These constants represent type ID and bit-mask of events.
      *
      * @see com.hazelcast.map.impl.MapListenerFlagOperator
      */

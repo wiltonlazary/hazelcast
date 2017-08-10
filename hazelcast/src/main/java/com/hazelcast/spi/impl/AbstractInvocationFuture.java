@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -201,12 +201,12 @@ public abstract class AbstractInvocationFuture<V> implements InternalCompletable
     }
 
     @Override
-    public final void andThen(ExecutionCallback<V> callback) {
+    public void andThen(ExecutionCallback<V> callback) {
         andThen(callback, defaultExecutor);
     }
 
     @Override
-    public final void andThen(ExecutionCallback<V> callback, Executor executor) {
+    public void andThen(ExecutionCallback<V> callback, Executor executor) {
         isNotNull(callback, "callback");
         isNotNull(executor, "executor");
 
@@ -359,10 +359,15 @@ public abstract class AbstractInvocationFuture<V> implements InternalCompletable
                 return false;
             }
             if (compareAndSetState(oldState, value)) {
+                onComplete();
                 unblockAll(oldState, defaultExecutor);
                 return true;
             }
         }
+    }
+
+    protected void onComplete() {
+
     }
 
     // it can be that this future is already completed, e.g. when an invocation already

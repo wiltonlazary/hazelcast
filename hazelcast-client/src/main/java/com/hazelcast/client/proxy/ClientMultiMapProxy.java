@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@ import com.hazelcast.client.impl.protocol.codec.MultiMapTryLockCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapUnlockCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapValueCountCodec;
 import com.hazelcast.client.impl.protocol.codec.MultiMapValuesCodec;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.client.spi.ClientProxy;
 import com.hazelcast.client.spi.EventHandler;
 import com.hazelcast.client.spi.impl.ListenerMessageCodec;
@@ -46,7 +47,6 @@ import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.EntryEventType;
 import com.hazelcast.core.EntryListener;
 import com.hazelcast.core.HazelcastException;
-import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.core.IMapEvent;
 import com.hazelcast.core.MapEvent;
@@ -97,8 +97,8 @@ public class ClientMultiMapProxy<K, V> extends ClientProxy implements MultiMap<K
 
     private ClientLockReferenceIdGenerator lockReferenceIdGenerator;
 
-    public ClientMultiMapProxy(String serviceName, String name) {
-        super(serviceName, name);
+    public ClientMultiMapProxy(String serviceName, String name, ClientContext context) {
+        super(serviceName, name, context);
     }
 
     @Override
@@ -410,15 +410,14 @@ public class ClientMultiMapProxy<K, V> extends ClientProxy implements MultiMap<K
 
     @Override
     public LocalMultiMapStats getLocalMultiMapStats() {
-        throw new UnsupportedOperationException("Locality is ambiguous for client!!!");
+        throw new UnsupportedOperationException("Locality is ambiguous for client!");
     }
 
     @Override
     public <SuppliedValue, Result> Result aggregate(Supplier<K, V, SuppliedValue> supplier,
                                                     Aggregation<K, SuppliedValue, Result> aggregation) {
 
-        HazelcastInstance hazelcastInstance = getContext().getHazelcastInstance();
-        JobTracker jobTracker = hazelcastInstance.getJobTracker("hz::aggregation-multimap-" + name);
+        JobTracker jobTracker = getClient().getJobTracker("hz::aggregation-multimap-" + name);
         return aggregate(supplier, aggregation, jobTracker);
     }
 
@@ -522,8 +521,8 @@ public class ClientMultiMapProxy<K, V> extends ClientProxy implements MultiMap<K
 
         private EntryEvent<K, V> createEntryEvent(Data keyData, Data valueData, Data oldValueData,
                                                   Data mergingValueData, int eventType, Member member) {
-            return new DataAwareEntryEvent(member, eventType, name, keyData, valueData,
-                    oldValueData, mergingValueData, getContext().getSerializationService());
+            return new DataAwareEntryEvent<K, V>(member, eventType, name, keyData, valueData, oldValueData, mergingValueData,
+                    getSerializationService());
         }
 
         @Override

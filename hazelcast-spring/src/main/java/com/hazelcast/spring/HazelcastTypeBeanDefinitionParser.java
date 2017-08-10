@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,7 @@ import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 
 /**
- * BeanDefinitionParser for Type Configuration of Hazelcast Types like map,queue,topic etc.
- *
+ * BeanDefinitionParser for Type Configuration of Hazelcast Types like map, queue, topic etc.
  */
 public class HazelcastTypeBeanDefinitionParser extends AbstractHazelcastBeanDefinitionParser {
 

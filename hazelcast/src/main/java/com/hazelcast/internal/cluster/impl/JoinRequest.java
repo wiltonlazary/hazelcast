@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,7 +74,7 @@ public class JoinRequest extends JoinMessage {
     }
 
     public MemberInfo toMemberInfo() {
-        return new MemberInfo(address, uuid, attributes, liteMember, version);
+        return new MemberInfo(address, uuid, attributes, liteMember, memberVersion);
     }
 
     @Override
@@ -122,7 +122,7 @@ public class JoinRequest extends JoinMessage {
         return "JoinRequest{"
                 + "packetVersion=" + packetVersion
                 + ", buildNumber=" + buildNumber
-                + ", version=" + version
+                + ", memberVersion=" + memberVersion
                 + ", address=" + address
                 + ", uuid='" + uuid + "'"
                 + ", liteMember=" + liteMember

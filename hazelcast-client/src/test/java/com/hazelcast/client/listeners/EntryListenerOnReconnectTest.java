@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,17 +35,17 @@ public class EntryListenerOnReconnectTest extends AbstractListenersOnReconnectTe
     protected String addListener() {
         iMap = client.getMap(randomString());
 
-        final EntryAdapter<Object, Object> listener = new EntryAdapter<Object, Object>() {
-            public void onEntryEvent(EntryEvent<Object, Object> event) {
-                eventCount.incrementAndGet();
+        final EntryAdapter<String, String> listener = new EntryAdapter<String, String>() {
+            public void onEntryEvent(EntryEvent<String, String> event) {
+                onEvent(event.getKey());
             }
         };
         return iMap.addEntryListener(listener, true);
     }
 
     @Override
-    public void produceEvent() {
-        iMap.put(randomString(), randomString());
+    public void produceEvent(String event) {
+        iMap.put(event, randomString());
     }
 
     @Override

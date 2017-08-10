@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ import java.util.Map;
 /**
  * Provides a context to perform transactional operations: beginning/committing transactions, but also retrieving
  * transactional data-structures like the {@link com.hazelcast.core.TransactionalMap}.
- * <p/>
+ *
  * Provides client instance and client connection proxies that need to be accessed for sending invocations.
  */
 public class TransactionContextProxy implements ClientTransactionContext {
@@ -54,6 +54,7 @@ public class TransactionContextProxy implements ClientTransactionContext {
     final HazelcastClientInstanceImpl client;
     final TransactionProxy transaction;
     final ClientConnection connection;
+
     private final Map<TransactionalObjectKey, TransactionalObject> txnObjectMap =
             new HashMap<TransactionalObjectKey, TransactionalObject>(2);
 
@@ -63,7 +64,7 @@ public class TransactionContextProxy implements ClientTransactionContext {
         try {
             connection = transactionManager.connect();
         } catch (Exception e) {
-            throw new HazelcastException("Could not obtain Connection!!!", e);
+            throw new HazelcastException("Could not obtain Connection!", e);
         }
         this.transaction = new TransactionProxy(client, options, connection);
     }

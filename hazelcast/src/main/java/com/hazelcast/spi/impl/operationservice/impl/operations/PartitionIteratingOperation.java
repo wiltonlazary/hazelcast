@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import com.hazelcast.spi.impl.SpiDataSerializerHook;
 import com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl;
 import com.hazelcast.spi.impl.operationservice.impl.responses.ErrorResponse;
 import com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.io.IOException;
 import java.util.List;
@@ -56,12 +57,18 @@ public final class PartitionIteratingOperation extends Operation implements Iden
         }
     };
 
+    private static final PartitionResponse EMPTY_RESPONSE = new PartitionResponse(new int[0], new Object[0]);
+
     private OperationFactory operationFactory;
     private int[] partitions;
 
     public PartitionIteratingOperation() {
     }
 
+    /**
+     * @param operationFactory operation factory to use
+     * @param partitions       partitions to invoke on
+     */
     public PartitionIteratingOperation(OperationFactory operationFactory, List<Integer> partitions) {
         this.operationFactory = operationFactory;
         this.partitions = toIntArray(partitions);
@@ -79,8 +86,14 @@ public final class PartitionIteratingOperation extends Operation implements Iden
 
     @Override
     public void run() throws Exception {
-        getOperationServiceImpl().onStartAsyncOperation(this);
+        // partitions may be empty if the node has joined and didn't get any partitions yet
+        // a generic operation may already execute on it.
+        if (partitions.length == 0) {
+            this.sendResponse(EMPTY_RESPONSE);
+            return;
+        }
 
+        getOperationServiceImpl().onStartAsyncOperation(this);
         PartitionAwareOperationFactory partitionAwareFactory = extractPartitionAware(operationFactory);
         if (partitionAwareFactory != null) {
             executePartitionAwareOperations(partitionAwareFactory);
@@ -91,12 +104,13 @@ public final class PartitionIteratingOperation extends Operation implements Iden
 
     @Override
     public void onExecutionFailure(Throwable cause) {
-        // in case of an error, we need to de-register to prevent leaks.
-        getOperationServiceImpl().onCompletionAsyncOperation(this);
-
-        // we also send a response so that the caller doesn't wait indefinitely.
-        sendResponse(new ErrorResponse(cause, getCallId(), isUrgent()));
-
+        try {
+            // we also send a response so that the caller doesn't wait indefinitely.
+            sendResponse(new ErrorResponse(cause, getCallId(), isUrgent()));
+        } finally {
+            // in case of an error, we need to de-register to prevent leaks.
+            getOperationServiceImpl().onCompletionAsyncOperation(this);
+        }
         getLogger().severe(cause);
     }
 
@@ -203,8 +217,11 @@ public final class PartitionIteratingOperation extends Operation implements Iden
 
             // if it is the last response we are waiting for, we can send the final response to the caller.
             if (pendingOperations.decrementAndGet() == 0) {
-                getOperationServiceImpl().onCompletionAsyncOperation(PartitionIteratingOperation.this);
-                sendResponse();
+                try {
+                    sendResponse();
+                } finally {
+                    getOperationServiceImpl().onCompletionAsyncOperation(PartitionIteratingOperation.this);
+                }
             }
         }
 
@@ -248,7 +265,6 @@ public final class PartitionIteratingOperation extends Operation implements Iden
 
     // implements IdentifiedDataSerializable to speed up serialization of arrays
     public static final class PartitionResponse implements IdentifiedDataSerializable {
-
         private int[] partitions;
         private Object[] results;
 
@@ -267,6 +283,11 @@ public final class PartitionIteratingOperation extends Operation implements Iden
             for (int i = 0; i < results.length; i++) {
                 partitionResults.put(partitions[i], results[i]);
             }
+        }
+
+        @SuppressFBWarnings("EI_EXPOSE_REP")
+        public Object[] getResults() {
+            return results;
         }
 
         @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,18 +21,20 @@ import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.config.GroupConfig;
 import com.hazelcast.config.WanReplicationConfig;
 import com.hazelcast.core.Member;
-import com.hazelcast.instance.BuildInfoProvider;
 import com.hazelcast.instance.Node;
 import com.hazelcast.internal.ascii.TextCommandService;
 import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.management.ManagementCenterService;
 import com.hazelcast.internal.management.dto.WanReplicationConfigDTO;
 import com.hazelcast.internal.management.operation.AddWanConfigOperation;
+import com.hazelcast.internal.management.request.UpdatePermissionConfigRequest;
 import com.hazelcast.logging.ILogger;
+import com.hazelcast.security.SecurityService;
+import com.hazelcast.security.impl.NoOpSecurityService;
 import com.hazelcast.spi.InternalCompletableFuture;
 import com.hazelcast.spi.OperationService;
 import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.version.ClusterVersion;
+import com.hazelcast.version.Version;
 import com.hazelcast.wan.WanReplicationService;
 
 import java.io.UnsupportedEncodingException;
@@ -42,7 +44,9 @@ import java.util.List;
 import java.util.Set;
 
 import static com.hazelcast.util.StringUtil.bytesToString;
+import static com.hazelcast.util.StringUtil.lowerCaseInternal;
 import static com.hazelcast.util.StringUtil.stringToBytes;
+import static com.hazelcast.util.StringUtil.upperCaseInternal;
 
 public class HttpPostCommandProcessor extends HttpCommandProcessor<HttpPostCommand> {
     private static final byte[] QUEUE_SIMPLE_VALUE_CONTENT_TYPE = stringToBytes("text/plain");
@@ -94,6 +98,8 @@ public class HttpPostCommandProcessor extends HttpCommandProcessor<HttpPostComma
                 handleWanClearQueues(command);
             } else if (uri.startsWith(URI_ADD_WAN_CONFIG)) {
                 handleAddWanConfig(command);
+            } else if (uri.startsWith(URI_UPDATE_PERMISSIONS)) {
+                handleUpdatePermissions(command);
             } else {
                 command.setResponse(HttpCommand.RES_400);
             }
@@ -117,16 +123,7 @@ public class HttpPostCommandProcessor extends HttpCommandProcessor<HttpPostComma
             if (!(groupConfig.getName().equals(groupName) && groupConfig.getPassword().equals(groupPass))) {
                 res = response(ResponseType.FORBIDDEN);
             } else {
-                ClusterState state = clusterService.getClusterState();
-                if (stateParam.equals("frozen")) {
-                    state = ClusterState.FROZEN;
-                }
-                if (stateParam.equals("active")) {
-                    state = ClusterState.ACTIVE;
-                }
-                if (stateParam.equals("passive")) {
-                    state = ClusterState.PASSIVE;
-                }
+                ClusterState state = ClusterState.valueOf(upperCaseInternal(stateParam));
                 if (!state.equals(clusterService.getClusterState())) {
                     clusterService.changeClusterState(state);
                     res = response(ResponseType.SUCCESS, "state", state.toString().toLowerCase());
@@ -149,7 +146,8 @@ public class HttpPostCommandProcessor extends HttpCommandProcessor<HttpPostComma
             if (!checkCredentials(command)) {
                 res = response(ResponseType.FORBIDDEN);
             } else {
-                res = response(ResponseType.SUCCESS, "state", clusterService.getClusterState().toString().toLowerCase());
+                ClusterState clusterState = clusterService.getClusterState();
+                res = response(ResponseType.SUCCESS, "state", lowerCaseInternal(clusterState.toString()));
             }
         } catch (Throwable throwable) {
             logger.warning("Error occurred while getting cluster state", throwable);
@@ -172,14 +170,9 @@ public class HttpPostCommandProcessor extends HttpCommandProcessor<HttpPostComma
             if (!(groupConfig.getName().equals(groupName) && groupConfig.getPassword().equals(groupPass))) {
                 res = response(ResponseType.FORBIDDEN);
             } else {
-                ClusterVersion version;
-                try {
-                    version = ClusterVersion.of(versionParam);
-                    clusterService.changeClusterVersion(version);
-                    res = response(ResponseType.SUCCESS, "version", clusterService.getClusterVersion().toString());
-                } catch (Exception ex) {
-                    res = response(ResponseType.FAIL, "version", clusterService.getClusterVersion().toString());
-                }
+                Version version = Version.of(versionParam);
+                clusterService.changeClusterVersion(version);
+                res = response(ResponseType.SUCCESS, "version", clusterService.getClusterVersion().toString());
             }
         } catch (Throwable throwable) {
             logger.warning("Error occurred while changing cluster version", throwable);
@@ -283,7 +276,7 @@ public class HttpPostCommandProcessor extends HttpCommandProcessor<HttpPostComma
                 res = response(ResponseType.FORBIDDEN);
             } else {
                 final String responseTxt = clusterService.getMembers().toString() + "\n"
-                        + BuildInfoProvider.getBuildInfo().getVersion() + "\n"
+                        + node.getBuildInfo().getVersion() + "\n"
                         + System.getProperty("java.version");
                 res = response(ResponseType.SUCCESS, "response", responseTxt);
                 sendResponse(command, res);
@@ -451,6 +444,46 @@ public class HttpPostCommandProcessor extends HttpCommandProcessor<HttpPostComma
             logger.warning("Error occurred while adding WAN config", ex);
             res = exceptionResponse(ex);
         }
+        command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(res));
+    }
+
+    private void handleUpdatePermissions(HttpPostCommand command) {
+        String res = response(ResponseType.FORBIDDEN);
+        command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(res));
+        return;
+    }
+
+    private void doHandleUpdatePermissions(HttpPostCommand command) throws UnsupportedEncodingException {
+
+        if (!checkCredentials(command)) {
+            String res = response(ResponseType.FORBIDDEN);
+            command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(res));
+            return;
+        }
+
+        SecurityService securityService = textCommandService.getNode().getSecurityService();
+        if (securityService instanceof NoOpSecurityService) {
+            String res = response(ResponseType.FAIL, "message", "Security features are only available on Hazelcast Enterprise!");
+            command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(res));
+            return;
+        }
+
+        String res;
+        byte[] data = command.getData();
+        String[] strList = bytesToString(data).split("&");
+        //Start from 3rd item of strList as first two are used for credentials
+        String permConfigsJSON = URLDecoder.decode(strList[2], "UTF-8");
+
+        try {
+            UpdatePermissionConfigRequest request = new UpdatePermissionConfigRequest();
+            request.fromJson(Json.parse(permConfigsJSON).asObject());
+            securityService.refreshClientPermissions(request.getPermissionConfigs());
+            res = response(ResponseType.SUCCESS, "message", "Permissions updated.");
+        } catch (Exception ex) {
+            logger.warning("Error occurred while updating permission config", ex);
+            res = exceptionResponse(ex);
+        }
+
         command.setResponse(HttpCommand.CONTENT_TYPE_JSON, stringToBytes(res));
     }
 

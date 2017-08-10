@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import com.hazelcast.config.ConfigurationException;
 import java.util.regex.Pattern;
 
 /**
- * This <code>ConfigPatternMatcher</code> uses Java regular expressions for matching.
- * <p/>
+ * This {@code ConfigPatternMatcher} uses Java regular expressions for matching.
+ * <p>
  * Throws {@link com.hazelcast.config.ConfigurationException} is multiple configurations are found.
  */
 public class RegexConfigPatternMatcher implements ConfigPatternMatcher {

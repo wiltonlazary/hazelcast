@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.monitor;
 import com.eclipsesource.json.JsonArray;
 import com.eclipsesource.json.JsonObject;
 import com.eclipsesource.json.JsonValue;
+import com.hazelcast.internal.cluster.Versions;
 import com.hazelcast.internal.management.JsonSerializable;
 import com.hazelcast.monitor.impl.MemberStateImpl;
 
@@ -40,8 +41,10 @@ public final class TimedMemberState implements Cloneable, JsonSerializable {
     MemberStateImpl memberState;
     Set<String> instanceNames;
     List<String> memberList;
-    Boolean master;
+    boolean master;
     String clusterName;
+    boolean sslEnabled;
+    boolean lite;
 
     public List<String> getMemberList() {
         return memberList;
@@ -51,11 +54,11 @@ public final class TimedMemberState implements Cloneable, JsonSerializable {
         this.memberList = memberList;
     }
 
-    public Boolean getMaster() {
+    public boolean isMaster() {
         return master;
     }
 
-    public void setMaster(Boolean master) {
+    public void setMaster(boolean master) {
         this.master = master;
     }
 
@@ -91,6 +94,22 @@ public final class TimedMemberState implements Cloneable, JsonSerializable {
         this.memberState = memberState;
     }
 
+    public boolean isSslEnabled() {
+        return sslEnabled;
+    }
+
+    public void setSslEnabled(boolean sslEnabled) {
+        this.sslEnabled = sslEnabled;
+    }
+
+    public boolean isLite() {
+        return lite;
+    }
+
+    public void setLite(boolean lite) {
+        this.lite = lite;
+    }
+
     @Override
     public TimedMemberState clone() throws CloneNotSupportedException {
         TimedMemberState state = (TimedMemberState) super.clone();
@@ -100,6 +119,8 @@ public final class TimedMemberState implements Cloneable, JsonSerializable {
         state.setMemberList(memberList);
         state.setMaster(master);
         state.setClusterName(clusterName);
+        state.setSslEnabled(sslEnabled);
+        state.setLite(lite);
         return state;
     }
 
@@ -122,6 +143,10 @@ public final class TimedMemberState implements Cloneable, JsonSerializable {
             root.add("memberList", members);
         }
         root.add("memberState", memberState.toJson());
+        root.add("sslEnabled", sslEnabled);
+        if (memberState.getNodeState().getClusterVersion().isGreaterOrEqual(Versions.V3_9)) {
+            root.add("lite", lite);
+        }
         return root;
     }
 
@@ -143,6 +168,10 @@ public final class TimedMemberState implements Cloneable, JsonSerializable {
         final JsonObject jsonMemberState = getObject(json, "memberState");
         memberState = new MemberStateImpl();
         memberState.fromJson(jsonMemberState);
+        sslEnabled = getBoolean(json, "sslEnabled", false);
+        if (memberState.getNodeState().getClusterVersion().isGreaterOrEqual(Versions.V3_9)) {
+            lite = getBoolean(json, "lite");
+        }
     }
 
     @Override

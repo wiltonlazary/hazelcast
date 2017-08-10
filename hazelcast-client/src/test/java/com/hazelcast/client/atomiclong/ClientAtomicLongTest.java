@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -125,7 +125,7 @@ public class ClientAtomicLongTest extends HazelcastTestSupport {
     public void applyAsync()
             throws ExecutionException, InterruptedException {
         IAtomicLong ref = client.getAtomicLong("apply");
-        ICompletableFuture<Long> future =ref.applyAsync(new AddOneFunction());
+        ICompletableFuture<Long> future = ref.applyAsync(new AddOneFunction());
         assertEquals(new Long(1), future.get());
         assertEquals(0, ref.get());
     }
@@ -156,11 +156,10 @@ public class ClientAtomicLongTest extends HazelcastTestSupport {
                 t.printStackTrace();
             }
         });
-        if (cdl.await(15, TimeUnit.SECONDS)){
+        if (cdl.await(15, TimeUnit.SECONDS)) {
             assertEquals(1, ref.get());
-            assertEquals(false, failed.get());
-        }
-        else {
+            assertFalse(failed.get());
+        } else {
             fail("Timeout after 15 seconds");
         }
     }
@@ -190,7 +189,7 @@ public class ClientAtomicLongTest extends HazelcastTestSupport {
             fail();
         } catch (ExecutionException e) {
             assertEquals(e.getCause().getClass(), UndefinedErrorCodeException.class);
-            assertEquals(((UndefinedErrorCodeException)e.getCause()).getOriginClassName(),
+            assertEquals(((UndefinedErrorCodeException) e.getCause()).getOriginClassName(),
                     ExpectedRuntimeException.class.getName());
         }
 
@@ -231,7 +230,7 @@ public class ClientAtomicLongTest extends HazelcastTestSupport {
             fail();
         } catch (ExecutionException e) {
             assertEquals(e.getCause().getClass(), UndefinedErrorCodeException.class);
-            assertEquals(((UndefinedErrorCodeException)e.getCause()).getOriginClassName(),
+            assertEquals(((UndefinedErrorCodeException) e.getCause()).getOriginClassName(),
                     ExpectedRuntimeException.class.getName());
         }
 
@@ -294,8 +293,8 @@ public class ClientAtomicLongTest extends HazelcastTestSupport {
             fail();
         } catch (ExecutionException e) {
             assertEquals(e.getCause().getClass(), UndefinedErrorCodeException.class);
-            assertEquals(((UndefinedErrorCodeException)e.getCause()).getOriginClassName(),
-                         ExpectedRuntimeException.class.getName());
+            assertEquals(((UndefinedErrorCodeException) e.getCause()).getOriginClassName(),
+                    ExpectedRuntimeException.class.getName());
         }
 
         assertEquals(10, ref.get());
@@ -353,10 +352,10 @@ public class ClientAtomicLongTest extends HazelcastTestSupport {
             fail();
         } catch (InterruptedException e) {
             assertEquals(e.getCause().getClass().getName(), UndefinedErrorCodeException.class.getName());
-            assertEquals(((UndefinedErrorCodeException)e.getCause()).getOriginClassName(), ExpectedRuntimeException.class.getName());
+            assertEquals(((UndefinedErrorCodeException) e.getCause()).getOriginClassName(), ExpectedRuntimeException.class.getName());
         } catch (ExecutionException e) {
             assertEquals(e.getCause().getClass().getName(), UndefinedErrorCodeException.class.getName());
-            assertEquals(((UndefinedErrorCodeException)e.getCause()).getOriginClassName(), ExpectedRuntimeException.class.getName());
+            assertEquals(((UndefinedErrorCodeException) e.getCause()).getOriginClassName(), ExpectedRuntimeException.class.getName());
         }
 
         assertEquals(10, ref.get());

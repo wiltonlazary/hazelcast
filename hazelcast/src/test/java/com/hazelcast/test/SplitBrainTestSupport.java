@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.test;
 
 import com.hazelcast.config.Config;
@@ -8,7 +24,7 @@ import com.hazelcast.instance.HazelcastInstanceProxy;
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.NodeState;
 import com.hazelcast.nio.Address;
-import com.hazelcast.nio.tcp.FirewallingMockConnectionManager;
+import com.hazelcast.nio.tcp.FirewallingConnectionManager;
 import com.hazelcast.spi.properties.GroupProperty;
 import org.junit.Before;
 import org.junit.Test;
@@ -30,7 +46,6 @@ import java.util.List;
  * class to support mode advanced split-brain scenarios.
  *
  * See {@link SplitBrainTestSupportTest} for an example test.
- *
  */
 public abstract class SplitBrainTestSupport extends HazelcastTestSupport {
 
@@ -136,7 +151,6 @@ public abstract class SplitBrainTestSupport extends HazelcastTestSupport {
 
     /**
      * Called just after a split brain situation was created
-     *
      */
     protected void onAfterSplitBrainCreated(HazelcastInstance[] firstBrain, HazelcastInstance[] secondBrain) throws Exception {
 
@@ -158,7 +172,7 @@ public abstract class SplitBrainTestSupport extends HazelcastTestSupport {
      * When overriding this method, it may be desirable to add some wait time to allow the split brain handler to execute.
      *
      * @return {@code true} if the test should fail when not all original members rejoin after split brain is
-     *         healed, otherwise {@code false}.
+     * healed, otherwise {@code false}.
      */
     protected boolean shouldAssertAllNodesRejoined() {
         return true;
@@ -197,9 +211,9 @@ public abstract class SplitBrainTestSupport extends HazelcastTestSupport {
      *
      * @param brain index of brain to start a new instance in (0 to start instance in first brain or 1 to start instance in
      *              second brain)
-     * @return      a HazelcastInstance whose {@code MockJoiner} has blacklisted the other brain's members and its connection
-     *              manager blocks connections to other brain's members
-     * @see         TestHazelcastInstanceFactory#newHazelcastInstance(Address, Config, Address[])
+     * @return a HazelcastInstance whose {@code MockJoiner} has blacklisted the other brain's members and its connection
+     * manager blocks connections to other brain's members
+     * @see TestHazelcastInstanceFactory#newHazelcastInstance(Address, Config, Address[])
      */
     protected HazelcastInstance createHazelcastInstanceInBrain(int brain) {
         Address newMemberAddress = factory.nextAddress();
@@ -207,11 +221,14 @@ public abstract class SplitBrainTestSupport extends HazelcastTestSupport {
         HazelcastInstance[] instancesToBlock = brain == 1 ? brains.firstHalf : brains.secondHalf;
 
         List<Address> addressesToBlock = new ArrayList<Address>(instancesToBlock.length);
-        for (int i=0; i < instancesToBlock.length; i++) {
+        for (int i = 0; i < instancesToBlock.length; i++) {
             if (isInstanceActive(instancesToBlock[i])) {
                 addressesToBlock.add(getAddress(instancesToBlock[i]));
                 // block communication from these instances to the new address
-                getFireWalledConnectionManager(instancesToBlock[i]).block(newMemberAddress);
+
+                FirewallingConnectionManager connectionManager = getFireWalledConnectionManager(instancesToBlock[i]);
+                connectionManager.blockNewConnection(newMemberAddress);
+                connectionManager.closeActiveConnection(newMemberAddress);
             }
         }
         // indicate we need to unblacklist addresses from joiner when split-brain will be healed
@@ -262,16 +279,21 @@ public abstract class SplitBrainTestSupport extends HazelcastTestSupport {
     }
 
     private void healSplitBrain() {
-        unblockCommunication();
-        if (unblacklistHint) {
-            unblacklistMembers();
-        }
-        if (shouldAssertAllNodesRejoined()) {
-            for (HazelcastInstance hz : instances) {
-                assertClusterSizeEventually(instances.length, hz);
+        MergeBarrier mergeBarrier = new MergeBarrier(instances);
+        try {
+            unblockCommunication();
+            if (unblacklistHint) {
+                unblacklistMembers();
             }
+            if (shouldAssertAllNodesRejoined()) {
+                for (HazelcastInstance hz : instances) {
+                    assertClusterSizeEventually(instances.length, hz);
+                }
+            }
+            waitAllForSafeState(instances);
+        } finally {
+            mergeBarrier.awaitNoMergeInProgressAndClose();
         }
-        waitAllForSafeState(instances);
     }
 
     private void unblockCommunication() {
@@ -282,8 +304,8 @@ public abstract class SplitBrainTestSupport extends HazelcastTestSupport {
         applyOnBrains(UNBLACKLIST_MEMBERS);
     }
 
-    private static FirewallingMockConnectionManager getFireWalledConnectionManager(HazelcastInstance hz) {
-        return (FirewallingMockConnectionManager) getNode(hz).getConnectionManager();
+    private static FirewallingConnectionManager getFireWalledConnectionManager(HazelcastInstance hz) {
+        return (FirewallingConnectionManager) getNode(hz).getConnectionManager();
     }
 
     protected Brains getBrains() {
@@ -324,8 +346,7 @@ public abstract class SplitBrainTestSupport extends HazelcastTestSupport {
             try {
                 ((HazelcastInstanceProxy) instance).getOriginal();
                 return true;
-            }
-            catch (HazelcastInstanceNotActiveException exception) {
+            } catch (HazelcastInstanceNotActiveException exception) {
                 return false;
             }
         } else if (instance instanceof HazelcastInstanceImpl) {
@@ -335,22 +356,24 @@ public abstract class SplitBrainTestSupport extends HazelcastTestSupport {
         }
     }
 
-    private static void blockCommunicationBetween(HazelcastInstance h1, HazelcastInstance h2) {
-        FirewallingMockConnectionManager h1CM = getFireWalledConnectionManager(h1);
-        FirewallingMockConnectionManager h2CM = getFireWalledConnectionManager(h2);
-        Node h1Node = getNode(h1);
-        Node h2Node = getNode(h2);
-        h1CM.block(h2Node.getThisAddress());
-        h2CM.block(h1Node.getThisAddress());
+    public static void blockCommunicationBetween(HazelcastInstance h1, HazelcastInstance h2) {
+        FirewallingConnectionManager cm1 = getFireWalledConnectionManager(h1);
+        FirewallingConnectionManager cm2 = getFireWalledConnectionManager(h2);
+        Node node1 = getNode(h1);
+        Node node2 = getNode(h2);
+        cm1.blockNewConnection(node2.getThisAddress());
+        cm2.blockNewConnection(node1.getThisAddress());
+        cm1.closeActiveConnection(node2.getThisAddress());
+        cm2.closeActiveConnection(node1.getThisAddress());
     }
 
-    private static void unblockCommunicationBetween(HazelcastInstance h1, HazelcastInstance h2) {
-        FirewallingMockConnectionManager h1CM = getFireWalledConnectionManager(h1);
-        FirewallingMockConnectionManager h2CM = getFireWalledConnectionManager(h2);
-        Node h1Node = getNode(h1);
-        Node h2Node = getNode(h2);
-        h1CM.unblock(h2Node.getThisAddress());
-        h2CM.unblock(h1Node.getThisAddress());
+    public static void unblockCommunicationBetween(HazelcastInstance h1, HazelcastInstance h2) {
+        FirewallingConnectionManager cm1 = getFireWalledConnectionManager(h1);
+        FirewallingConnectionManager cm2 = getFireWalledConnectionManager(h2);
+        Node node1 = getNode(h1);
+        Node node2 = getNode(h2);
+        cm1.unblock(node2.getThisAddress());
+        cm2.unblock(node1.getThisAddress());
     }
 
     private static void unblacklistJoinerBetween(HazelcastInstance h1, HazelcastInstance h2) {

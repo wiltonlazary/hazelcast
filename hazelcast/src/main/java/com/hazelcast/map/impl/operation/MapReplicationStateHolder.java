@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,9 +28,14 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.nio.serialization.impl.Versioned;
+import com.hazelcast.query.impl.Indexes;
+import com.hazelcast.spi.ObjectNamespace;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.util.Clock;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -43,7 +48,7 @@ import static com.hazelcast.map.impl.record.Records.applyRecordInfo;
  * Holder for raw IMap key-value pairs and their metadata.
  */
 // keep this `protected`, extended in another context.
-public class MapReplicationStateHolder implements IdentifiedDataSerializable {
+public class MapReplicationStateHolder implements IdentifiedDataSerializable, Versioned {
 
     protected Map<String, Set<RecordReplicationInfo>> data;
     // propagates the information if the given record store has been already loaded with map-loaded
@@ -63,19 +68,25 @@ public class MapReplicationStateHolder implements IdentifiedDataSerializable {
         this.mapReplicationOperation = mapReplicationOperation;
     }
 
-    void prepare(PartitionContainer container, int replicaIndex) {
-        data = new HashMap<String, Set<RecordReplicationInfo>>(container.getMaps().size());
-        loaded = new HashMap<String, Boolean>(container.getMaps().size());
-        for (Map.Entry<String, RecordStore> entry : container.getMaps().entrySet()) {
-            RecordStore recordStore = entry.getValue();
+    void prepare(PartitionContainer container, Collection<ServiceNamespace> namespaces, int replicaIndex) {
+        data = new HashMap<String, Set<RecordReplicationInfo>>(namespaces.size());
+        loaded = new HashMap<String, Boolean>(namespaces.size());
+        for (ServiceNamespace namespace : namespaces) {
+            ObjectNamespace mapNamespace = (ObjectNamespace) namespace;
+            String mapName = mapNamespace.getObjectName();
+            RecordStore recordStore = container.getRecordStore(mapName);
+            if (recordStore == null) {
+                continue;
+            }
 
             MapContainer mapContainer = recordStore.getMapContainer();
             MapConfig mapConfig = mapContainer.getMapConfig();
             if (mapConfig.getTotalBackupCount() < replicaIndex) {
                 continue;
             }
+
             MapServiceContext mapServiceContext = mapContainer.getMapServiceContext();
-            String mapName = entry.getKey();
+
             loaded.put(mapName, recordStore.isLoaded());
             // now prepare data to migrate records
             Set<RecordReplicationInfo> recordSet = new HashSet<RecordReplicationInfo>(recordStore.size());
@@ -99,6 +110,14 @@ public class MapReplicationStateHolder implements IdentifiedDataSerializable {
                 RecordStore recordStore = mapReplicationOperation.getRecordStore(mapName);
                 recordStore.reset();
                 recordStore.setPreMigrationLoadedStatus(loaded.get(mapName));
+
+                MapContainer mapContainer = recordStore.getMapContainer();
+                PartitionContainer partitionContainer = recordStore.getMapContainer().getMapServiceContext()
+                        .getPartitionContainer(mapReplicationOperation.getPartitionId());
+                for (Map.Entry<String, Boolean> indexDefinition : mapContainer.getIndexDefinitions().entrySet()) {
+                    Indexes indexes = mapContainer.getIndexes(partitionContainer.getPartitionId());
+                    indexes.addOrGetIndex(indexDefinition.getKey(), indexDefinition.getValue());
+                }
 
                 for (RecordReplicationInfo recordReplicationInfo : recordReplicationInfos) {
                     Data key = recordReplicationInfo.getKey();

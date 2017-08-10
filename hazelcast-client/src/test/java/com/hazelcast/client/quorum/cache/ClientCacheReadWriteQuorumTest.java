@@ -1,17 +1,17 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *  http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package com.hazelcast.client.quorum.cache;
@@ -39,7 +39,6 @@ import javax.cache.processor.EntryProcessor;
 import javax.cache.processor.EntryProcessorException;
 import javax.cache.processor.EntryProcessorResult;
 import javax.cache.processor.MutableEntry;
-import java.io.IOException;
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -47,28 +46,23 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
 import static com.hazelcast.client.quorum.QuorumTestUtil.getClientConfig;
+import static com.hazelcast.quorum.PartitionedCluster.QUORUM_ID;
 import static org.junit.Assert.assertNull;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
-public class ClientCacheReadWriteQuorumTest
-        extends HazelcastTestSupport {
-
-    static PartitionedCluster cluster;
+public class ClientCacheReadWriteQuorumTest extends HazelcastTestSupport {
 
     private static final String CACHE_NAME_PREFIX = "cacheQuorum";
-    private static final String QUORUM_ID = "threeNodeQuorumRule";
 
-    private static HazelcastClientCachingProvider cachingProvider1;
-    private static HazelcastClientCachingProvider cachingProvider2;
-    private static HazelcastClientCachingProvider cachingProvider3;
-    private static HazelcastClientCachingProvider cachingProvider4;
-    private static HazelcastClientCachingProvider cachingProvider5;
+    private static PartitionedCluster cluster;
+
     private static HazelcastInstance c1;
     private static HazelcastInstance c2;
     private static HazelcastInstance c3;
     private static HazelcastInstance c4;
     private static HazelcastInstance c5;
+
     private static ICache<Integer, String> cache1;
     private static ICache<Integer, String> cache2;
     private static ICache<Integer, String> cache3;
@@ -78,8 +72,7 @@ public class ClientCacheReadWriteQuorumTest
     private static TestHazelcastFactory factory;
 
     @BeforeClass
-    public static void initialize()
-            throws Exception {
+    public static void initialize() {
         QuorumConfig quorumConfig = new QuorumConfig();
         quorumConfig.setName(QUORUM_ID);
         quorumConfig.setType(QuorumType.READ_WRITE);
@@ -93,16 +86,8 @@ public class ClientCacheReadWriteQuorumTest
         cluster = new PartitionedCluster(factory).createFiveMemberCluster(cacheConfig, quorumConfig);
         initializeClients();
         initializeCaches();
-        cluster.splitFiveMembersThreeAndTwo();
+        cluster.splitFiveMembersThreeAndTwo(QUORUM_ID);
         verifyClients();
-    }
-
-    private static void verifyClients() {
-        assertClusterSizeEventually(3, c1);
-        assertClusterSizeEventually(3, c2);
-        assertClusterSizeEventually(3, c3);
-        assertClusterSizeEventually(2, c4);
-        assertClusterSizeEventually(2, c5);
     }
 
     private static void initializeClients() {
@@ -114,42 +99,47 @@ public class ClientCacheReadWriteQuorumTest
     }
 
     private static void initializeCaches() {
-        cachingProvider1 = HazelcastClientCachingProvider.createCachingProvider(c1);
-        cachingProvider2 = HazelcastClientCachingProvider.createCachingProvider(c2);
-        cachingProvider3 = HazelcastClientCachingProvider.createCachingProvider(c3);
-        cachingProvider4 = HazelcastClientCachingProvider.createCachingProvider(c4);
-        cachingProvider5 = HazelcastClientCachingProvider.createCachingProvider(c5);
+        HazelcastClientCachingProvider cachingProvider1 = HazelcastClientCachingProvider.createCachingProvider(c1);
+        HazelcastClientCachingProvider cachingProvider2 = HazelcastClientCachingProvider.createCachingProvider(c2);
+        HazelcastClientCachingProvider cachingProvider3 = HazelcastClientCachingProvider.createCachingProvider(c3);
+        HazelcastClientCachingProvider cachingProvider4 = HazelcastClientCachingProvider.createCachingProvider(c4);
+        HazelcastClientCachingProvider cachingProvider5 = HazelcastClientCachingProvider.createCachingProvider(c5);
 
-        final String cacheName = CACHE_NAME_PREFIX + randomString();
-        cache1 = (ICache) cachingProvider1.getCacheManager().getCache(cacheName);
-        cache2 = (ICache) cachingProvider2.getCacheManager().getCache(cacheName);
-        cache3 = (ICache) cachingProvider3.getCacheManager().getCache(cacheName);
-        cache4 = (ICache) cachingProvider4.getCacheManager().getCache(cacheName);
-        cache5 = (ICache) cachingProvider5.getCacheManager().getCache(cacheName);
+        String cacheName = CACHE_NAME_PREFIX + randomString();
+        cache1 = (ICache<Integer, String>) cachingProvider1.getCacheManager().<Integer, String>getCache(cacheName);
+        cache2 = (ICache<Integer, String>) cachingProvider2.getCacheManager().<Integer, String>getCache(cacheName);
+        cache3 = (ICache<Integer, String>) cachingProvider3.getCacheManager().<Integer, String>getCache(cacheName);
+        cache4 = (ICache<Integer, String>) cachingProvider4.getCacheManager().<Integer, String>getCache(cacheName);
+        cache5 = (ICache<Integer, String>) cachingProvider5.getCacheManager().<Integer, String>getCache(cacheName);
+    }
+
+    private static void verifyClients() {
+        assertClusterSizeEventually(3, c1, c2, c3);
+        assertClusterSizeEventually(2, c4, c5);
     }
 
     @AfterClass
-    public static void killAllHazelcastInstances() throws IOException {
+    public static void killAllHazelcastInstances() {
         factory.terminateAll();
     }
 
     @Test
-    public void testGetOperationSuccessfulWhenQuorumSizeMet() throws Exception {
+    public void testGetOperationSuccessfulWhenQuorumSizeMet() {
         cache1.get(1);
     }
 
     @Test(expected = QuorumException.class)
-    public void testGetOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
+    public void testGetOperationThrowsExceptionWhenQuorumSizeNotMet() {
         cache4.get(1);
     }
 
     @Test
-    public void testPutOperationSuccessfulWhenQuorumSizeMet() throws Exception {
+    public void testPutOperationSuccessfulWhenQuorumSizeMet() {
         cache1.put(1, "");
     }
 
     @Test(expected = QuorumException.class)
-    public void testPutOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
+    public void testPutOperationThrowsExceptionWhenQuorumSizeNotMet() {
         cache4.put(1, "");
     }
 
@@ -283,14 +273,14 @@ public class ClientCacheReadWriteQuorumTest
 
     @Test
     public void testGetAsyncOperationSuccessfulWhenQuorumSizeMet() throws Exception {
-        Future<String> foo = cache1.getAsync(1);
-        foo.get();
+        Future<String> future = cache1.getAsync(1);
+        future.get();
     }
 
     @Test(expected = ExecutionException.class)
     public void testGetAsyncOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
-        Future<String> foo = cache4.getAsync(1);
-        foo.get();
+        Future<String> future = cache4.getAsync(1);
+        future.get();
     }
 
     @Test
@@ -300,80 +290,80 @@ public class ClientCacheReadWriteQuorumTest
 
     @Test(expected = ExecutionException.class)
     public void testGetAndPutAsyncOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
-        Future<String> foo = cache4.getAndPutAsync(1, "");
-        foo.get();
+        Future<String> future = cache4.getAndPutAsync(1, "");
+        future.get();
     }
 
     @Test
     public void testGetAndRemoveAsyncOperationSuccessfulWhenQuorumSizeMet() throws Exception {
-        Future<String> foo = cache1.getAndRemoveAsync(1);
-        foo.get();
+        Future<String> future = cache1.getAndRemoveAsync(1);
+        future.get();
     }
 
     @Test(expected = ExecutionException.class)
     public void testGetAndRemoveAsyncOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
-        Future<String> foo = cache4.getAndRemoveAsync(1);
-        foo.get();
+        Future<String> future = cache4.getAndRemoveAsync(1);
+        future.get();
     }
 
     @Test
     public void testGetAndReplaceAsyncOperationSuccessfulWhenQuorumSizeMet() throws Exception {
-        Future<String> foo = cache1.getAndReplaceAsync(1, "");
-        foo.get();
+        Future<String> future = cache1.getAndReplaceAsync(1, "");
+        future.get();
     }
 
     @Test(expected = ExecutionException.class)
     public void testGetAndReplaceAsyncOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
-        Future<String> foo = cache4.getAndReplaceAsync(1, "");
-        foo.get();
+        Future<String> future = cache4.getAndReplaceAsync(1, "");
+        future.get();
     }
 
     @Test
     public void testPutAsyncOperationSuccessfulWhenQuorumSizeMet() throws Exception {
-        Future<Void> foo = cache1.putAsync(1, "");
-        foo.get();
+        Future<Void> future = cache1.putAsync(1, "");
+        future.get();
     }
 
     @Test(expected = ExecutionException.class)
     public void testPutAsyncOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
-        Future<Void> foo = cache4.putAsync(1, "");
-        foo.get();
+        Future<Void> future = cache4.putAsync(1, "");
+        future.get();
     }
 
     @Test
     public void testPutIfAbsentAsyncOperationSuccessfulWhenQuorumSizeMet() throws Exception {
-        Future<Boolean> foo = cache1.putIfAbsentAsync(1, "");
-        foo.get();
+        Future<Boolean> future = cache1.putIfAbsentAsync(1, "");
+        future.get();
     }
 
     @Test(expected = ExecutionException.class)
     public void testPutIfAbsentAsyncOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
-        Future<Boolean> foo = cache4.putIfAbsentAsync(1, "");
-        foo.get();
+        Future<Boolean> future = cache4.putIfAbsentAsync(1, "");
+        future.get();
     }
 
     @Test
     public void testRemoveAsyncOperationSuccessfulWhenQuorumSizeMet() throws Exception {
-        Future<Boolean> foo = cache1.removeAsync(1);
-        foo.get();
+        Future<Boolean> future = cache1.removeAsync(1);
+        future.get();
     }
 
     @Test(expected = ExecutionException.class)
     public void testRemoveAsyncOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
-        Future<Boolean> foo = cache4.removeAsync(1);
-        foo.get();
+        Future<Boolean> future = cache4.removeAsync(1);
+        future.get();
     }
 
     @Test
     public void testReplaceAsyncOperationSuccessfulWhenQuorumSizeMet() throws Exception {
-        Future<Boolean> foo = cache1.replaceAsync(1, "");
-        foo.get();
+        Future<Boolean> future = cache1.replaceAsync(1, "");
+        future.get();
     }
 
     @Test(expected = ExecutionException.class)
     public void testReplaceAsyncOperationThrowsExceptionWhenQuorumSizeNotMet() throws Exception {
-        Future<Boolean> foo = cache4.replaceAsync(1, "");
-        foo.get();
+        Future<Boolean> future = cache4.replaceAsync(1, "");
+        future.get();
     }
 
     @Test
@@ -401,8 +391,7 @@ public class ClientCacheReadWriteQuorumTest
         cache4.invokeAll(hashSet, new SimpleEntryProcessor()).get(123).get();
     }
 
-    public static class SimpleEntryProcessor
-            implements EntryProcessor<Integer, String, Void>, Serializable {
+    public static class SimpleEntryProcessor implements EntryProcessor<Integer, String, Void>, Serializable {
 
         private static final long serialVersionUID = -396575576353368113L;
 

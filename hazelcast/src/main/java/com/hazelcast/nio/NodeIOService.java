@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,19 @@
 
 package com.hazelcast.nio;
 
-import com.hazelcast.client.impl.protocol.ClientMessage;
+import com.hazelcast.client.ClientEngine;
 import com.hazelcast.config.NetworkConfig;
 import com.hazelcast.config.SSLConfig;
 import com.hazelcast.config.SocketInterceptorConfig;
 import com.hazelcast.config.SymmetricEncryptionConfig;
-import com.hazelcast.instance.HazelcastThreadGroup;
 import com.hazelcast.instance.Node;
 import com.hazelcast.instance.NodeState;
-import com.hazelcast.instance.OutOfMemoryErrorDispatcher;
 import com.hazelcast.internal.ascii.TextCommandService;
+import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
-import com.hazelcast.internal.networking.IOOutOfMemoryHandler;
-import com.hazelcast.internal.networking.ReadHandler;
-import com.hazelcast.internal.networking.SocketChannelWrapperFactory;
-import com.hazelcast.internal.networking.WriteHandler;
+import com.hazelcast.internal.networking.ChannelFactory;
+import com.hazelcast.internal.networking.ChannelInboundHandler;
+import com.hazelcast.internal.networking.ChannelOutboundHandler;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.logging.LoggingService;
 import com.hazelcast.nio.tcp.TcpIpConnection;
@@ -40,11 +38,16 @@ import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.properties.GroupProperty;
 
+import java.io.IOException;
+import java.net.Socket;
+import java.net.SocketException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+
+import static com.hazelcast.util.ThreadUtil.createThreadName;
 
 @PrivateApi
 public class NodeIOService implements IOService {
@@ -58,8 +61,8 @@ public class NodeIOService implements IOService {
     }
 
     @Override
-    public HazelcastThreadGroup getHazelcastThreadGroup() {
-        return nodeEngine.getHazelcastThreadGroup();
+    public String getHazelcastName() {
+        return node.hazelcastInstance.getName();
     }
 
     @Override
@@ -73,24 +76,14 @@ public class NodeIOService implements IOService {
     }
 
     @Override
-    public IOOutOfMemoryHandler getIoOutOfMemoryHandler() {
-        return new IOOutOfMemoryHandler() {
-            @Override
-            public void handle(OutOfMemoryError error) {
-                OutOfMemoryErrorDispatcher.onOutOfMemory(error);
-            }
-        };
-    }
-
-    @Override
     public Address getThisAddress() {
         return node.getThisAddress();
     }
 
     @Override
     public void onFatalError(Exception e) {
-        HazelcastThreadGroup threadGroup = node.getHazelcastThreadGroup();
-        Thread thread = new Thread(threadGroup.getInternalThreadGroup(), threadGroup.getThreadNamePrefix("io.error.shutdown")) {
+        String hzName = nodeEngine.getHazelcastInstance().getName();
+        Thread thread = new Thread(createThreadName(hzName, "io.error.shutdown")) {
             public void run() {
                 node.shutdown(false);
             }
@@ -98,7 +91,6 @@ public class NodeIOService implements IOService {
         thread.start();
     }
 
-    @Override
     public SocketInterceptorConfig getSocketInterceptorConfig() {
         return node.getConfig().getNetworkConfig().getSocketInterceptorConfig();
     }
@@ -114,8 +106,8 @@ public class NodeIOService implements IOService {
     }
 
     @Override
-    public void handleClientMessage(ClientMessage cm, Connection connection) {
-        node.clientEngine.handleClientMessage(cm, connection);
+    public ClientEngine getClientEngine() {
+        return node.clientEngine;
     }
 
     @Override
@@ -143,9 +135,7 @@ public class NodeIOService implements IOService {
         nodeEngine.getExecutionService().execute(ExecutionService.IO_EXECUTOR, new Runnable() {
             @Override
             public void run() {
-                // we can safely pass null because removeEndpoint is triggered from the connectionManager after
-                // the connection is closed. So a reason is already set.
-                node.clusterService.removeAddress(endPoint, null);
+                node.clusterService.suspectAddressIfNotConnected(endPoint);
             }
         });
     }
@@ -164,17 +154,18 @@ public class NodeIOService implements IOService {
 
     @Override
     public void onSuccessfulConnection(Address address) {
-        if (!node.joined()) {
+        if (!node.getClusterService().isJoined()) {
             node.getJoiner().unblacklist(address);
         }
     }
 
     @Override
     public void onFailedConnection(final Address address) {
-        if (!node.joined()) {
+        ClusterService clusterService = node.clusterService;
+        if (!clusterService.isJoined()) {
             node.getJoiner().blacklist(address, false);
         } else {
-            if (node.clusterService.getMember(address) != null) {
+            if (clusterService.getMember(address) != null) {
                 nodeEngine.getExecutionService().schedule(ExecutionService.IO_EXECUTOR, new ReconnectionTask(address),
                         getConnectionMonitorInterval(), TimeUnit.MILLISECONDS);
             }
@@ -209,7 +200,7 @@ public class NodeIOService implements IOService {
     }
 
     @Override
-    public boolean isSocketBufferDirect() {
+    public boolean useDirectSocketBuffer() {
         return node.getProperties().getBoolean(GroupProperty.SOCKET_BUFFER_DIRECT);
     }
 
@@ -226,7 +217,41 @@ public class NodeIOService implements IOService {
     }
 
     @Override
-    public int getSocketLingerSeconds() {
+    public void configureSocket(Socket socket) throws SocketException {
+        if (getSocketLingerSeconds() > 0) {
+            socket.setSoLinger(true, getSocketLingerSeconds());
+        }
+        socket.setKeepAlive(getSocketKeepAlive());
+        socket.setTcpNoDelay(getSocketNoDelay());
+        socket.setReceiveBufferSize(getSocketReceiveBufferSize() * KILO_BYTE);
+        socket.setSendBufferSize(getSocketSendBufferSize() * KILO_BYTE);
+    }
+
+    @Override
+    public void interceptSocket(Socket socket, boolean onAccept) throws IOException {
+        if (!isSocketInterceptorEnabled()) {
+            return;
+        }
+
+        MemberSocketInterceptor memberSocketInterceptor = getMemberSocketInterceptor();
+        if (memberSocketInterceptor == null) {
+            return;
+        }
+
+        if (onAccept) {
+            memberSocketInterceptor.onAccept(socket);
+        } else {
+            memberSocketInterceptor.onConnect(socket);
+        }
+    }
+
+    @Override
+    public boolean isSocketInterceptorEnabled() {
+        final SocketInterceptorConfig socketInterceptorConfig = getSocketInterceptorConfig();
+        return socketInterceptorConfig != null && socketInterceptorConfig.isEnabled();
+    }
+
+    private int getSocketLingerSeconds() {
         return node.getProperties().getSeconds(GroupProperty.SOCKET_LINGER_SECONDS);
     }
 
@@ -235,13 +260,11 @@ public class NodeIOService implements IOService {
         return node.getProperties().getSeconds(GroupProperty.SOCKET_CONNECT_TIMEOUT_SECONDS);
     }
 
-    @Override
-    public boolean getSocketKeepAlive() {
+    private boolean getSocketKeepAlive() {
         return node.getProperties().getBoolean(GroupProperty.SOCKET_KEEP_ALIVE);
     }
 
-    @Override
-    public boolean getSocketNoDelay() {
+    private boolean getSocketNoDelay() {
         return node.getProperties().getBoolean(GroupProperty.SOCKET_NO_DELAY);
     }
 
@@ -253,11 +276,6 @@ public class NodeIOService implements IOService {
     @Override
     public int getOutputSelectorThreadCount() {
         return node.getProperties().getInteger(GroupProperty.IO_OUTPUT_THREAD_COUNT);
-    }
-
-    @Override
-    public boolean isClient() {
-        return false;
     }
 
     @Override
@@ -291,8 +309,8 @@ public class NodeIOService implements IOService {
     }
 
     @Override
-    public SocketChannelWrapperFactory getSocketChannelWrapperFactory() {
-        return node.getNodeExtension().getSocketChannelWrapperFactory();
+    public ChannelFactory getChannelFactory() {
+        return node.getNodeExtension().getChannelFactory();
     }
 
     @Override
@@ -301,13 +319,13 @@ public class NodeIOService implements IOService {
     }
 
     @Override
-    public ReadHandler createReadHandler(TcpIpConnection connection) {
-        return node.getNodeExtension().createReadHandler(connection, this);
+    public ChannelInboundHandler createInboundHandler(TcpIpConnection connection) {
+        return node.getNodeExtension().createInboundHandler(connection, this);
     }
 
     @Override
-    public WriteHandler createWriteHandler(TcpIpConnection connection) {
-        return node.getNodeExtension().createWriteHandler(connection, this);
+    public ChannelOutboundHandler createOutboundHandler(TcpIpConnection connection) {
+        return node.getNodeExtension().createOutboundHandler(connection, this);
     }
 
     @Override

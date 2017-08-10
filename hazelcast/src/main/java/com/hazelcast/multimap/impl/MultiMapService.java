@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,25 +22,26 @@ import com.hazelcast.config.MultiMapConfig;
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.core.EntryEventType;
 import com.hazelcast.core.EntryListener;
-import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
+import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.map.impl.event.EventData;
 import com.hazelcast.monitor.LocalMultiMapStats;
 import com.hazelcast.monitor.impl.LocalMultiMapStatsImpl;
-import com.hazelcast.multimap.impl.operations.MultiMapMigrationOperation;
+import com.hazelcast.multimap.impl.operations.MultiMapReplicationOperation;
 import com.hazelcast.multimap.impl.txn.TransactionalMultiMapProxy;
 import com.hazelcast.nio.Address;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.EventPublishingService;
 import com.hazelcast.spi.EventRegistration;
 import com.hazelcast.spi.EventService;
+import com.hazelcast.spi.FragmentedMigrationAwareService;
 import com.hazelcast.spi.ManagedService;
-import com.hazelcast.spi.MigrationAwareService;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.spi.ObjectNamespace;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.PartitionMigrationEvent;
 import com.hazelcast.spi.PartitionReplicationEvent;
 import com.hazelcast.spi.RemoteService;
+import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.spi.StatisticsAwareService;
 import com.hazelcast.spi.TransactionalService;
 import com.hazelcast.spi.partition.IPartition;
@@ -52,6 +53,7 @@ import com.hazelcast.util.ConcurrencyUtil;
 import com.hazelcast.util.ConstructorFunction;
 import com.hazelcast.util.ExceptionUtil;
 
+import java.util.Collection;
 import java.util.EventListener;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -62,8 +64,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-public class MultiMapService implements ManagedService, RemoteService, MigrationAwareService,
-        EventPublishingService<EventData, EntryListener>, TransactionalService, StatisticsAwareService {
+public class MultiMapService implements ManagedService, RemoteService, FragmentedMigrationAwareService,
+        EventPublishingService<EventData, EntryListener>, TransactionalService, StatisticsAwareService<LocalMultiMapStats> {
 
     public static final String SERVICE_NAME = "hz:impl:multiMapService";
 
@@ -157,7 +159,7 @@ public class MultiMapService implements ManagedService, RemoteService, Migration
     public void destroyDistributedObject(String name) {
         for (MultiMapPartitionContainer container : partitionContainers) {
             if (container != null) {
-                container.destroyCollection(name);
+                container.destroyMultiMap(name);
             }
         }
         nodeEngine.getEventService().deregisterAllListeners(SERVICE_NAME, name);
@@ -168,7 +170,7 @@ public class MultiMapService implements ManagedService, RemoteService, Migration
         for (int i = 0; i < nodeEngine.getPartitionService().getPartitionCount(); i++) {
             IPartition partition = nodeEngine.getPartitionService().getPartition(i);
             MultiMapPartitionContainer partitionContainer = getPartitionContainer(i);
-            MultiMapContainer multiMapContainer = partitionContainer.getCollectionContainer(name);
+            MultiMapContainer multiMapContainer = partitionContainer.getMultiMapContainer(name);
             if (multiMapContainer == null) {
                 continue;
             }
@@ -217,29 +219,59 @@ public class MultiMapService implements ManagedService, RemoteService, Migration
     }
 
     @Override
+    public Collection<ServiceNamespace> getAllServiceNamespaces(PartitionReplicationEvent event) {
+        MultiMapPartitionContainer partitionContainer = partitionContainers[event.getPartitionId()];
+        if (partitionContainer == null) {
+            return null;
+        }
+        return partitionContainer.getAllNamespaces(event.getReplicaIndex());
+    }
+
+    @Override
+    public boolean isKnownServiceNamespace(ServiceNamespace namespace) {
+        return namespace instanceof ObjectNamespace && SERVICE_NAME.equals(namespace.getServiceName());
+    }
+
+    @Override
     public void beforeMigration(PartitionMigrationEvent partitionMigrationEvent) {
     }
 
     @Override
     public Operation prepareReplicationOperation(PartitionReplicationEvent event) {
-        int replicaIndex = event.getReplicaIndex();
-        final MultiMapPartitionContainer partitionContainer = partitionContainers[event.getPartitionId()];
+        MultiMapPartitionContainer partitionContainer = partitionContainers[event.getPartitionId()];
         if (partitionContainer == null) {
             return null;
         }
-        Map<String, Map> map = new HashMap<String, Map>(partitionContainer.containerMap.size());
-        for (Map.Entry<String, MultiMapContainer> entry : partitionContainer.containerMap.entrySet()) {
-            String name = entry.getKey();
-            MultiMapContainer container = entry.getValue();
+        return prepareReplicationOperation(event, partitionContainer.getAllNamespaces(event.getReplicaIndex()));
+    }
+
+    @Override
+    public Operation prepareReplicationOperation(PartitionReplicationEvent event,
+            Collection<ServiceNamespace> namespaces) {
+
+        MultiMapPartitionContainer partitionContainer = partitionContainers[event.getPartitionId()];
+        if (partitionContainer == null) {
+            return null;
+        }
+
+        int replicaIndex = event.getReplicaIndex();
+        Map<String, Map> map = new HashMap<String, Map>(namespaces.size());
+
+        for (ServiceNamespace namespace : namespaces) {
+            assert isKnownServiceNamespace(namespace) : namespace + " is not a MultiMapService namespace!";
+
+            ObjectNamespace ns = (ObjectNamespace) namespace;
+            MultiMapContainer container = partitionContainer.getMultiMapContainer(ns.getObjectName());
+            if (container == null) {
+                continue;
+            }
             if (container.getConfig().getTotalBackupCount() < replicaIndex) {
                 continue;
             }
-            map.put(name, container.getMultiMapValues());
+            map.put(ns.getObjectName(), container.getMultiMapValues());
         }
-        if (map.isEmpty()) {
-            return null;
-        }
-        return new MultiMapMigrationOperation(map);
+
+        return map.isEmpty() ? null : new MultiMapReplicationOperation(map);
     }
 
     public void insertMigratedData(int partitionId, Map<String, Map> map) {
@@ -312,13 +344,13 @@ public class MultiMapService implements ManagedService, RemoteService, Migration
         long backupEntryCount = 0;
         long hits = 0;
         long lockedEntryCount = 0;
-        ClusterServiceImpl clusterService = (ClusterServiceImpl) nodeEngine.getClusterService();
+        ClusterService clusterService = nodeEngine.getClusterService();
 
         Address thisAddress = clusterService.getThisAddress();
         for (int i = 0; i < nodeEngine.getPartitionService().getPartitionCount(); i++) {
             IPartition partition = nodeEngine.getPartitionService().getPartition(i);
             MultiMapPartitionContainer partitionContainer = getPartitionContainer(i);
-            MultiMapContainer multiMapContainer = partitionContainer.getCollectionContainer(name);
+            MultiMapContainer multiMapContainer = partitionContainer.getMultiMapContainer(name);
             if (multiMapContainer == null) {
                 continue;
             }

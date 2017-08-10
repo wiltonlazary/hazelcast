@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,5 +58,10 @@ class DoubleGaugeImpl extends AbstractGauge implements DoubleGauge {
             metricsRegistry.logger.warning("Failed to access probe:" + name, e);
             return DEFAULT_VALUE;
         }
+    }
+
+    @Override
+    public void render(StringBuilder stringBuilder) {
+        stringBuilder.append(read());
     }
 }

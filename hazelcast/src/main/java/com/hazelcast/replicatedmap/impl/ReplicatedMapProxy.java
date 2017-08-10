@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -138,6 +138,16 @@ public class ReplicatedMapProxy<K, V> extends AbstractDistributedObject<Replicat
                 .createInvocationBuilder(SERVICE_NAME, requestMapDataOperation, partitionId)
                 .setTryCount(ReplicatedMapService.INVOCATION_TRY_COUNT)
                 .invoke();
+    }
+
+    @Override
+    protected boolean preDestroy() {
+        if (super.preDestroy()) {
+            ReplicatedMapEventPublishingService eventPublishingService = service.getEventPublishingService();
+            eventPublishingService.fireMapClearedEvent(size(), name);
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -414,7 +424,6 @@ public class ReplicatedMapProxy<K, V> extends AbstractDistributedObject<Replicat
     public String toString() {
         return getClass().getSimpleName() + " -> " + name;
     }
-
 
     public LocalReplicatedMapStats getReplicatedMapStats() {
         return service.createReplicatedMapStats(name);

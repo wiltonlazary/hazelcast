@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import com.hazelcast.client.impl.protocol.codec.SemaphoreInitCodec;
 import com.hazelcast.client.impl.protocol.codec.SemaphoreReducePermitsCodec;
 import com.hazelcast.client.impl.protocol.codec.SemaphoreReleaseCodec;
 import com.hazelcast.client.impl.protocol.codec.SemaphoreTryAcquireCodec;
+import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.core.ISemaphore;
 
 import java.util.concurrent.TimeUnit;
@@ -33,8 +34,8 @@ import java.util.concurrent.TimeUnit;
  */
 public class ClientSemaphoreProxy extends PartitionSpecificClientProxy implements ISemaphore {
 
-    public ClientSemaphoreProxy(String serviceName, String objectId) {
-        super(serviceName, objectId);
+    public ClientSemaphoreProxy(String serviceName, String objectId, ClientContext context) {
+        super(serviceName, objectId, context);
     }
 
     @Override

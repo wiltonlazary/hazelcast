@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,9 @@
  */
 
 /**
- * Contains the implementation of the {@link com.hazelcast.internal.networking.spinning.SpinningIOThreadingModel}.
+ * Contains the implementation of the {@link com.hazelcast.internal.networking.spinning.SpinningEventLoopGroup}.
+ *
+ * This is purely an experimental implementation for analyzing low latency, throughput using
+ * {@link java.nio.channels.SocketChannel} spinning.
  */
 package com.hazelcast.internal.networking.spinning;

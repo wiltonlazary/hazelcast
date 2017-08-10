@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package com.hazelcast.instance;
 
-import com.hazelcast.config.Config;
 import com.hazelcast.cardinality.CardinalityEstimator;
+import com.hazelcast.config.Config;
 import com.hazelcast.core.ClientService;
 import com.hazelcast.core.Cluster;
 import com.hazelcast.core.DistributedObject;
@@ -76,7 +76,9 @@ import java.util.concurrent.ConcurrentMap;
 @SuppressWarnings({"checkstyle:methodcount", "checkstyle:classfanoutcomplexity"})
 @PrivateApi
 public final class HazelcastInstanceProxy implements HazelcastInstance, SerializationServiceSupport {
+
     protected volatile HazelcastInstanceImpl original;
+
     private final String name;
 
     protected HazelcastInstanceProxy(HazelcastInstanceImpl original) {
@@ -290,6 +292,7 @@ public final class HazelcastInstanceProxy implements HazelcastInstance, Serializ
         getLifecycleService().shutdown();
     }
 
+    @Override
     public InternalSerializationService getSerializationService() {
         return getOriginal().getSerializationService();
     }

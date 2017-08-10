@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.map;
 
 import com.hazelcast.config.Config;
@@ -7,11 +23,11 @@ import com.hazelcast.config.MaxSizeConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.map.eviction.MapEvictionPolicy;
+import com.hazelcast.map.impl.EntryCostEstimator;
 import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.PartitionContainer;
-import com.hazelcast.map.impl.SizeEstimator;
 import com.hazelcast.map.impl.eviction.EvictionChecker;
 import com.hazelcast.map.impl.eviction.Evictor;
 import com.hazelcast.map.impl.eviction.EvictorImpl;
@@ -219,26 +235,34 @@ public class EvictionMaxSizePolicyTest extends HazelcastTestSupport {
                 }
                 final RecordStore recordStore = container.getRecordStore(map.getName());
                 final DefaultRecordStore defaultRecordStore = (DefaultRecordStore) recordStore;
-                defaultRecordStore.setSizeEstimator(new SizeEstimator() {
+                defaultRecordStore.setSizeEstimator(new EntryCostEstimator() {
 
                     long size;
 
                     @Override
-                    public long getSize() {
+                    public long getEstimate() {
                         return size;
                     }
 
                     @Override
-                    public void add(long size) {
+                    public void adjustEstimateBy(long size) {
                         this.size += size;
                     }
 
                     @Override
-                    public long calculateSize(Object record) {
+                    public long calculateValueCost(Object record) {
                         if (record == null) {
                             return 0L;
                         }
                         return oneEntryHeapCostInBytes;
+                    }
+
+                    @Override
+                    public long calculateEntryCost(Object key, Object record) {
+                        if (record == null) {
+                            return 0L;
+                        }
+                        return 2 * oneEntryHeapCostInBytes;
                     }
 
                     @Override

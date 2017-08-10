@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,10 @@ package com.hazelcast.instance;
 import com.hazelcast.logging.Logger;
 
 import static com.hazelcast.util.StringUtil.tokenizeVersionString;
+import static java.lang.Integer.parseInt;
 
 public class BuildInfo {
+
     public static final int UNKNOWN_HAZELCAST_VERSION = -1;
 
     // major.minor.patch-RC-SNAPSHOT
@@ -35,8 +37,7 @@ public class BuildInfo {
     private final boolean enterprise;
     private final byte serializationVersion;
     private final BuildInfo upstreamBuildInfo;
-
-    private JetBuildInfo jetBuildInfo;
+    private final JetBuildInfo jetBuildInfo;
 
     public BuildInfo(String version, String build, String revision, int buildNumber, boolean enterprise,
                      byte serializationVersion) {
@@ -45,6 +46,12 @@ public class BuildInfo {
 
     public BuildInfo(String version, String build, String revision, int buildNumber, boolean enterprise,
                      byte serializationVersion, BuildInfo upstreamBuildInfo) {
+        this(version, build, revision, buildNumber, enterprise, serializationVersion, upstreamBuildInfo,
+                null);
+    }
+
+    private BuildInfo(String version, String build, String revision, int buildNumber, boolean enterprise,
+                     byte serializationVersion, BuildInfo upstreamBuildInfo, JetBuildInfo jetBuildInfo) {
         this.version = version;
         this.build = build;
         this.revision = revision;
@@ -52,6 +59,13 @@ public class BuildInfo {
         this.enterprise = enterprise;
         this.serializationVersion = serializationVersion;
         this.upstreamBuildInfo = upstreamBuildInfo;
+        this.jetBuildInfo = jetBuildInfo;
+    }
+
+    private BuildInfo(BuildInfo buildInfo, JetBuildInfo jetBuildInfo) {
+        this(buildInfo.getVersion(), buildInfo.getBuild(), buildInfo.getRevision(), buildInfo.getBuildNumber(),
+                buildInfo.isEnterprise(), buildInfo.getSerializationVersion(), buildInfo.getUpstreamBuildInfo(),
+                jetBuildInfo);
     }
 
     public String getRevision() {
@@ -83,14 +97,14 @@ public class BuildInfo {
     }
 
     /**
-     * @return jet build info if Jet is used null otherwise
+     * @return {@link JetBuildInfo} if Hazelcast Jet is used, {@code null} otherwise
      */
     public JetBuildInfo getJetBuildInfo() {
         return jetBuildInfo;
     }
 
-    void setJetBuildInfo(JetBuildInfo jetBuildInfo) {
-        this.jetBuildInfo = jetBuildInfo;
+    BuildInfo withJetBuildInfo(JetBuildInfo jetBuildInfo) {
+        return new BuildInfo(this, jetBuildInfo);
     }
 
     @Override
@@ -115,14 +129,13 @@ public class BuildInfo {
         String[] versionTokens = tokenizeVersionString(version);
         if (versionTokens != null) {
             try {
-                int calculatedVersion = MAJOR_VERSION_MULTIPLIER * Integer.parseInt(versionTokens[0])
-                        + MINOR_VERSION_MULTIPLIER * Integer.parseInt(versionTokens[1]);
-
+                int calculatedVersion = MAJOR_VERSION_MULTIPLIER * parseInt(versionTokens[0])
+                        + MINOR_VERSION_MULTIPLIER * parseInt(versionTokens[1]);
                 int groupCount = versionTokens.length;
                 if (groupCount >= PATCH_TOKEN_INDEX) {
                     String patchVersionString = versionTokens[PATCH_TOKEN_INDEX];
                     if (null != patchVersionString && !patchVersionString.startsWith("-")) {
-                        calculatedVersion += Integer.parseInt(patchVersionString);
+                        calculatedVersion += parseInt(patchVersionString);
                     }
                 }
                 return calculatedVersion;

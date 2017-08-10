@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,18 +24,17 @@ package com.hazelcast.spi;
  * method, the system will use that to determine if an Operation is partition-aware. So the system is fine if you create
  * an Operation that doesn't implements PartitionAwareOperation, but returns a partitionId equal or larger than 0 (and therefor is
  * partition-specific). But it is also fine if you do implement this PartitionAwareOperation interface, and return -1 as
- * partition-id (and therefor is not specific to a partition).
+ * partition ID (and therefor is not specific to a partition).
  *
  * @author mdogan 12/3/12
  */
 public interface PartitionAwareOperation {
 
     /**
-     * Gets the partition id.
+     * Gets the partition ID.
      *
-     * @return the partition id
+     * @return the partition ID
      * @see Operation#getPartitionId()
      */
     int getPartitionId();
-
 }

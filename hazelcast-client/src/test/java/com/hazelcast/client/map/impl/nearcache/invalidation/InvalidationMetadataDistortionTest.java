@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,13 +26,13 @@ import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.internal.nearcache.impl.invalidation.Invalidator;
 import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataGenerator;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.nearcache.MapNearCacheManager;
 import com.hazelcast.map.impl.nearcache.NearCacheTestSupport;
-import com.hazelcast.internal.nearcache.impl.invalidation.Invalidator;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
@@ -63,7 +63,7 @@ public class InvalidationMetadataDistortionTest extends NearCacheTestSupport {
     }
 
     protected Config createConfig() {
-        Config config = new Config();
+        Config config = getConfig();
         config.setProperty(GroupProperty.PARTITION_COUNT.getName(), "271");
         config.setProperty(GroupProperty.CACHE_INVALIDATION_MESSAGE_BATCH_ENABLED.getName(), "true");
         config.setProperty(GroupProperty.CACHE_INVALIDATION_MESSAGE_BATCH_SIZE.getName(), "10");
@@ -208,7 +208,7 @@ public class InvalidationMetadataDistortionTest extends NearCacheTestSupport {
         Invalidator invalidator = mapNearCacheManager.getInvalidator();
         MetaDataGenerator metaDataGenerator = invalidator.getMetaDataGenerator();
 
-        metaDataGenerator.setUuid(partitionId, UuidUtil.newSecureUUID());
+        metaDataGenerator.setUuid(partitionId, UuidUtil.newUnsecureUUID());
     }
 
     protected HazelcastClientInstanceImpl getHazelcastClientInstanceImpl(HazelcastInstance client) {

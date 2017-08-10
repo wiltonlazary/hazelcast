@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,11 +24,11 @@ import com.hazelcast.spi.InternalCompletableFuture;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.util.ExceptionUtil;
 
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 /**
  * Client Delegating Future is used to delegate ClientInvocationFuture to user to be used with
@@ -38,47 +38,67 @@ import java.util.concurrent.TimeoutException;
  */
 public class ClientDelegatingFuture<V> implements InternalCompletableFuture<V> {
 
+    private static final AtomicReferenceFieldUpdater<ClientDelegatingFuture, Object> DECODED_RESPONSE =
+            AtomicReferenceFieldUpdater.newUpdater(ClientDelegatingFuture.class, Object.class, "decodedResponse");
+    private static final Object VOID = "VOID";
     private final ClientInvocationFuture future;
     private final SerializationService serializationService;
     private final ClientMessageDecoder clientMessageDecoder;
+    private final boolean deserializeResponse;
     private final V defaultValue;
-    private final Object mutex = new Object();
-    private Throwable error;
-    private V deserializedValue;
-    /**
-     * mutex object is used as an initial NIL value
-     */
-    private volatile Object response = mutex;
-    private volatile boolean done;
+    private final Executor userExecutor;
+    private volatile Object decodedResponse = VOID;
 
     public ClientDelegatingFuture(ClientInvocationFuture clientInvocationFuture,
                                   SerializationService serializationService,
-                                  ClientMessageDecoder clientMessageDecoder, V defaultValue) {
+                                  ClientMessageDecoder clientMessageDecoder, V defaultValue, boolean deserializeResponse) {
         this.future = clientInvocationFuture;
         this.serializationService = serializationService;
         this.clientMessageDecoder = clientMessageDecoder;
         this.defaultValue = defaultValue;
+        this.userExecutor = clientInvocationFuture.getInvocation().getUserExecutor();
+        this.deserializeResponse = deserializeResponse;
     }
 
     public ClientDelegatingFuture(ClientInvocationFuture clientInvocationFuture,
-                                  SerializationService serializationService, ClientMessageDecoder clientMessageDecoder) {
-        this.future = clientInvocationFuture;
-        this.serializationService = serializationService;
-        this.clientMessageDecoder = clientMessageDecoder;
-        this.defaultValue = null;
+                                  SerializationService serializationService,
+                                  ClientMessageDecoder clientMessageDecoder, V defaultValue) {
+        this(clientInvocationFuture, serializationService, clientMessageDecoder, defaultValue, true);
     }
 
-    public <R> void andThenInternal(final ExecutionCallback<R> callback) {
-        future.andThen(new DelegatingExecutionCallback<R>(callback, false));
+    public ClientDelegatingFuture(ClientInvocationFuture clientInvocationFuture,
+                                  SerializationService serializationService,
+                                  ClientMessageDecoder clientMessageDecoder) {
+        this(clientInvocationFuture, serializationService, clientMessageDecoder, null, true);
+    }
+
+    public ClientDelegatingFuture(ClientInvocationFuture clientInvocationFuture,
+                                  SerializationService serializationService,
+                                  ClientMessageDecoder clientMessageDecoder, boolean deserializeResponse) {
+        this(clientInvocationFuture, serializationService, clientMessageDecoder, null, deserializeResponse);
+    }
+
+    /**
+     * Uses internal executor to execute callbacks instead of {@link #userExecutor}.
+     * This method is intended to use by hazelcast internals.
+     *
+     * @param callback              callback to execute
+     * @param shouldDeserializeData when {@code true} execution result is converted to object format
+     *                              before passing to {@link ExecutionCallback#onResponse},
+     *                              otherwise execution result will be in {@link com.hazelcast.nio.serialization.Data} format
+     * @param <T>                   type of the execution result which is passed to {@link ExecutionCallback#onResponse}
+     */
+    public <T> void andThenInternal(ExecutionCallback<T> callback, boolean shouldDeserializeData) {
+        future.andThen(new DelegatingExecutionCallback<T>(callback, shouldDeserializeData));
     }
 
     @Override
-    public void andThen(final ExecutionCallback<V> callback) {
-        future.andThen(new DelegatingExecutionCallback<V>(callback, true));
+    public void andThen(ExecutionCallback<V> callback) {
+        future.andThen(new DelegatingExecutionCallback<V>(callback, true), userExecutor);
     }
 
     @Override
-    public void andThen(final ExecutionCallback<V> callback, Executor executor) {
+    public void andThen(ExecutionCallback<V> callback, Executor executor) {
         future.andThen(new DelegatingExecutionCallback<V>(callback, true), executor);
     }
 
@@ -89,22 +109,17 @@ public class ClientDelegatingFuture<V> implements InternalCompletableFuture<V> {
 
     @Override
     public boolean cancel(boolean mayInterruptIfRunning) {
-        done = true;
-        return false;
+        return future.cancel(mayInterruptIfRunning);
     }
 
     @Override
     public boolean isCancelled() {
-        return false;
+        return future.isCancelled();
     }
 
     @Override
     public final boolean isDone() {
-        return done ? done : future.isDone();
-    }
-
-    public Object getResponse() {
-        return response;
+        return future.isDone();
     }
 
     @Override
@@ -117,43 +132,10 @@ public class ClientDelegatingFuture<V> implements InternalCompletableFuture<V> {
     }
 
     @Override
-    @SuppressWarnings({"checkstyle:npathcomplexity", "checkstyle:cyclomaticcomplexity"})
     public V get(long timeout, TimeUnit unit) throws InterruptedException,
             ExecutionException, TimeoutException {
-        if (!done || !isResponseSet()) {
-            synchronized (mutex) {
-                if (!done || !isResponseSet()) {
-                    try {
-                        response = resolveMessageToValue(future.get(timeout, unit));
-                        if (deserializedValue == null) {
-                            deserializedValue = serializationService.toObject(response);
-                        }
-                    } catch (InterruptedException e) {
-                        error = e;
-                    } catch (ExecutionException e) {
-                        error = e;
-                    }
-                    done = true;
-                }
-            }
-        }
-        if (error != null) {
-            if (error instanceof CancellationException) {
-                throw (CancellationException) error;
-            }
-            if (error.getCause() instanceof CancellationException) {
-                throw (CancellationException) error.getCause();
-            }
-            if (error instanceof ExecutionException) {
-                throw (ExecutionException) error;
-            }
-            if (error instanceof InterruptedException) {
-                throw (InterruptedException) error;
-            }
-            // should not happen!
-            throw new ExecutionException(error);
-        }
-        return getResult();
+        ClientMessage response = future.get(timeout, unit);
+        return (V) resolveResponse(response, deserializeResponse);
     }
 
     @Override
@@ -165,82 +147,51 @@ public class ClientDelegatingFuture<V> implements InternalCompletableFuture<V> {
         }
     }
 
-    private V getResult() {
+    private Object resolveResponse(ClientMessage clientMessage, boolean deserialize) {
         if (defaultValue != null) {
             return defaultValue;
         }
 
-        // If value is already deserialized, use it.
-        if (deserializedValue != null) {
-            return deserializedValue;
+        Object decodedResponse = decodeResponse(clientMessage);
+        if (deserialize) {
+            return serializationService.toObject(decodedResponse);
         }
-        // Otherwise, it is possible that received data may not be deserialized
-        // if "shouldDeserializeData" flag is not true in any of registered "DelegatingExecutionCallback".
-        // So, be sure that value is deserialized before returning to caller.
-        deserializedValue = serializationService.toObject(response);
-        return deserializedValue;
+        return decodedResponse;
     }
 
-    private Object resolveMessageToValue(ClientMessage message) {
-        return clientMessageDecoder.decodeClientMessage(message);
-    }
+    private Object decodeResponse(ClientMessage clientMessage) {
+        if (decodedResponse != VOID) {
+            return decodedResponse;
+        }
+        ClientMessage message = ClientMessage.createForDecode(clientMessage.buffer(), 0);
+        Object newDecodedResponse = clientMessageDecoder.decodeClientMessage(message);
 
-    protected void setError(Throwable error) {
-        this.error = error;
-    }
-
-    protected void setDone() {
-        this.done = true;
+        DECODED_RESPONSE.compareAndSet(this, VOID, newDecodedResponse);
+        return newDecodedResponse;
     }
 
     protected ClientInvocationFuture getFuture() {
         return future;
     }
 
-    private boolean isResponseSet() {
-        return response != mutex;
-    }
-
     class DelegatingExecutionCallback<T> implements ExecutionCallback<ClientMessage> {
 
         private final ExecutionCallback<T> callback;
-        private final boolean shouldDeserializeData;
+        private final boolean deserialize;
 
-        DelegatingExecutionCallback(ExecutionCallback<T> callback, boolean shouldDeserializeData) {
+        DelegatingExecutionCallback(ExecutionCallback<T> callback, boolean deserialize) {
             this.callback = callback;
-            this.shouldDeserializeData = shouldDeserializeData;
+            this.deserialize = deserialize;
         }
 
         @Override
         public void onResponse(ClientMessage message) {
-            if (!done || !isResponseSet()) {
-                synchronized (mutex) {
-                    if (!done || !isResponseSet()) {
-                        response = resolveMessageToValue(message);
-                        if (shouldDeserializeData && deserializedValue == null) {
-                            deserializedValue = serializationService.toObject(response);
-                        }
-                        done = true;
-                    }
-                }
-            }
-            if (shouldDeserializeData) {
-                callback.onResponse((T) deserializedValue);
-            } else {
-                callback.onResponse((T) response);
-            }
+            Object response = resolveResponse(message, deserialize);
+            callback.onResponse((T) response);
         }
 
         @Override
         public void onFailure(Throwable t) {
-            if (!done) {
-                synchronized (mutex) {
-                    if (!done) {
-                        error = t;
-                        done = true;
-                    }
-                }
-            }
             callback.onFailure(t);
         }
     }

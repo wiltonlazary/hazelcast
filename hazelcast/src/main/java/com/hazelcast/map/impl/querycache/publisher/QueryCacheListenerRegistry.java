@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,10 +28,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Holds id's of registered listeners which are registered to listen underlying
+ * Holds IDs of registered listeners which are registered to listen underlying
  * {@code IMap} events to feed {@link com.hazelcast.map.QueryCache QueryCache}.
- * <p/>
- * This class contains mappings like: cacheName ---> registered listener ids for underlying {@code IMap}.
+ * <p>
+ * This class contains mappings like: cacheName ---> registered listener IDs for underlying {@code IMap}.
  */
 public class QueryCacheListenerRegistry implements Registry<String, String> {
 

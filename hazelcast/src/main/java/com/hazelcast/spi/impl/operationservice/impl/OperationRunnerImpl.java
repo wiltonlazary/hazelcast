@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,10 +59,10 @@ import com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse;
 import com.hazelcast.util.ExceptionUtil;
 
 import java.io.IOException;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 
 import static com.hazelcast.internal.metrics.ProbeLevel.DEBUG;
+import static com.hazelcast.internal.util.counters.MwCounter.newMwCounter;
 import static com.hazelcast.internal.util.counters.SwCounter.newSwCounter;
 import static com.hazelcast.spi.OperationAccessor.setCallerAddress;
 import static com.hazelcast.spi.OperationAccessor.setConnection;
@@ -87,15 +87,17 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
     private final OperationServiceImpl operationService;
     private final Node node;
     private final NodeEngineImpl nodeEngine;
-    private final AtomicLong executedOperationsCount;
 
     @Probe(level = DEBUG)
-    private final Counter count;
+    private final Counter executedOperationsCounter;
     private final Address thisAddress;
     private final boolean staleReadOnMigrationEnabled;
 
     private final Counter failedBackupsCounter;
     private final OperationBackupHandler backupHandler;
+
+    // has only meaning for metrics.
+    private final int genericId;
 
     // This field doesn't need additional synchronization, since a partition-specific OperationRunner
     // will never be called concurrently.
@@ -108,25 +110,35 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
     // when partitionId = -2, it is ad hoc
     // an ad-hoc OperationRunner can only process generic operations, but it can be shared between threads
     // and therefor the {@link OperationRunner#currentTask()} always returns null
-    OperationRunnerImpl(OperationServiceImpl operationService, int partitionId, Counter failedBackupsCounter) {
+    OperationRunnerImpl(OperationServiceImpl operationService, int partitionId, int genericId, Counter failedBackupsCounter) {
         super(partitionId);
+        this.genericId = genericId;
         this.operationService = operationService;
         this.logger = operationService.node.getLogger(OperationRunnerImpl.class);
         this.node = operationService.node;
         this.thisAddress = node.getThisAddress();
         this.nodeEngine = operationService.nodeEngine;
         this.outboundResponseHandler = operationService.outboundResponseHandler;
-        this.executedOperationsCount = operationService.completedOperationsCount;
         this.staleReadOnMigrationEnabled = !node.getProperties().getBoolean(DISABLE_STALE_READ_ON_PARTITION_MIGRATION);
         this.failedBackupsCounter = failedBackupsCounter;
         this.backupHandler = operationService.backupHandler;
-        this.count = partitionId >= 0 ? newSwCounter() : null;
+        // only a ad-hoc operation runner will be called concurrently
+        this.executedOperationsCounter = partitionId == AD_HOC_PARTITION_ID ? newMwCounter() : newSwCounter();
+    }
+
+    @Override
+    public long executedOperationsCount() {
+        return executedOperationsCounter.get();
     }
 
     @Override
     public void provideMetrics(MetricsRegistry registry) {
         if (partitionId >= 0) {
             registry.scanAndRegister(this, "operation.partition[" + partitionId + "]");
+        } else if (partitionId == -1) {
+            registry.scanAndRegister(this, "operation.generic[" + genericId + "]");
+        } else {
+            registry.scanAndRegister(this, "operation.adhoc");
         }
     }
 
@@ -154,11 +166,7 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
 
     @Override
     public void run(Operation op) {
-        if (count != null) {
-            count.inc();
-        }
-
-        executedOperationsCount.incrementAndGet();
+        executedOperationsCounter.inc();
 
         boolean publishCurrentTask = publishCurrentTask();
 
@@ -215,14 +223,14 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
             throw new IllegalStateException("Cluster is in " + ClusterState.PASSIVE + " state! Operation: " + op);
         }
 
-        // Operation has no partition id. So it is sent to this node in purpose.
+        // Operation has no partition ID, so it's sent to this node in purpose.
         // Operation will fail since node is shutting down or cluster is passive.
         if (op.getPartitionId() < 0) {
-            throw new HazelcastInstanceNotActiveException("Member " + localAddress + "+ is currently passive! Operation: " + op);
+            throw new HazelcastInstanceNotActiveException("Member " + localAddress + " is currently passive! Operation: " + op);
         }
 
         // Custer is not passive but this node is shutting down.
-        // Since operation has a partition id, it must be retried on another node.
+        // Since operation has a partition ID, it must be retried on another node.
         throw new RetryableHazelcastException("Member " + localAddress + " is currently shutting down! Operation: " + op);
     }
 
@@ -314,7 +322,7 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
             internalPartition = nodeEngine.getPartitionService().getPartition(partitionId);
         }
 
-        if (retryDuringMigration(op) && internalPartition.isMigrating()) {
+        if (!isAllowedToRetryDuringMigration(op) && internalPartition.isMigrating()) {
             throw new PartitionMigratingException(thisAddress, partitionId,
                     op.getClass().getName(), op.getServiceName());
         }
@@ -326,8 +334,8 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
         }
     }
 
-    private boolean retryDuringMigration(Operation op) {
-        return !((op instanceof ReadonlyOperation && staleReadOnMigrationEnabled) || isMigrationOperation(op));
+    private boolean isAllowedToRetryDuringMigration(Operation op) {
+        return (op instanceof ReadonlyOperation && staleReadOnMigrationEnabled) || isMigrationOperation(op);
     }
 
     private void handleOperationError(Operation operation, Throwable e) {
@@ -402,7 +410,7 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
         } catch (Throwable throwable) {
             // If exception happens we need to extract the callId from the bytes directly!
             long callId = extractOperationCallId(packet);
-            outboundResponseHandler.send(new ErrorResponse(throwable, callId, packet.isUrgent()), caller);
+            outboundResponseHandler.send(caller, new ErrorResponse(throwable, callId, packet.isUrgent()));
             logOperationDeserializationException(throwable, callId);
             throw ExceptionUtil.rethrow(throwable);
         } finally {
@@ -470,9 +478,9 @@ class OperationRunnerImpl extends OperationRunner implements MetricsProvider {
             }
         } else if (t instanceof OutOfMemoryError) {
             try {
-                logger.log(SEVERE, t.getMessage(), t);
+                logger.severe(t.getMessage(), t);
             } catch (Throwable ignored) {
-                logger.log(SEVERE, ignored.getMessage(), t);
+                logger.severe(ignored.getMessage(), t);
             }
         } else {
             final Level level = nodeEngine.isRunning() ? SEVERE : FINEST;

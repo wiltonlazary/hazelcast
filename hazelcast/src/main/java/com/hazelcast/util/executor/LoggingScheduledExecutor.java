@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.RunnableScheduledFuture;
 import java.util.concurrent.ScheduledFuture;
@@ -50,6 +51,7 @@ import static java.util.logging.Level.SEVERE;
 public class LoggingScheduledExecutor extends ScheduledThreadPoolExecutor {
 
     private final ILogger logger;
+    private volatile boolean shutdownInitiated;
 
     public LoggingScheduledExecutor(ILogger logger, int corePoolSize, ThreadFactory threadFactory) {
         super(corePoolSize, threadFactory);
@@ -91,9 +93,17 @@ public class LoggingScheduledExecutor extends ScheduledThreadPoolExecutor {
             }
         }
 
+        if (throwable instanceof RejectedExecutionException && shutdownInitiated) {
+            level = Level.FINE;
+        }
+
         if (throwable != null) {
             logger.log(level, "Failed to execute " + runnable, throwable);
         }
+    }
+
+    public void notifyShutdownInitiated() {
+        shutdownInitiated = true;
     }
 
     /**

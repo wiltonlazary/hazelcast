@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,8 @@ import org.w3c.dom.Node;
 import java.util.Properties;
 
 /**
- * Bean definition parser for JCache {@link javax.cache.CacheManager}
- * <p/>
+ * Bean definition parser for JCache {@link javax.cache.CacheManager}.
+ * <p>
  * <b>Sample bean</b>
  * <pre>
  * &lt;hz:cache-manager id="cacheManager" instance-ref="instance" name="cacheManager" /&gt;

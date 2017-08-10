@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,19 @@
 
 package com.hazelcast.client.map;
 
-import com.hazelcast.client.test.TestHazelcastFactory;
-import com.hazelcast.config.Config;
-import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
+import com.hazelcast.core.ReadOnly;
 import com.hazelcast.map.AbstractEntryProcessor;
+import com.hazelcast.map.EntryBackupProcessor;
+import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.query.IndexAwarePredicate;
 import com.hazelcast.query.TruePredicate;
 import com.hazelcast.query.impl.FalsePredicate;
 import com.hazelcast.query.impl.QueryContext;
 import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -45,33 +42,9 @@ import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
-public class ClientEntryProcessorTest extends HazelcastTestSupport {
+public class ClientEntryProcessorTest extends AbstractClientMapTest {
 
     private static final String MAP_NAME = "default";
-
-    private HazelcastInstance client;
-
-    private HazelcastInstance member1;
-    private HazelcastInstance member2;
-
-    @Before
-    public void setUp() throws Exception {
-        Config config = getConfig();
-
-        TestHazelcastFactory hazelcastFactory = new TestHazelcastFactory();
-        member1 = hazelcastFactory.newHazelcastInstance(config);
-        member2 = hazelcastFactory.newHazelcastInstance(config);
-
-        client = hazelcastFactory.newHazelcastClient();
-    }
-
-    @After
-    public void tearDown() throws Exception {
-        client.shutdown();
-
-        member1.shutdown();
-        member2.shutdown();
-    }
 
     @Test
     public void test_executeOnEntries_updatesValue_onOwnerAndBackupPartition() {
@@ -109,7 +82,6 @@ public class ClientEntryProcessorTest extends HazelcastTestSupport {
         assertEquals("value", member1Value);
     }
 
-
     @Test
     public void test_executeOnEntries_updatesValue_with_TruePredicate() {
         String member1Key = generateKeyOwnedBy(member1);
@@ -125,7 +97,6 @@ public class ClientEntryProcessorTest extends HazelcastTestSupport {
         assertEquals("newValue", member1Value);
     }
 
-
     @Test
     public void test_executeOnEntriesWithPredicate_usesIndexes_whenIndexesAvailable() {
         IMap<Integer, Integer> map = client.getMap("test");
@@ -138,24 +109,33 @@ public class ClientEntryProcessorTest extends HazelcastTestSupport {
         IndexedTestPredicate predicate = new IndexedTestPredicate();
         map.executeOnEntries(new EP(), predicate);
 
-
         assertTrue("isIndexed method of IndexAwarePredicate should be called", IndexedTestPredicate.INDEX_CALLED.get());
     }
 
+    @Test(expected = UnsupportedOperationException.class)
+    public void test_executeOnKey_readOnly_setValue() {
+        String member1Key = generateKeyOwnedBy(member1);
+
+        IMap<String, String> clientMap = client.getMap(MAP_NAME);
+        clientMap.put(member1Key, "value");
+
+        clientMap.executeOnKey(member1Key, new ValueUpdaterReadOnly("newValue"));
+    }
+
     public static final class EP extends AbstractEntryProcessor {
+
         @Override
         public Object process(Map.Entry entry) {
             return null;
         }
     }
 
-
     /**
      * This predicate is used to check whether or not {@link IndexAwarePredicate#isIndexed} method is called.
      */
     private static class IndexedTestPredicate implements IndexAwarePredicate {
 
-        public static final AtomicBoolean INDEX_CALLED = new AtomicBoolean(false);
+        static final AtomicBoolean INDEX_CALLED = new AtomicBoolean(false);
 
         @Override
         public Set<QueryableEntry> filter(QueryContext queryContext) {
@@ -174,12 +154,11 @@ public class ClientEntryProcessorTest extends HazelcastTestSupport {
         }
     }
 
-
     public static class ValueUpdater extends AbstractEntryProcessor {
 
         private final String newValue;
 
-        public ValueUpdater(String newValue) {
+        ValueUpdater(String newValue) {
             this.newValue = newValue;
         }
 
@@ -190,9 +169,23 @@ public class ClientEntryProcessorTest extends HazelcastTestSupport {
         }
     }
 
+    public static class ValueUpdaterReadOnly implements EntryProcessor, ReadOnly {
 
+        private final String newValue;
 
+        ValueUpdaterReadOnly(String newValue) {
+            this.newValue = newValue;
+        }
 
+        @Override
+        public Object process(Map.Entry entry) {
+            entry.setValue(newValue);
+            return null;
+        }
 
-
+        @Override
+        public EntryBackupProcessor getBackupProcessor() {
+            return null;
+        }
+    }
 }

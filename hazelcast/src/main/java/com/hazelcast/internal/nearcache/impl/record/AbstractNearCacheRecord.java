@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,25 +20,37 @@ import com.hazelcast.internal.nearcache.NearCacheRecord;
 
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 /**
- * Abstract implementation of {@link NearCacheRecord} with value and
- * expiration time as internal state.
+ * Abstract implementation of {@link NearCacheRecord} with value and expiration time as internal state.
  *
  * @param <V> the type of the value stored by this {@link AbstractNearCacheRecord}
  */
 public abstract class AbstractNearCacheRecord<V> implements NearCacheRecord<V> {
 
+    // primitive long typed fields:
+    // "creationTime", "expirationTime" and "accessTime", "recordState", "sequence"
+    public static final int NUMBER_OF_LONG_FIELD_TYPES = 5;
+    // primitive int typed fields: "accessHit"
+    public static final int NUMBER_OF_INTEGER_FIELD_TYPES = 1;
+
     private static final AtomicIntegerFieldUpdater<AbstractNearCacheRecord> ACCESS_HIT =
             AtomicIntegerFieldUpdater.newUpdater(AbstractNearCacheRecord.class, "accessHit");
 
-    protected V value;
-    protected long creationTime = TIME_NOT_SET;
-    protected long sequence;
-    protected UUID uuid;
+    private static final AtomicLongFieldUpdater<AbstractNearCacheRecord> RECORD_STATE =
+            AtomicLongFieldUpdater.newUpdater(AbstractNearCacheRecord.class, "recordState");
 
+    protected long creationTime = TIME_NOT_SET;
+
+    protected volatile int partitionId;
+    protected volatile long sequence;
+    protected volatile UUID uuid;
+
+    protected volatile V value;
     protected volatile long expirationTime = TIME_NOT_SET;
     protected volatile long accessTime = TIME_NOT_SET;
+    protected volatile long recordState = READ_PERMITTED;
     protected volatile int accessHit;
 
     public AbstractNearCacheRecord(V value, long creationTime, long expirationTime) {
@@ -113,29 +125,6 @@ public abstract class AbstractNearCacheRecord<V> implements NearCacheRecord<V> {
     }
 
     @Override
-    public long getInvalidationSequence() {
-        return sequence;
-    }
-
-    @Override
-    public void setInvalidationSequence(long sequence) {
-        this.sequence = sequence;
-    }
-
-    @Override
-    public boolean hasSameUuid(UUID thatUuid) {
-        if (uuid == null || thatUuid == null) {
-            return false;
-        }
-        return uuid.equals(thatUuid);
-    }
-
-    @Override
-    public void setUuid(UUID uuid) {
-        this.uuid = uuid;
-    }
-
-    @Override
     public boolean isIdleAt(long maxIdleMilliSeconds, long now) {
         if (maxIdleMilliSeconds > 0) {
             if (accessTime > TIME_NOT_SET) {
@@ -146,5 +135,57 @@ public abstract class AbstractNearCacheRecord<V> implements NearCacheRecord<V> {
         } else {
             return false;
         }
+    }
+
+    @Override
+    public long getRecordState() {
+        return recordState;
+    }
+
+    @Override
+    public boolean casRecordState(long expect, long update) {
+        return RECORD_STATE.compareAndSet(this, expect, update);
+    }
+
+    @Override
+    public int getPartitionId() {
+        return partitionId;
+    }
+
+    @Override
+    public void setPartitionId(int partitionId) {
+        this.partitionId = partitionId;
+    }
+
+    @Override
+    public long getInvalidationSequence() {
+        return sequence;
+    }
+
+    @Override
+    public void setInvalidationSequence(long sequence) {
+        this.sequence = sequence;
+    }
+
+    @Override
+    public void setUuid(UUID uuid) {
+        this.uuid = uuid;
+    }
+
+    @Override
+    public boolean hasSameUuid(UUID thatUuid) {
+        return uuid != null && thatUuid != null && uuid.equals(thatUuid);
+    }
+
+    @Override
+    public String toString() {
+        return "creationTime=" + creationTime
+                + ", sequence=" + sequence
+                + ", uuid=" + uuid
+                + ", expirationTime=" + expirationTime
+                + ", accessTime=" + accessTime
+                + ", accessHit=" + accessHit
+                + ", recordState=" + recordState
+                + ", value=" + value;
     }
 }

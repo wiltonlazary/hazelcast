@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
+import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -41,12 +42,12 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.Assert.assertEquals;
 
-@Category(QuickTest.class)
 @RunWith(HazelcastParallelClassRunner.class)
+@Category({QuickTest.class, ParallelTest.class})
 public class ReplicatedMapListenerTest extends HazelcastTestSupport {
 
     @Test
-    public void testRegisterListenerViaConfiguration() throws Exception {
+    public void testRegisterListenerViaConfiguration() {
         String mapName = randomMapName();
         Config config = new Config();
         ReplicatedMapConfig replicatedMapConfig = config.getReplicatedMapConfig(mapName);
@@ -68,7 +69,7 @@ public class ReplicatedMapListenerTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testEntryAdded() throws Exception {
+    public void testEntryAdded() {
         ReplicatedMap<Object, Object> replicatedMap = createClusterAndGetRandomReplicatedMap();
         final EventCountingListener listener = new EventCountingListener();
         replicatedMap.addEntryListener(listener);
@@ -82,7 +83,7 @@ public class ReplicatedMapListenerTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testEntryUpdated() throws Exception {
+    public void testEntryUpdated() {
         ReplicatedMap<Object, Object> replicatedMap = createClusterAndGetRandomReplicatedMap();
         final EventCountingListener listener = new EventCountingListener();
         replicatedMap.addEntryListener(listener);
@@ -97,7 +98,7 @@ public class ReplicatedMapListenerTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testEntryEvicted() throws Exception {
+    public void testEntryEvicted() {
         ReplicatedMap<Object, Object> replicatedMap = createClusterAndGetRandomReplicatedMap();
         final EventCountingListener listener = new EventCountingListener();
         replicatedMap.addEntryListener(listener);
@@ -112,7 +113,7 @@ public class ReplicatedMapListenerTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testEntryRemoved() throws Exception {
+    public void testEntryRemoved() {
         ReplicatedMap<Object, Object> replicatedMap = createClusterAndGetRandomReplicatedMap();
         final EventCountingListener listener = new EventCountingListener();
         replicatedMap.addEntryListener(listener);
@@ -127,7 +128,7 @@ public class ReplicatedMapListenerTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testMapClear() throws Exception {
+    public void testMapClear() {
         ReplicatedMap<Object, Object> replicatedMap = createClusterAndGetRandomReplicatedMap();
         final EventCountingListener listener = new EventCountingListener();
         replicatedMap.addEntryListener(listener);
@@ -141,9 +142,8 @@ public class ReplicatedMapListenerTest extends HazelcastTestSupport {
         });
     }
 
-
     @Test
-    public void testListenToKeyForEntryAdded() throws Exception {
+    public void testListenToKeyForEntryAdded() {
         ReplicatedMap<Object, Object> replicatedMap = createClusterAndGetRandomReplicatedMap();
         final EventCountingListener listener = new EventCountingListener();
         replicatedMap.addEntryListener(listener, 1);
@@ -160,7 +160,8 @@ public class ReplicatedMapListenerTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testListenWithPredicate() throws Exception {
+    @SuppressWarnings("unchecked")
+    public void testListenWithPredicate() {
         ReplicatedMap<Object, Object> replicatedMap = createClusterAndGetRandomReplicatedMap();
         final EventCountingListener listener = new EventCountingListener();
         replicatedMap.addEntryListener(listener, FalsePredicate.INSTANCE);
@@ -174,7 +175,8 @@ public class ReplicatedMapListenerTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testListenToKeyWithPredicate() throws Exception {
+    @SuppressWarnings("unchecked")
+    public void testListenToKeyWithPredicate() {
         ReplicatedMap<Object, Object> replicatedMap = createClusterAndGetRandomReplicatedMap();
         final EventCountingListener listener = new EventCountingListener();
         replicatedMap.addEntryListener(listener, new InstanceOfPredicate(Integer.class), 2);
@@ -192,22 +194,21 @@ public class ReplicatedMapListenerTest extends HazelcastTestSupport {
 
     private ReplicatedMap<Object, Object> createClusterAndGetRandomReplicatedMap() {
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
-        HazelcastInstance h1 = factory.newHazelcastInstance();
-        HazelcastInstance h2 = factory.newHazelcastInstance();
+        HazelcastInstance hz = factory.newHazelcastInstance();
+        factory.newHazelcastInstance();
         String mapName = randomMapName();
-        return h1.getReplicatedMap(mapName);
+        return hz.getReplicatedMap(mapName);
     }
-
 
     public class EventCountingListener implements EntryListener<Object, Object> {
 
-        public final ConcurrentLinkedQueue<Object> keys = new ConcurrentLinkedQueue<Object>();
-        public final AtomicLong addCount = new AtomicLong();
-        public final AtomicLong removeCount = new AtomicLong();
-        public final AtomicLong updateCount = new AtomicLong();
-        public final AtomicLong evictCount = new AtomicLong();
-        public final AtomicLong mapClearCount = new AtomicLong();
-        public final AtomicLong mapEvictCount = new AtomicLong();
+        private final ConcurrentLinkedQueue<Object> keys = new ConcurrentLinkedQueue<Object>();
+        private final AtomicLong addCount = new AtomicLong();
+        private final AtomicLong removeCount = new AtomicLong();
+        private final AtomicLong updateCount = new AtomicLong();
+        private final AtomicLong evictCount = new AtomicLong();
+        private final AtomicLong mapClearCount = new AtomicLong();
+        private final AtomicLong mapEvictCount = new AtomicLong();
 
         public EventCountingListener() {
         }
@@ -258,5 +259,4 @@ public class ReplicatedMapListenerTest extends HazelcastTestSupport {
                     '}';
         }
     }
-
 }

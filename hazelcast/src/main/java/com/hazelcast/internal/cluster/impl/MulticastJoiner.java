@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,16 +59,16 @@ public class MulticastJoiner extends AbstractJoiner {
         while (shouldRetry() && (Clock.currentTimeMillis() - joinStartTime < maxJoinMillis)) {
 
             // clear master node
-            clusterJoinManager.setMasterAddress(null);
+            clusterService.setMasterAddressToJoin(null);
 
             Address masterAddress = getTargetAddress();
             if (masterAddress == null) {
                 masterAddress = findMasterWithMulticast();
             }
-            clusterJoinManager.setMasterAddress(masterAddress);
+            clusterService.setMasterAddressToJoin(masterAddress);
 
             if (masterAddress == null || thisAddress.equals(masterAddress)) {
-                clusterJoinManager.setAsMaster();
+                clusterJoinManager.setThisMemberAsMaster();
                 return;
             }
 
@@ -83,7 +83,7 @@ public class MulticastJoiner extends AbstractJoiner {
 
         while (shouldRetry() && Clock.currentTimeMillis() - start < maxMasterJoinTime) {
 
-            Address master = node.getMasterAddress();
+            Address master = clusterService.getMasterAddress();
             if (master != null) {
                 if (logger.isFineEnabled()) {
                     logger.fine("Joining to master " + master);
@@ -100,7 +100,7 @@ public class MulticastJoiner extends AbstractJoiner {
             }
 
             if (isBlacklisted(master)) {
-                clusterJoinManager.setMasterAddress(null);
+                clusterService.setMasterAddressToJoin(null);
                 return;
             }
         }
@@ -109,38 +109,48 @@ public class MulticastJoiner extends AbstractJoiner {
     @Override
     public void searchForOtherClusters() {
         node.multicastService.send(node.createSplitBrainJoinMessage());
-        SplitBrainJoinMessage joinInfo;
+        SplitBrainJoinMessage splitBrainMsg;
         try {
-            while ((joinInfo = splitBrainJoinMessages.poll(3, TimeUnit.SECONDS)) != null) {
-                try {
-                    if (node.clusterService.getMember(joinInfo.getAddress()) != null) {
-                        if (logger.isFineEnabled()) {
-                            logger.fine("Ignoring merge join response, since " + joinInfo.getAddress()
-                                    + " is already a member.");
-                        }
-                        return;
-                    }
-
-                    if (joinInfo.getMemberCount() == 1) {
-                        // if the other cluster has just single member, that may be a newly starting node instead of a split node
-                        // wait 2 times 'WAIT_SECONDS_BEFORE_JOIN' seconds before processing merge JoinRequest
-                        Thread.sleep(2 * node.getProperties().getMillis(GroupProperty.WAIT_SECONDS_BEFORE_JOIN));
-                    }
-
-                    SplitBrainJoinMessage response = sendSplitBrainJoinMessage(joinInfo.getAddress());
-                    if (shouldMerge(response)) {
-                        logger.warning(node.getThisAddress() + " is merging [multicast] to " + joinInfo.getAddress());
-                        startClusterMerge(joinInfo.getAddress());
-                    }
-                } catch (Exception e) {
-                    if (logger != null) {
-                        logger.warning(e);
-                    }
+            while ((splitBrainMsg = splitBrainJoinMessages.poll(3, TimeUnit.SECONDS)) != null) {
+                if (logger.isFineEnabled()) {
+                    logger.fine("Received  " + splitBrainMsg);
                 }
+                Address targetAddress = splitBrainMsg.getAddress();
+                if (node.clusterService.getMember(targetAddress) != null) {
+                    if (logger.isFineEnabled()) {
+                        logger.fine("Ignoring merge join response, since " + targetAddress + " is already a member.");
+                    }
+                    continue;
+                }
+
+                if (splitBrainMsg.getMemberCount() == 1) {
+                    // if the other cluster has just single member, that may be a newly starting node instead of a split node
+                    // wait 2 times 'WAIT_SECONDS_BEFORE_JOIN' seconds before processing merge JoinRequest
+                    Thread.sleep(2 * node.getProperties().getMillis(GroupProperty.WAIT_SECONDS_BEFORE_JOIN));
+                }
+
+                SplitBrainJoinMessage response = sendSplitBrainJoinMessage(targetAddress);
+                if (shouldMerge(response)) {
+                    logger.warning(node.getThisAddress() + " is merging [multicast] to " + targetAddress);
+                    startClusterMerge(targetAddress);
+                    return;
+                }
+
+                // other side should join to us. broadcast a new SplitBrainJoinMessage.
+                node.multicastService.send(node.createSplitBrainJoinMessage());
             }
-        } catch (InterruptedException ignored) {
-            EmptyStatement.ignore(ignored);
+        } catch (InterruptedException e) {
+            logger.fine(e);
+        } catch (Exception e) {
+            logger.warning(e);
         }
+    }
+
+    @Override
+    public void reset() {
+        super.reset();
+        // since this node is going to merge with a detected cluster, clear the queued split brain join messages (if any)
+        splitBrainJoinMessages.clear();
     }
 
     @Override
@@ -148,8 +158,13 @@ public class MulticastJoiner extends AbstractJoiner {
         return "multicast";
     }
 
+    // for tests only
+    public int getSplitBrainMessagesCount() {
+        return splitBrainJoinMessages.size();
+    }
+
     void onReceivedJoinRequest(JoinRequest joinRequest) {
-        if (joinRequest.getUuid().compareTo(node.getThisUuid()) < 0) {
+        if (joinRequest.getUuid().compareTo(clusterService.getThisUuid()) < 0) {
             maxTryCount.incrementAndGet();
         }
     }
@@ -163,11 +178,12 @@ public class MulticastJoiner extends AbstractJoiner {
             while (node.isRunning() && currentTryCount.incrementAndGet() <= maxTryCount.get()) {
                 joinRequest.setTryCount(currentTryCount.get());
                 node.multicastService.send(joinRequest);
-                if (node.getMasterAddress() == null) {
+                Address masterAddress = clusterService.getMasterAddress();
+                if (masterAddress == null) {
                     //noinspection BusyWait
                     Thread.sleep(getPublishInterval());
                 } else {
-                    return node.getMasterAddress();
+                    return masterAddress;
                 }
             }
         } catch (final Exception e) {

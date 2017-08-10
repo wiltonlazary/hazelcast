@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.map.impl.recordstore;
 
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.core.EntryView;
-import com.hazelcast.core.ExecutionCallback;
+import com.hazelcast.internal.nearcache.impl.invalidation.InvalidationQueue;
 import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.map.impl.iterator.MapEntriesWithCursor;
@@ -126,7 +126,7 @@ public interface RecordStore<R extends Record> extends LocalRecordStoreStats {
      */
     boolean replace(Data dataKey, Object expect, Object update);
 
-    void putTransient(Data dataKey, Object value, long ttl);
+    Object putTransient(Data dataKey, Object value, long ttl);
 
     /**
      * Puts key-value pair to map which is the result of a load from map store operation.
@@ -216,13 +216,17 @@ public interface RecordStore<R extends Record> extends LocalRecordStoreStats {
      */
     Iterator<Record> loadAwareIterator(long now, boolean backup);
 
-    Set<Data> keySet();
-
     int size();
 
     boolean txnLock(Data key, String caller, long threadId, long referenceId, long ttl, boolean blockReads);
 
     boolean extendLock(Data key, String caller, long threadId, long ttl);
+
+    boolean localLock(Data key, String caller, long threadId, long referenceId, long ttl);
+
+    boolean lock(Data key, String caller, long threadId, long referenceId, long ttl);
+
+    boolean isLockedBy(Data key, String caller, long threadId);
 
     boolean unlock(Data key, String caller, long threadId, long referenceId);
 
@@ -268,7 +272,7 @@ public interface RecordStore<R extends Record> extends LocalRecordStoreStats {
 
     boolean forceUnlock(Data dataKey);
 
-    long getHeapCost();
+    long getOwnedEntryCost();
 
     boolean isLoaded();
 
@@ -315,7 +319,7 @@ public interface RecordStore<R extends Record> extends LocalRecordStoreStats {
      *
      * @param keys keys to be loaded.
      */
-    void loadAllFromStore(List<Data> keys);
+    void loadAllFromStore(List<Data> keys, boolean replaceExistingValues);
 
     void updateLoadStatus(boolean lastBatch, Throwable exception);
 
@@ -395,8 +399,9 @@ public interface RecordStore<R extends Record> extends LocalRecordStoreStats {
     void init();
 
     /**
-     * Register a callback for when key loading is complete
+     * @return Returns true if key load has finished, false otherwise.
      **/
-    void onKeyLoad(ExecutionCallback<Boolean> callback);
+    boolean isKeyLoadFinished();
 
+    InvalidationQueue<ExpiredKey> getExpiredKeys();
 }

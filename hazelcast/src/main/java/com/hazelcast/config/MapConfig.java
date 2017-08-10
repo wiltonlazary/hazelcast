@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,17 @@ import com.hazelcast.map.eviction.LRUEvictionPolicy;
 import com.hazelcast.map.eviction.MapEvictionPolicy;
 import com.hazelcast.map.eviction.RandomEvictionPolicy;
 import com.hazelcast.map.merge.PutIfAbsentMapMergePolicy;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.partition.IPartition;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.readNullableList;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeNullableList;
 import static com.hazelcast.util.Preconditions.checkAsyncBackupCount;
 import static com.hazelcast.util.Preconditions.checkBackupCount;
 import static com.hazelcast.util.Preconditions.checkFalse;
@@ -35,7 +41,7 @@ import static com.hazelcast.util.Preconditions.isNotNull;
 /**
  * Contains the configuration for an {@link com.hazelcast.core.IMap}.
  */
-public class MapConfig {
+public class MapConfig implements IdentifiedDataSerializable {
 
     /**
      * The number of minimum backup counter
@@ -70,26 +76,26 @@ public class MapConfig {
     public static final long DEFAULT_MIN_EVICTION_CHECK_MILLIS = 100L;
 
     /**
-     * The number of default Time to Live in seconds
+     * The number of default Time to Live in seconds.
      */
     public static final int DEFAULT_TTL_SECONDS = 0;
 
     /**
-     * The number of default time to wait eviction in seconds
+     * The number of default time to wait eviction in seconds.
      */
     public static final int DEFAULT_MAX_IDLE_SECONDS = 0;
 
     /**
-     * Default policy for eviction
+     * Default policy for eviction.
      */
     public static final EvictionPolicy DEFAULT_EVICTION_POLICY = EvictionPolicy.NONE;
 
     /**
-     * Default policy for merging
+     * Default policy for merging.
      */
     public static final String DEFAULT_MAP_MERGE_POLICY = PutIfAbsentMapMergePolicy.class.getName();
     /**
-     * Default In-Memory format is binary
+     * Default In-Memory format is binary.
      */
     public static final InMemoryFormat DEFAULT_IN_MEMORY_FORMAT = InMemoryFormat.BINARY;
 
@@ -104,9 +110,9 @@ public class MapConfig {
 
     private int asyncBackupCount = MIN_BACKUP_COUNT;
 
-    private int evictionPercentage = DEFAULT_EVICTION_PERCENTAGE;
+    private transient int evictionPercentage = DEFAULT_EVICTION_PERCENTAGE;
 
-    private long minEvictionCheckMillis = DEFAULT_MIN_EVICTION_CHECK_MILLIS;
+    private transient long minEvictionCheckMillis = DEFAULT_MIN_EVICTION_CHECK_MILLIS;
 
     private int timeToLiveSeconds = DEFAULT_TTL_SECONDS;
 
@@ -150,12 +156,12 @@ public class MapConfig {
 
     private HotRestartConfig hotRestartConfig = new HotRestartConfig();
 
-    private MapConfigReadOnly readOnly;
+    private transient MapConfigReadOnly readOnly;
 
     // we use these 2 flags to detect a conflict between (deprecated) #setOptimizeQueries()
     // and #setCacheDeserializedValues()
-    private boolean optimizeQueryExplicitlyInvoked;
-    private boolean setCacheDeserializedValuesExplicitlyInvoked;
+    private transient boolean optimizeQueryExplicitlyInvoked;
+    private transient boolean setCacheDeserializedValuesExplicitlyInvoked;
 
 
     public MapConfig(String name) {
@@ -196,6 +202,12 @@ public class MapConfig {
         this.hotRestartConfig = new HotRestartConfig(config.hotRestartConfig);
     }
 
+    /**
+     * Gets immutable version of this configuration.
+     *
+     * @return immutable version of this configuration
+     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
+     */
     public MapConfigReadOnly getAsReadOnly() {
         if (readOnly == null) {
             readOnly = new MapConfigReadOnly(this);
@@ -225,7 +237,7 @@ public class MapConfig {
     /**
      * Returns the data type that will be used for storing records.
      *
-     * @return data type that will be used for storing records.
+     * @return data type that will be used for storing records
      */
     public InMemoryFormat getInMemoryFormat() {
         return inMemoryFormat;
@@ -234,12 +246,14 @@ public class MapConfig {
     /**
      * Binary type that will be used for storing records.
      * Possible values:
-     * BINARY (default): keys and values will be stored as binary data
-     * OBJECT : values will be stored in their object forms
-     * NATIVE : values will be stored in non-heap region of JVM
+     * <ul>
+     * <li>BINARY (default): keys and values will be stored as binary data</li>
+     * <li>OBJECT: values will be stored in their object forms</li>
+     * <li>NATIVE: values will be stored in non-heap region of JVM</li>
+     * </ul>
      *
      * @param inMemoryFormat the record type to set for this {@link com.hazelcast.core.IMap}
-     * @throws IllegalArgumentException if inMemoryFormat is null.
+     * @throws IllegalArgumentException if inMemoryFormat is {@code null}
      */
     public MapConfig setInMemoryFormat(InMemoryFormat inMemoryFormat) {
         this.inMemoryFormat = isNotNull(inMemoryFormat, "inMemoryFormat");
@@ -258,8 +272,8 @@ public class MapConfig {
 
     /**
      * Number of synchronous backups. For example, if 1 is set as the backup count,
-     * then all entries of the map will be copied to another JVM for
-     * fail-safety. 0 means no sync backup.
+     * then all entries of the map will be copied to another JVM for fail-safety.
+     * 0 means no sync backup.
      *
      * @param backupCount the number of synchronous backups to set for this {@link com.hazelcast.core.IMap}
      * @see #setAsyncBackupCount(int)
@@ -325,9 +339,9 @@ public class MapConfig {
      * based on sampling. Please see documentation for further details) and this parameter has no effect.
      *
      * @param evictionPercentage the evictionPercentage to set: the specified percentage of the map to be evicted
-     * @throws IllegalArgumentException if evictionPercentage is not in the 0-100 range.
+     * @throws IllegalArgumentException if evictionPercentage is not in the 0-100 range
      * @deprecated As of version 3.7, eviction mechanism changed.
-     * It uses a probabilistic algorithm based on sampling. Please see documentation for further details.
+     * It uses a probabilistic algorithm based on sampling. Please see documentation for further details
      */
     public MapConfig setEvictionPercentage(final int evictionPercentage) {
         if (evictionPercentage < MIN_EVICTION_PERCENTAGE) {
@@ -345,7 +359,7 @@ public class MapConfig {
      *
      * Default value is {@value #DEFAULT_MIN_EVICTION_CHECK_MILLIS} milliseconds.
      *
-     * @return number of milliseconds that should pass before asking for the next eviction.
+     * @return number of milliseconds that should pass before asking for the next eviction
      * @since 3.3
      * @deprecated As of version 3.7, eviction mechanism changed.
      * It uses a probabilistic algorithm based on sampling. Please see documentation for further details.
@@ -387,7 +401,7 @@ public class MapConfig {
     /**
      * The maximum number of seconds for each entry to stay in the map. Entries that are
      * older than timeToLiveSeconds will be automatically evicted from the map.
-     * Updates on the entry do not change the eviction time.
+     * Updates on the entry will change the eviction time.
      * Any integer between 0 and Integer.MAX_VALUE.
      * 0 means infinite. Default is 0.
      *
@@ -466,9 +480,9 @@ public class MapConfig {
     }
 
     /**
-     * Returns custom eviction policy if it is set otherwise returns null.
+     * Returns custom eviction policy if it is set otherwise returns {@code null}.
      *
-     * @return custom eviction policy or null.
+     * @return custom eviction policy or {@code null}
      */
     public MapEvictionPolicy getMapEvictionPolicy() {
         return mapEvictionPolicy;
@@ -549,7 +563,7 @@ public class MapConfig {
     /**
      * Checks if statistics are enabled for this map.
      *
-     * @return True if statistics are enabled, false otherwise.
+     * @return {@code true} if statistics are enabled, {@code false} otherwise
      */
     public boolean isStatisticsEnabled() {
         return statisticsEnabled;
@@ -558,8 +572,8 @@ public class MapConfig {
     /**
      * Sets statistics to enabled or disabled for this map.
      *
-     * @param statisticsEnabled True to enable map statistics, false to disable.
-     * @return The current map config instance.
+     * @param statisticsEnabled {@code true} to enable map statistics, {@code false} to disable
+     * @return the current map config instance
      */
     public MapConfig setStatisticsEnabled(boolean statisticsEnabled) {
         this.statisticsEnabled = statisticsEnabled;
@@ -569,7 +583,7 @@ public class MapConfig {
     /**
      * Checks if read-backup-data (reading local backup entries) is enabled for this map.
      *
-     * @return True if read-backup-data is enabled, false otherwise.
+     * @return {@code true} if read-backup-data is enabled, {@code false} otherwise
      */
     public boolean isReadBackupData() {
         return readBackupData;
@@ -578,8 +592,8 @@ public class MapConfig {
     /**
      * Sets read-backup-data (reading local backup entries) for this map.
      *
-     * @param readBackupData True to enable read-backup-data, false to disable.
-     * @return The current map config instance.
+     * @param readBackupData {@code true} to enable read-backup-data, {@code false} to disable
+     * @return the current map config instance
      */
     public MapConfig setReadBackupData(boolean readBackupData) {
         this.readBackupData = readBackupData;
@@ -589,7 +603,7 @@ public class MapConfig {
     /**
      * Gets the WAN target replication reference.
      *
-     * @return The WAN target replication reference.
+     * @return the WAN target replication reference
      */
     public WanReplicationRef getWanReplicationRef() {
         return wanReplicationRef;
@@ -598,8 +612,8 @@ public class MapConfig {
     /**
      * Sets the WAN target replication reference.
      *
-     * @param wanReplicationRef the WAN target replication reference.
-     * @return The current map config instance.
+     * @param wanReplicationRef the WAN target replication reference
+     * @return the current map config instance
      */
     public MapConfig setWanReplicationRef(WanReplicationRef wanReplicationRef) {
         this.wanReplicationRef = wanReplicationRef;
@@ -679,10 +693,10 @@ public class MapConfig {
     /**
      * Adds a new {@link QueryCacheConfig} to this {@code MapConfig}.
      *
-     * @param queryCacheConfig the config to be added.
-     * @return this {@code MapConfig} instance.
+     * @param queryCacheConfig the config to be added
+     * @return this {@code MapConfig} instance
      * @throws java.lang.IllegalArgumentException if there is already a {@code QueryCache}
-     *                                            with the same {@code QueryCacheConfig#name}.
+     *                                            with the same {@code QueryCacheConfig#name}
      */
     public MapConfig addQueryCacheConfig(QueryCacheConfig queryCacheConfig) {
         String queryCacheName = queryCacheConfig.getName();
@@ -736,7 +750,7 @@ public class MapConfig {
      * Checks if queries are optimized.
      *
      * @return {@code true} if queries are optimized, {@code false} otherwise
-     * @deprecated use {@link #getQueryCacheConfigs()} instead.
+     * @deprecated use {@link #getQueryCacheConfigs()} instead
      */
     public boolean isOptimizeQueries() {
         return cacheDeserializedValues == CacheDeserializedValues.ALWAYS;
@@ -747,7 +761,7 @@ public class MapConfig {
      * is {@link InMemoryFormat#OBJECT} or when {@link com.hazelcast.nio.serialization.Portable} serialization is used.
      *
      * @param optimizeQueries {@code true} if queries should be optimized, {@code false} otherwise
-     * @return this {@code MapConfig} instance.
+     * @return this {@code MapConfig} instance
      * @see CacheDeserializedValues
      * @deprecated use {@link #setCacheDeserializedValues(CacheDeserializedValues)} instead
      */
@@ -779,8 +793,7 @@ public class MapConfig {
      * Configure de-serialized value caching.
      * Default: {@link CacheDeserializedValues#INDEX_ONLY}
      *
-     * @param cacheDeserializedValues
-     * @return this {@code MapConfig} instance.
+     * @return this {@code MapConfig} instance
      * @see CacheDeserializedValues
      * @since 3.6
      */
@@ -842,101 +855,133 @@ public class MapConfig {
         return cacheDeserializedValues;
     }
 
-    public boolean isCompatible(MapConfig other) {
-        if (this == other) {
-            return true;
-        }
-        return other != null
-                && (this.name != null ? this.name.equals(other.name) : other.name == null)
-                && this.backupCount == other.backupCount
-                && this.asyncBackupCount == other.asyncBackupCount
-                && this.evictionPercentage == other.evictionPercentage
-                && this.minEvictionCheckMillis == other.minEvictionCheckMillis
-                && this.maxIdleSeconds == other.maxIdleSeconds
-                && (this.maxSizeConfig.getSize() == other.maxSizeConfig.getSize()
-                || (Math.min(maxSizeConfig.getSize(), other.maxSizeConfig.getSize()) == 0
-                && Math.max(maxSizeConfig.getSize(), other.maxSizeConfig.getSize()) == Integer.MAX_VALUE))
-                && this.timeToLiveSeconds == other.timeToLiveSeconds
-                && this.hotRestartConfig.isEnabled() == other.hotRestartConfig.isEnabled()
-                && this.readBackupData == other.readBackupData;
-    }
-
     public String getQuorumName() {
         return quorumName;
     }
 
-    public void setQuorumName(String quorumName) {
+    public MapConfig setQuorumName(String quorumName) {
         this.quorumName = quorumName;
+        return this;
+    }
+
+    @Override
+    @SuppressWarnings("checkstyle:methodlength")
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        MapConfig mapConfig = (MapConfig) o;
+
+        if (backupCount != mapConfig.backupCount) {
+            return false;
+        }
+        if (asyncBackupCount != mapConfig.asyncBackupCount) {
+            return false;
+        }
+        if (timeToLiveSeconds != mapConfig.timeToLiveSeconds) {
+            return false;
+        }
+        if (maxIdleSeconds != mapConfig.maxIdleSeconds) {
+            return false;
+        }
+        if (readBackupData != mapConfig.readBackupData) {
+            return false;
+        }
+        if (statisticsEnabled != mapConfig.statisticsEnabled) {
+            return false;
+        }
+        if (!name.equals(mapConfig.name)) {
+            return false;
+        }
+        if (maxSizeConfig != null ? !maxSizeConfig.equals(mapConfig.maxSizeConfig) : mapConfig.maxSizeConfig != null) {
+            return false;
+        }
+        if (evictionPolicy != mapConfig.evictionPolicy) {
+            return false;
+        }
+        if (mapEvictionPolicy != null ? !mapEvictionPolicy.equals(mapConfig.mapEvictionPolicy)
+                : mapConfig.mapEvictionPolicy != null) {
+            return false;
+        }
+        if (mapStoreConfig != null ? !mapStoreConfig.equals(mapConfig.mapStoreConfig)
+                : mapConfig.mapStoreConfig != null) {
+            return false;
+        }
+        if (nearCacheConfig != null ? !nearCacheConfig.equals(mapConfig.nearCacheConfig)
+                : mapConfig.nearCacheConfig != null) {
+            return false;
+        }
+        if (cacheDeserializedValues != mapConfig.cacheDeserializedValues) {
+            return false;
+        }
+        if (mergePolicy != null ? !mergePolicy.equals(mapConfig.mergePolicy) : mapConfig.mergePolicy != null) {
+            return false;
+        }
+        if (inMemoryFormat != mapConfig.inMemoryFormat) {
+            return false;
+        }
+        if (wanReplicationRef != null ? !wanReplicationRef.equals(mapConfig.wanReplicationRef)
+                : mapConfig.wanReplicationRef != null) {
+            return false;
+        }
+        if (!getEntryListenerConfigs().equals(mapConfig.getEntryListenerConfigs())) {
+            return false;
+        }
+        if (!getPartitionLostListenerConfigs().equals(mapConfig.getPartitionLostListenerConfigs())) {
+            return false;
+        }
+        if (!getMapIndexConfigs().equals(mapConfig.getMapIndexConfigs())) {
+            return false;
+        }
+        if (!getMapAttributeConfigs().equals(mapConfig.getMapAttributeConfigs())) {
+            return false;
+        }
+        if (!getQueryCacheConfigs().equals(mapConfig.getQueryCacheConfigs())) {
+            return false;
+        }
+        if (partitioningStrategyConfig != null
+                ? !partitioningStrategyConfig.equals(mapConfig.partitioningStrategyConfig)
+                : mapConfig.partitioningStrategyConfig != null) {
+            return false;
+        }
+        if (quorumName != null ? !quorumName.equals(mapConfig.quorumName) : mapConfig.quorumName != null) {
+            return false;
+        }
+        return hotRestartConfig != null ? hotRestartConfig.equals(mapConfig.hotRestartConfig)
+                : mapConfig.hotRestartConfig == null;
     }
 
     @Override
     public int hashCode() {
-        final int prime = 31;
-        int result = 1;
-        result = prime * result + this.backupCount;
-        result = prime * result + this.asyncBackupCount;
-        result = prime * result + this.evictionPercentage;
-        result = prime * result + (int) (minEvictionCheckMillis ^ (minEvictionCheckMillis >>> 32));
-        result = prime
-                * result
-                + ((this.evictionPolicy == null) ? 0 : this.evictionPolicy
-                .hashCode());
-        result = prime
-                * result
-                + ((this.mapEvictionPolicy == null) ? 0 : this.mapEvictionPolicy
-                .hashCode());
-        result = prime
-                * result
-                + ((this.mapStoreConfig == null) ? 0 : this.mapStoreConfig
-                .hashCode());
-        result = prime * result + this.maxIdleSeconds;
-        result = prime * result + this.maxSizeConfig.getSize();
-        result = prime
-                * result
-                + ((this.mergePolicy == null) ? 0 : this.mergePolicy.hashCode());
-        result = prime * result
-                + ((this.name == null) ? 0 : this.name.hashCode());
-        result = prime
-                * result
-                + ((this.nearCacheConfig == null) ? 0 : this.nearCacheConfig
-                .hashCode());
-        result = prime * result + this.timeToLiveSeconds;
-        result = prime * result + cacheDeserializedValues.hashCode();
-        result = prime * result + (this.readBackupData ? 1231 : 1237);
+        int result = name.hashCode();
+        result = 31 * result + backupCount;
+        result = 31 * result + asyncBackupCount;
+        result = 31 * result + timeToLiveSeconds;
+        result = 31 * result + maxIdleSeconds;
+        result = 31 * result + (maxSizeConfig != null ? maxSizeConfig.hashCode() : 0);
+        result = 31 * result + (evictionPolicy != null ? evictionPolicy.hashCode() : 0);
+        result = 31 * result + (mapEvictionPolicy != null ? mapEvictionPolicy.hashCode() : 0);
+        result = 31 * result + (mapStoreConfig != null ? mapStoreConfig.hashCode() : 0);
+        result = 31 * result + (nearCacheConfig != null ? nearCacheConfig.hashCode() : 0);
+        result = 31 * result + (readBackupData ? 1 : 0);
+        result = 31 * result + cacheDeserializedValues.hashCode();
+        result = 31 * result + (mergePolicy != null ? mergePolicy.hashCode() : 0);
+        result = 31 * result + inMemoryFormat.hashCode();
+        result = 31 * result + (wanReplicationRef != null ? wanReplicationRef.hashCode() : 0);
+        result = 31 * result + getEntryListenerConfigs().hashCode();
+        result = 31 * result + getPartitioningStrategyConfig().hashCode();
+        result = 31 * result + getMapIndexConfigs().hashCode();
+        result = 31 * result + getMapAttributeConfigs().hashCode();
+        result = 31 * result + getQueryCacheConfigs().hashCode();
+        result = 31 * result + (statisticsEnabled ? 1 : 0);
+        result = 31 * result + (partitioningStrategyConfig != null ? partitioningStrategyConfig.hashCode() : 0);
+        result = 31 * result + (quorumName != null ? quorumName.hashCode() : 0);
+        result = 31 * result + (hotRestartConfig != null ? hotRestartConfig.hashCode() : 0);
         return result;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-        if (!(obj instanceof MapConfig)) {
-            return false;
-        }
-        MapConfig other = (MapConfig) obj;
-        return
-                (this.name != null ? this.name.equals(other.name) : other.name == null)
-                        && this.backupCount == other.backupCount
-                        && this.asyncBackupCount == other.asyncBackupCount
-                        && this.evictionPercentage == other.evictionPercentage
-                        && this.minEvictionCheckMillis == other.minEvictionCheckMillis
-                        && this.maxIdleSeconds == other.maxIdleSeconds
-                        && this.maxSizeConfig.getSize() == other.maxSizeConfig.getSize()
-                        && this.timeToLiveSeconds == other.timeToLiveSeconds
-                        && this.readBackupData == other.readBackupData
-                        && (this.cacheDeserializedValues == other.cacheDeserializedValues)
-                        && (this.mergePolicy != null ? this.mergePolicy.equals(other.mergePolicy) : other.mergePolicy == null)
-                        && (this.inMemoryFormat != null ? this.inMemoryFormat.equals(other.inMemoryFormat)
-                        : other.inMemoryFormat == null)
-                        && (this.evictionPolicy != null ? this.evictionPolicy.equals(other.evictionPolicy)
-                        : other.evictionPolicy == null)
-                        && (this.mapEvictionPolicy != null ? this.mapEvictionPolicy.equals(other.mapEvictionPolicy)
-                        : other.mapEvictionPolicy == null)
-                        && (this.mapStoreConfig != null ? this.mapStoreConfig.equals(other.mapStoreConfig)
-                        : other.mapStoreConfig == null)
-                        && (this.nearCacheConfig != null ? this.nearCacheConfig.equals(other.nearCacheConfig)
-                        : other.nearCacheConfig == null);
     }
 
     @Override
@@ -966,5 +1011,71 @@ public class MapConfig {
                 + ", queryCacheConfigs=" + queryCacheConfigs
                 + ", cacheDeserializedValues=" + cacheDeserializedValues
                 + '}';
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ConfigDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ConfigDataSerializerHook.MAP_CONFIG;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeUTF(name);
+        out.writeInt(backupCount);
+        out.writeInt(asyncBackupCount);
+        out.writeInt(timeToLiveSeconds);
+        out.writeInt(maxIdleSeconds);
+        out.writeObject(maxSizeConfig);
+        out.writeUTF(evictionPolicy.name());
+        out.writeObject(mapEvictionPolicy);
+        out.writeObject(mapStoreConfig);
+        out.writeObject(nearCacheConfig);
+        out.writeBoolean(readBackupData);
+        out.writeUTF(cacheDeserializedValues.name());
+        out.writeUTF(mergePolicy);
+        out.writeUTF(inMemoryFormat.name());
+        out.writeObject(wanReplicationRef);
+        writeNullableList(entryListenerConfigs, out);
+        writeNullableList(partitionLostListenerConfigs, out);
+        writeNullableList(mapIndexConfigs, out);
+        writeNullableList(mapAttributeConfigs, out);
+        writeNullableList(queryCacheConfigs, out);
+        out.writeBoolean(statisticsEnabled);
+        out.writeObject(partitioningStrategyConfig);
+        out.writeUTF(quorumName);
+        out.writeObject(hotRestartConfig);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        name = in.readUTF();
+        backupCount = in.readInt();
+        asyncBackupCount = in.readInt();
+        timeToLiveSeconds = in.readInt();
+        maxIdleSeconds = in.readInt();
+        maxSizeConfig = in.readObject();
+        evictionPolicy = EvictionPolicy.valueOf(in.readUTF());
+        mapEvictionPolicy = in.readObject();
+        mapStoreConfig = in.readObject();
+        nearCacheConfig = in.readObject();
+        readBackupData = in.readBoolean();
+        cacheDeserializedValues = CacheDeserializedValues.valueOf(in.readUTF());
+        mergePolicy = in.readUTF();
+        inMemoryFormat = InMemoryFormat.valueOf(in.readUTF());
+        wanReplicationRef = in.readObject();
+        entryListenerConfigs = readNullableList(in);
+        partitionLostListenerConfigs = readNullableList(in);
+        mapIndexConfigs = readNullableList(in);
+        mapAttributeConfigs = readNullableList(in);
+        queryCacheConfigs = readNullableList(in);
+        statisticsEnabled = in.readBoolean();
+        partitioningStrategyConfig = in.readObject();
+        quorumName = in.readUTF();
+        hotRestartConfig = in.readObject();
     }
 }

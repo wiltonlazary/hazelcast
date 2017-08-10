@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,14 +24,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-class LazySet<K, V, R>
-        implements Set<R> {
+class LazySet<K, V, R> implements Set<R> {
 
     private final InternalReplicatedMapStorage<K, V> storage;
     private final IteratorFactory<K, V, R> iteratorFactory;
 
     public LazySet(IteratorFactory<K, V, R> iteratorFactory, InternalReplicatedMapStorage<K, V> storage) {
-
         this.iteratorFactory = iteratorFactory;
         this.storage = storage;
     }
@@ -121,5 +119,4 @@ class LazySet<K, V, R>
     public interface IteratorFactory<K, V, R> {
         Iterator<R> create(Iterator<Map.Entry<K, ReplicatedRecord<K, V>>> iterator);
     }
-
 }

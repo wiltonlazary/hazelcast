@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.hazelcast.internal.diagnostics;
 
 import com.hazelcast.config.Config;
@@ -37,7 +53,7 @@ public class DiagnosticsTest extends HazelcastTestSupport {
         return new Diagnostics(
                 name,
                 Logger.getLogger(Diagnostics.class),
-                nodeEngineImpl.getNode().getHazelcastThreadGroup(),
+                "hz",
                 nodeEngineImpl.getNode().getProperties());
     }
 
@@ -56,7 +72,7 @@ public class DiagnosticsTest extends HazelcastTestSupport {
 
         diagnostics.start();
         DiagnosticsPlugin plugin = mock(DiagnosticsPlugin.class);
-        when(plugin.getPeriodMillis()).thenReturn(1l);
+        when(plugin.getPeriodMillis()).thenReturn(1L);
 
         diagnostics.register(plugin);
 
@@ -70,7 +86,7 @@ public class DiagnosticsTest extends HazelcastTestSupport {
 
         diagnostics.start();
         DiagnosticsPlugin plugin = mock(DiagnosticsPlugin.class);
-        when(plugin.getPeriodMillis()).thenReturn(-2l);
+        when(plugin.getPeriodMillis()).thenReturn(-2L);
 
         diagnostics.register(plugin);
     }
@@ -82,7 +98,7 @@ public class DiagnosticsTest extends HazelcastTestSupport {
 
         diagnostics.start();
         DiagnosticsPlugin plugin = mock(DiagnosticsPlugin.class);
-        when(plugin.getPeriodMillis()).thenReturn(0l);
+        when(plugin.getPeriodMillis()).thenReturn(0L);
 
         diagnostics.register(plugin);
 

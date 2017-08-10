@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,11 +26,12 @@ import com.hazelcast.client.spi.ClientContext;
 import com.hazelcast.concurrent.lock.LockService;
 import com.hazelcast.core.ICondition;
 import com.hazelcast.util.Clock;
-import com.hazelcast.util.ExceptionUtil;
 import com.hazelcast.util.ThreadUtil;
 
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
+
+import static com.hazelcast.util.ExceptionUtil.sneakyThrow;
 
 /**
  * Proxy implementation of {@link ICondition}.
@@ -40,11 +41,9 @@ public class ClientConditionProxy extends PartitionSpecificClientProxy implement
     private final String conditionId;
     private ClientLockReferenceIdGenerator referenceIdGenerator;
 
-    public ClientConditionProxy(ClientLockProxy clientLockProxy, String name, ClientContext ctx) {
-        super(LockService.SERVICE_NAME, clientLockProxy.getName());
+    public ClientConditionProxy(ClientLockProxy clientLockProxy, String name, ClientContext context) {
+        super(LockService.SERVICE_NAME, clientLockProxy.getName(), context);
         this.conditionId = name;
-
-        setContext(ctx);
     }
 
     @Override
@@ -58,7 +57,7 @@ public class ClientConditionProxy extends PartitionSpecificClientProxy implement
             await(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             // TODO: @mm - what if interrupted?
-            ExceptionUtil.sneakyThrow(e);
+            sneakyThrow(e);
         }
     }
 

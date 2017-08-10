@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,8 @@ public abstract class OperationRunner {
     public OperationRunner(int partitionId) {
         this.partitionId = partitionId;
     }
+
+    public abstract long executedOperationsCount();
 
     public abstract void run(Packet packet) throws Exception;
 
@@ -104,12 +106,12 @@ public abstract class OperationRunner {
     }
 
     /**
-     * Returns the partitionId this OperationRunner is responsible for. If the partition id is smaller than 0,
+     * Returns the partitionId this OperationRunner is responsible for. If the partition ID is smaller than 0,
      * it is either a generic or ad hoc OperationRunner.
      * <p/>
      * The value will never change for this OperationRunner instance.
      *
-     * @return the partition id.
+     * @return the partition ID.
      */
     public final int getPartitionId() {
         return partitionId;

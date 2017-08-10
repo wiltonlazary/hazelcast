@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -177,7 +177,7 @@ public final class ClassDefinitionBuilder {
     public ClassDefinitionBuilder addPortableField(String fieldName, ClassDefinition def) {
         check();
         if (def.getClassId() == 0) {
-            throw new IllegalArgumentException("Portable class id cannot be zero!");
+            throw new IllegalArgumentException("Portable class ID cannot be zero!");
         }
         fieldDefinitions.add(new FieldDefinitionImpl(index++, fieldName,
                 FieldType.PORTABLE, def.getFactoryId(), def.getClassId(), def.getVersion()));
@@ -187,7 +187,7 @@ public final class ClassDefinitionBuilder {
     public ClassDefinitionBuilder addPortableArrayField(String fieldName, ClassDefinition def) {
         check();
         if (def.getClassId() == 0) {
-            throw new IllegalArgumentException("Portable class id cannot be zero!");
+            throw new IllegalArgumentException("Portable class ID cannot be zero!");
         }
         fieldDefinitions.add(new FieldDefinitionImpl(index++, fieldName,
                 FieldType.PORTABLE_ARRAY, def.getFactoryId(), def.getClassId(), def.getVersion()));

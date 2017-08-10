@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,7 +45,12 @@ public interface NearCache<K, V> extends InitializingObject {
     /**
      * NULL Object
      */
-    Object NULL_OBJECT = new Object();
+    Object CACHED_AS_NULL = new Object();
+
+    /**
+     * NOT_CACHED Object
+     */
+    Object NOT_CACHED = new Object();
 
     /**
      * Gets the name of this {@link NearCache} instance.
@@ -65,10 +70,11 @@ public interface NearCache<K, V> extends InitializingObject {
     /**
      * Puts (associates) a value with the given {@code key}.
      *
-     * @param key   the key of the value will be stored
-     * @param value the value will be stored
+     * @param key     the key of the value will be stored
+     * @param keyData the key as {@link Data} of the value will be stored
+     * @param value   the value will be stored
      */
-    void put(K key, V value);
+    void put(K key, Data keyData, V value);
 
     /**
      * Removes the value associated with the given {@code key}.
@@ -76,13 +82,6 @@ public interface NearCache<K, V> extends InitializingObject {
      * @param key the key of the value will be removed
      */
     boolean remove(K key);
-
-    /**
-     * Checks if values are invalidated on changes.
-     *
-     * @return {@code true} if values are invalidated on changes, {@code false} otherwise
-     */
-    boolean isInvalidatedOnChange();
 
     /**
      * Removes all stored values.
@@ -116,6 +115,13 @@ public interface NearCache<K, V> extends InitializingObject {
     NearCacheStats getNearCacheStats();
 
     /**
+     * Checks if the Near Cache key is stored in serialized format or by-reference.
+     *
+     * @return {@code true} if the key is stored in serialized format, {@code false} if stored by-reference.
+     */
+    boolean isSerializeKeys();
+
+    /**
      * Selects the best candidate object to store from the given {@code candidates}.
      *
      * @param candidates the candidates from which the best candidate object will be selected.
@@ -133,7 +139,7 @@ public interface NearCache<K, V> extends InitializingObject {
     /**
      * Executes the Near Cache pre-loader on the given {@link DataStructureAdapter}.
      */
-    void preload(DataStructureAdapter<Data, ?> adapter);
+    void preload(DataStructureAdapter<Object, ?> adapter);
 
     /**
      * Stores the keys of the Near Cache.
@@ -158,4 +164,27 @@ public interface NearCache<K, V> extends InitializingObject {
      * @throws IllegalArgumentException if no implementation found for the supplied clazz type.
      */
     <T> T unwrap(Class<T> clazz);
+
+    /**
+     * Tries to reserve supplied key for update.
+     * <p>
+     * If one thread takes reservation, only that thread can update the key.
+     *
+     * @param key     key to be reserved for update
+     * @param keyData key to be reserved for update as {@link Data}
+     * @return reservation ID if reservation succeeds, else returns {@link NearCacheRecord#NOT_RESERVED}
+     */
+    long tryReserveForUpdate(K key, Data keyData);
+
+    /**
+     * Tries to update reserved key with supplied value. If update happens, value is published.
+     * Publishing means making the value readable to all threads. If update fails, record is not updated.
+     *
+     * @param key           reserved key for update
+     * @param value         value to be associated with reserved key
+     * @param reservationId ID for this reservation
+     * @param deserialize   eagerly deserialize returning value
+     * @return associated value if deserialize is {@code true} and update succeeds, otherwise returns null
+     */
+    V tryPublishReserved(K key, V value, long reservationId, boolean deserialize);
 }

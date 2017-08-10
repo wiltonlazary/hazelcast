@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.client.impl;
 import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.client.config.ClientAwsConfig;
 import com.hazelcast.client.config.ClientConfig;
+import com.hazelcast.client.connection.AddressProvider;
 import com.hazelcast.client.connection.AddressTranslator;
 import com.hazelcast.client.connection.ClientConnectionManager;
 import com.hazelcast.client.connection.nio.ClientConnectionManagerImpl;
@@ -30,7 +31,7 @@ import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.LoggingService;
 import com.hazelcast.spi.discovery.integration.DiscoveryService;
 
-import java.util.logging.Level;
+import java.util.Collection;
 
 public class DefaultClientConnectionManagerFactory implements ClientConnectionManagerFactory {
 
@@ -39,7 +40,7 @@ public class DefaultClientConnectionManagerFactory implements ClientConnectionMa
 
     @Override
     public ClientConnectionManager createConnectionManager(ClientConfig config, HazelcastClientInstanceImpl client,
-                                                           DiscoveryService discoveryService) {
+            DiscoveryService discoveryService, Collection<AddressProvider> addressProviders) {
 
         LoggingService loggingService = client.getLoggingService();
         ILogger logger = loggingService.getLogger(HazelcastClient.class);
@@ -49,7 +50,7 @@ public class DefaultClientConnectionManagerFactory implements ClientConnectionMa
             try {
                 addressTranslator = new AwsAddressTranslator(awsConfig, loggingService);
             } catch (NoClassDefFoundError e) {
-                logger.log(Level.WARNING, "hazelcast-aws.jar might be missing!");
+                logger.warning("hazelcast-aws.jar might be missing!");
                 throw e;
             }
         } else if (discoveryService != null) {
@@ -58,6 +59,6 @@ public class DefaultClientConnectionManagerFactory implements ClientConnectionMa
         } else {
             addressTranslator = new DefaultAddressTranslator();
         }
-        return new ClientConnectionManagerImpl(client, addressTranslator);
+        return new ClientConnectionManagerImpl(client, addressTranslator, addressProviders);
     }
 }

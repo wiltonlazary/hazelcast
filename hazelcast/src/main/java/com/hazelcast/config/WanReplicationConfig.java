@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,20 @@ package com.hazelcast.config;
 
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.DataSerializable;
+import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Configuration for wan replication.
+ * Configuration for WAN replication. This configuration is referenced from a map or cache to determine the receivers for the
+ * WAN events. Each receiver is defined with a {@link WanPublisherConfig}
+ *
+ * @see MapConfig#setWanReplicationRef
+ * @see CacheConfig#setWanReplicationRef
  */
-public class WanReplicationConfig implements DataSerializable {
+public class WanReplicationConfig implements IdentifiedDataSerializable {
 
     private String name;
     private WanConsumerConfig wanConsumerConfig;
@@ -72,6 +76,16 @@ public class WanReplicationConfig implements DataSerializable {
                 + "{name='" + name + '\''
                 + ", wanPublisherConfigs=" + wanPublisherConfigs
                 + '}';
+    }
+
+    @Override
+    public int getFactoryId() {
+        return ConfigDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getId() {
+        return ConfigDataSerializerHook.WAN_REPLICATION_CONFIG;
     }
 
     @Override

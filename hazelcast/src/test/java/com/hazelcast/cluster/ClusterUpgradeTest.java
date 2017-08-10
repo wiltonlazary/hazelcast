@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ public class ClusterUpgradeTest extends HazelcastTestSupport {
     public void setup() {
         System.setProperty(HAZELCAST_INTERNAL_OVERRIDE_VERSION, VERSION_2_1_0.toString());
         clusterMembers = new HazelcastInstance[CLUSTER_MEMBERS_COUNT];
-        for (int i=0; i < CLUSTER_MEMBERS_COUNT; i++) {
+        for (int i = 0; i < CLUSTER_MEMBERS_COUNT; i++) {
             clusterMembers[i] = factory.newHazelcastInstance(getConfig());
         }
         clusterService = (ClusterService) clusterMembers[0].getCluster();
@@ -90,7 +90,7 @@ public class ClusterUpgradeTest extends HazelcastTestSupport {
     @Test
     public void test_changeClusterVersion_disallowedForMinorVersions() {
         expectedException.expect(VersionMismatchException.class);
-        clusterService.changeClusterVersion(VERSION_2_0_5.asClusterVersion());
+        clusterService.changeClusterVersion(VERSION_2_0_5.asVersion());
     }
 
     void upgradeCluster(MemberVersion version) {

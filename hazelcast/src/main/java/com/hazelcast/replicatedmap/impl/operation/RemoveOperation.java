@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ import java.io.IOException;
 public class RemoveOperation extends AbstractReplicatedMapOperation implements PartitionAwareOperation {
 
     private transient ReplicatedMapService service;
-    private transient ReplicatedRecordStore store;
     private transient Data oldValue;
 
     public RemoveOperation() {
@@ -47,7 +46,7 @@ public class RemoveOperation extends AbstractReplicatedMapOperation implements P
     @Override
     public void run() throws Exception {
         service = getService();
-        store = service.getReplicatedRecordStore(name, true, getPartitionId());
+        ReplicatedRecordStore store = service.getReplicatedRecordStore(name, true, getPartitionId());
         Object removed = store.remove(key);
         this.oldValue = getNodeEngine().toData(removed);
         response = new VersionResponsePair(removed, store.getVersion());

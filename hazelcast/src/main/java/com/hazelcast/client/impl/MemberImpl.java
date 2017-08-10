@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import com.hazelcast.core.Member;
 import com.hazelcast.instance.AbstractMember;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.Address;
-import com.hazelcast.nio.serialization.impl.BinaryInterface;
+import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.version.MemberVersion;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -39,11 +39,11 @@ public final class MemberImpl extends AbstractMember implements Member {
     }
 
     public MemberImpl(Address address, MemberVersion version) {
-        super(address, version);
+        super(address, version, null, null, false);
     }
 
     public MemberImpl(Address address, MemberVersion version, String uuid) {
-        super(address, version, uuid);
+        super(address, version, uuid, null, false);
     }
 
     public MemberImpl(Address address, String uuid, Map<String, Object> attributes, boolean liteMember) {

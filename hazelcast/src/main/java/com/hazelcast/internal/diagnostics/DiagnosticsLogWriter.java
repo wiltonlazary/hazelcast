@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,6 +64,8 @@ public abstract class DiagnosticsLogWriter {
 
     public abstract void writeKeyValueEntry(String key, boolean value);
 
+    public abstract void writeKeyValueEntryAsDateTime(String key, long epochMillis);
+
     protected void init(PrintWriter printWriter) {
         this.printWriter = printWriter;
     }
@@ -108,9 +110,13 @@ public abstract class DiagnosticsLogWriter {
         return this;
     }
 
-    // we can't rely on DateFormat since it generates a ton of garbage
     protected void appendDateTime() {
-        date.setTime(System.currentTimeMillis());
+        appendDateTime(System.currentTimeMillis());
+    }
+
+    // we can't rely on DateFormat since it generates a ton of garbage
+    protected void appendDateTime(long epochMillis) {
+        date.setTime(epochMillis);
         calendar.setTime(date);
         appendDate();
         write(' ');

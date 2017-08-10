@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,6 @@ import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.core.Cluster;
 import com.hazelcast.internal.management.ManagementCenterService;
 import com.hazelcast.logging.ILogger;
-
-import java.io.IOException;
 
 import static com.hazelcast.util.JsonUtil.getString;
 
@@ -48,11 +46,6 @@ public class ChangeClusterStateRequest implements AsyncConsoleRequest {
     }
 
     @Override
-    public Object readResponse(JsonObject in) throws IOException {
-        return getString(in, "result", "FAILURE");
-    }
-
-    @Override
     public void writeResponse(ManagementCenterService mcs, JsonObject out) throws Exception {
         String resultString = "SUCCESS";
         try {
@@ -69,13 +62,6 @@ public class ChangeClusterStateRequest implements AsyncConsoleRequest {
 
     private static ClusterState getClusterState(String state) {
         return ClusterState.valueOf(state);
-    }
-
-    @Override
-    public JsonObject toJson() {
-        JsonObject root = new JsonObject();
-        root.add("state", state);
-        return root;
     }
 
     @Override

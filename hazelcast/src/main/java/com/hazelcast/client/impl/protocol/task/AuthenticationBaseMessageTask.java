@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Level;
 
 import static java.util.Collections.synchronizedList;
 
@@ -96,21 +95,12 @@ public abstract class AuthenticationBaseMessageTask<P> extends AbstractMultiTarg
 
     @Override
     protected ClientEndpointImpl getEndpoint() {
-        if (connection.isAlive()) {
-            return new ClientEndpointImpl(clientEngine, connection);
-        } else {
-            handleEndpointNotCreatedConnectionNotAlive();
-        }
-        return null;
+        return new ClientEndpointImpl(clientEngine, connection);
     }
 
     @Override
     protected boolean isAuthenticationMessage() {
         return true;
-    }
-
-    private void handleEndpointNotCreatedConnectionNotAlive() {
-        logger.warning("Dropped: " + clientMessage + " -> endpoint not created for AuthenticationRequest, connection not alive");
     }
 
     @Override
@@ -157,7 +147,7 @@ public abstract class AuthenticationBaseMessageTask<P> extends AbstractMultiTarg
                 sendClientMessage(prepareSerializationVersionMismatchClientMessage());
                 break;
             default:
-                sendClientMessage(new IllegalStateException("Unsupported authentication status :" + authenticationStatus));
+                sendClientMessage(new IllegalStateException("Unsupported authentication status: " + authenticationStatus));
         }
     }
 
@@ -207,8 +197,7 @@ public abstract class AuthenticationBaseMessageTask<P> extends AbstractMultiTarg
     private ClientMessage prepareUnauthenticatedClientMessage() {
         Connection connection = endpoint.getConnection();
         ILogger logger = clientEngine.getLogger(getClass());
-        logger.log(Level.WARNING,
-                "Received auth from " + connection + " with principal " + principal + " , authentication failed");
+        logger.warning("Received auth from " + connection + " with principal " + principal + ", authentication failed");
         byte status = AuthenticationStatus.CREDENTIALS_FAILED.getId();
         return encodeAuth(status, null, null, null, serializationService.getVersion(), null);
     }
@@ -224,10 +213,11 @@ public abstract class AuthenticationBaseMessageTask<P> extends AbstractMultiTarg
 
         endpoint.authenticated(principal, credentials, isOwnerConnection(), clientVersion, clientMessage.getCorrelationId());
         setConnectionType();
-        logger.info("Received auth from " + connection + ", successfully authenticated" + ", principal : " + principal
-                + ", owner connection : " + isOwnerConnection() + ", client version : " + clientVersion);
-        endpointManager.registerEndpoint(endpoint);
-        clientEngine.bind(endpoint);
+        logger.info("Received auth from " + connection + ", successfully authenticated" + ", principal: " + principal
+                + ", owner connection: " + isOwnerConnection() + ", client version: " + clientVersion);
+        if (endpointManager.registerEndpoint(endpoint)) {
+            clientEngine.bind(endpoint);
+        }
 
         final Address thisAddress = clientEngine.getThisAddress();
         byte status = AuthenticationStatus.AUTHENTICATED.getId();

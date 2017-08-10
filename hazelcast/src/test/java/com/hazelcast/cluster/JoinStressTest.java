@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,10 +25,7 @@ import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.instance.HazelcastInstanceFactory;
-import com.hazelcast.internal.cluster.impl.operations.MemberInfoUpdateOperation;
-import com.hazelcast.nio.ObjectDataInput;
-import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.StreamSerializer;
+import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
@@ -39,7 +36,6 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -82,7 +78,7 @@ public class JoinStressTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testJoincompletesCorrectlyWhenMultipleNodesStartedParallel() throws Exception {
+    public void testJoinCompletesCorrectlyWhenMultipleNodesStartedParallel() throws Exception {
         int count = 10;
         final TestHazelcastInstanceFactory factory = new TestHazelcastInstanceFactory(count);
         final HazelcastInstance[] instances = new HazelcastInstance[count];
@@ -101,7 +97,7 @@ public class JoinStressTest extends HazelcastTestSupport {
 
         assertOpenEventually(latch);
         for (int i = 0; i < count; i++) {
-            assertClusterSize(count, instances[i]);
+            assertClusterSizeEventually(count, instances[i]);
         }
     }
 
@@ -137,7 +133,7 @@ public class JoinStressTest extends HazelcastTestSupport {
         for (int i = 0; i < nodeCount; i++) {
             HazelcastInstance hz = instances.get(i);
             assertNotNull(hz);
-            assertEquals(nodeCount, hz.getCluster().getMembers().size());
+            assertClusterSizeEventually(nodeCount, hz);
         }
     }
 
@@ -199,10 +195,16 @@ public class JoinStressTest extends HazelcastTestSupport {
             HazelcastInstance hz = instances.get(i);
             assertNotNull(hz);
 
-            int clusterSize = hz.getCluster().getMembers().size();
-            String groupName = hz.getConfig().getGroupConfig().getName();
-            int shouldBeClusterSize = groups.get(groupName).get();
-            assertEquals(groupName + ": ", shouldBeClusterSize, clusterSize);
+            final int clusterSize = hz.getCluster().getMembers().size();
+            final String groupName = hz.getConfig().getGroupConfig().getName();
+            final int shouldBeClusterSize = groups.get(groupName).get();
+            assertTrueEventually(new AssertTask() {
+                @Override
+                public void run()
+                        throws Exception {
+                    assertEquals(groupName + ": ", shouldBeClusterSize, clusterSize);
+                }
+            });
         }
     }
 
@@ -227,44 +229,6 @@ public class JoinStressTest extends HazelcastTestSupport {
         }
         Collections.sort(members);
         tcpIpConfig.setMembers(members);
-    }
-
-    public class MemberInfoUpdateOperationSerializer implements StreamSerializer<MemberInfoUpdateOperation> {
-        @Override
-        public void write(ObjectDataOutput out, MemberInfoUpdateOperation object) throws IOException {
-            object.writeData(out);
-        }
-
-        @Override
-        public MemberInfoUpdateOperation read(ObjectDataInput in) throws IOException {
-            final DelayedMemberInfoUpdateOperation operation = new DelayedMemberInfoUpdateOperation();
-            operation.readData(in);
-            return operation;
-        }
-
-        @Override
-        public int getTypeId() {
-            return 9999;
-        }
-
-        @Override
-        public void destroy() {
-
-        }
-    }
-
-    public static class DelayedMemberInfoUpdateOperation extends MemberInfoUpdateOperation {
-
-        public DelayedMemberInfoUpdateOperation() {
-        }
-
-        @Override
-        public void run() throws Exception {
-            if (memberInfos.size() == 3 && getNodeEngine().getThisAddress().getPort() % 3 == 0) {
-                Thread.sleep(500);
-            }
-            super.run();
-        }
     }
 
     @Test(timeout = 300000)

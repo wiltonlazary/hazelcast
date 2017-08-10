@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.mapstore.MapDataStore;
 import com.hazelcast.map.impl.operation.MapOperation;
 import com.hazelcast.map.impl.operation.MapOperationProvider;
+import com.hazelcast.map.impl.operation.RemoveFromLoadAllOperation;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.ExecutionService;
 import com.hazelcast.spi.NodeEngine;
@@ -53,20 +54,17 @@ import static com.hazelcast.spi.ExecutionService.MAP_LOADER_EXECUTOR;
  */
 class BasicRecordStoreLoader implements RecordStoreLoader {
 
+    private final RecordStore recordStore;
     private final AtomicBoolean loaded;
-
     private final ILogger logger;
-
     private final String name;
-
     private final MapServiceContext mapServiceContext;
-
     private final MapDataStore mapDataStore;
-
     private final int partitionId;
 
     BasicRecordStoreLoader(RecordStore recordStore) {
         final MapContainer mapContainer = recordStore.getMapContainer();
+        this.recordStore = recordStore;
         this.name = mapContainer.getName();
         this.mapServiceContext = mapContainer.getMapServiceContext();
         this.partitionId = recordStore.getPartitionId();
@@ -76,8 +74,8 @@ class BasicRecordStoreLoader implements RecordStoreLoader {
     }
 
     @Override
-    public Future<?> loadValues(List<Data> keys) {
-        final Callable task = new GivenKeysLoaderTask(keys);
+    public Future<?> loadValues(List<Data> keys, boolean replaceExistingValues) {
+        final Callable task = new GivenKeysLoaderTask(keys, replaceExistingValues);
         return executeTask(MAP_LOADER_EXECUTOR, task);
     }
 
@@ -97,19 +95,26 @@ class BasicRecordStoreLoader implements RecordStoreLoader {
     private final class GivenKeysLoaderTask implements Callable<Object> {
 
         private final List<Data> keys;
+        private final boolean replaceExistingValues;
 
-        private GivenKeysLoaderTask(List<Data> keys) {
+        private GivenKeysLoaderTask(List<Data> keys, boolean replaceExistingValues) {
             this.keys = keys;
+            this.replaceExistingValues = replaceExistingValues;
         }
 
         @Override
         public Object call() throws Exception {
-            loadValuesInternal(keys);
+            loadValuesInternal(keys, replaceExistingValues);
             return null;
         }
     }
 
-    private void loadValuesInternal(List<Data> keys) throws Exception {
+    private void loadValuesInternal(List<Data> keys, boolean replaceExistingValues) throws Exception {
+        if (!replaceExistingValues) {
+            Future removeKeysFuture = removeExistingKeys(keys);
+            removeKeysFuture.get();
+        }
+
         removeUnloadableKeys(keys);
 
         if (keys.isEmpty()) {
@@ -121,6 +126,12 @@ class BasicRecordStoreLoader implements RecordStoreLoader {
         for (Future future : futures) {
             future.get();
         }
+    }
+
+    private Future removeExistingKeys(List<Data> keys) {
+        OperationService operationService = mapServiceContext.getNodeEngine().getOperationService();
+        final Operation operation = new RemoveFromLoadAllOperation(name, keys);
+        return operationService.invokeOnPartition(MapService.SERVICE_NAME, operation, partitionId);
     }
 
     private List<Future> doBatchLoad(List<Data> keys) {

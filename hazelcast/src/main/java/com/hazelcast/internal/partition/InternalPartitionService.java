@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,12 @@
 
 package com.hazelcast.internal.partition;
 
+import com.hazelcast.cluster.ClusterState;
+import com.hazelcast.core.HazelcastException;
 import com.hazelcast.instance.MemberImpl;
+import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
+import com.hazelcast.internal.partition.impl.PartitionStateManager;
+import com.hazelcast.internal.partition.operation.FetchPartitionStateOperation;
 import com.hazelcast.nio.Address;
 import com.hazelcast.spi.partition.IPartitionService;
 
@@ -63,10 +68,14 @@ public interface InternalPartitionService extends IPartitionService {
 
     int getMemberGroupsSize();
 
-    /** Pause all migrations */
+    /**
+     * Pause all migrations
+     */
     void pauseMigration();
 
-    /** Resume all migrations */
+    /**
+     * Resume all migrations
+     */
     void resumeMigration();
 
     boolean isMemberAllowedToJoin(Address address);
@@ -79,32 +88,41 @@ public interface InternalPartitionService extends IPartitionService {
 
     InternalPartition[] getInternalPartitions();
 
+    /**
+     * Causes the partition table to be arranged and published to members if :
+     * <ul>
+     * <li>the instance has started</li>
+     * <li>the cluster is {@link ClusterState#ACTIVE}</li>
+     * <li>if it has not already been arranged</li>
+     * <li>if there is no cluster membership change</li>
+     * </ul>
+     * If this node is not the master, it will trigger the master to assign the partitions.
+     *
+     * @throws HazelcastException if the partition state generator failed to arrange the partitions
+     * @see PartitionStateManager#initializePartitionAssignments(java.util.Set)
+     */
     void firstArrangement();
 
+    /**
+     * Creates the current partition runtime state. May return {@code null} if the node should fetch the most recent partition
+     * table (e.g. this node is a newly appointed master) or if the partition state manager is not initialized.
+     *
+     * @return the current partition state
+     * @see InternalPartitionServiceImpl#isFetchMostRecentPartitionTableTaskRequired()
+     * @see FetchPartitionStateOperation
+     * @see PartitionStateManager#isInitialized()
+     */
     PartitionRuntimeState createPartitionState();
 
-    boolean isPartitionReplicaVersionStale(int partitionId, long[] versions, int replicaIndex);
-
-    long[] getPartitionReplicaVersions(int partitionId);
-
-    /**
-     * Updates the partition replica version and triggers replica sync if the replica is dirty (e.g. the
-     * received version is not expected and this node might have missed an update)
-     * @param partitionId the id of the partition for which we received a new version
-     * @param replicaVersions the received replica versions
-     * @param replicaIndex the index of this replica
-     */
-    void updatePartitionReplicaVersions(int partitionId, long[] replicaVersions, int replicaIndex);
-
-    long[] incrementPartitionReplicaVersions(int partitionId, int totalBackupCount);
+    PartitionReplicaVersionManager getPartitionReplicaVersionManager();
 
     PartitionTableView createPartitionTableView();
 
     /**
-     * Returns partition id list assigned to given target if partitions are assigned when method is called.
+     * Returns partition ID list assigned to given target if partitions are assigned when method is called.
      * Does not trigger partition assignment otherwise.
      *
-     * @return partition id list assigned to given target if partitions are assigned already
+     * @return partition ID list assigned to given target if partitions are assigned already
      */
     List<Integer> getMemberPartitionsIfAssigned(Address target);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2016, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2017, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import com.hazelcast.config.DiscoveryConfig;
 import com.hazelcast.config.DiscoveryStrategyConfig;
 import com.hazelcast.config.DurableExecutorConfig;
 import com.hazelcast.config.EntryListenerConfig;
+import com.hazelcast.config.EventJournalConfig;
 import com.hazelcast.config.EvictionConfig;
 import com.hazelcast.config.EvictionPolicy;
 import com.hazelcast.config.ExecutorConfig;
@@ -262,7 +263,7 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
     @Test
     public void testMapConfig() {
         assertNotNull(config);
-        assertEquals(18, config.getMapConfigs().size());
+        assertEquals(26, config.getMapConfigs().size());
 
         MapConfig testMapConfig = config.getMapConfig("testMap");
         assertNotNull(testMapConfig);
@@ -299,7 +300,7 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         }
         assertEquals("my-quorum", testMapConfig.getQuorumName());
 
-        // Test that the testMapConfig has a mapStoreConfig and it is correct
+        // test that the testMapConfig has a mapStoreConfig and it is correct
         MapStoreConfig testMapStoreConfig = testMapConfig.getMapStoreConfig();
         assertNotNull(testMapStoreConfig);
         assertEquals("com.hazelcast.spring.DummyStore", testMapStoreConfig.getClassName());
@@ -309,7 +310,7 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertTrue(testMapStoreConfig.isWriteCoalescing());
         assertEquals(MapStoreConfig.InitialLoadMode.EAGER, testMapStoreConfig.getInitialLoadMode());
 
-        // Test that the testMapConfig has a nearCacheConfig and it is correct
+        // test that the testMapConfig has a nearCacheConfig and it is correct
         NearCacheConfig testNearCacheConfig = testMapConfig.getNearCacheConfig();
         assertNotNull(testNearCacheConfig);
         assertEquals(0, testNearCacheConfig.getTimeToLiveSeconds());
@@ -317,14 +318,15 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertEquals(EvictionPolicy.LRU, testNearCacheConfig.getEvictionConfig().getEvictionPolicy());
         assertEquals(5000, testNearCacheConfig.getEvictionConfig().getSize());
         assertTrue(testNearCacheConfig.isInvalidateOnChange());
+        assertFalse(testNearCacheConfig.isSerializeKeys());
 
-        // Test that the testMapConfig2's mapStoreConfig implementation
+        // test that the testMapConfig2's mapStoreConfig implementation
         MapConfig testMapConfig2 = config.getMapConfig("testMap2");
         assertNotNull(testMapConfig2.getMapStoreConfig().getImplementation());
         assertEquals(dummyMapStore, testMapConfig2.getMapStoreConfig().getImplementation());
         assertEquals(MapStoreConfig.InitialLoadMode.LAZY, testMapConfig2.getMapStoreConfig().getInitialLoadMode());
 
-        //Test testMapConfig2's WanReplicationConfig
+        // test testMapConfig2's WanReplicationConfig
         WanReplicationRef wanReplicationRef = testMapConfig2.getWanReplicationRef();
         assertEquals("testWan", wanReplicationRef.getName());
         assertEquals("PUT_IF_ABSENT", wanReplicationRef.getMergePolicy());
@@ -356,7 +358,8 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertEquals(50, simpleMapConfig.getEvictionPercentage());
         assertEquals(1, simpleMapConfig.getTimeToLiveSeconds());
         assertEquals("LATEST_UPDATE", simpleMapConfig.getMergePolicy());
-        // Test that the simpleMapConfig does NOT have a nearCacheConfig
+
+        // test that the simpleMapConfig does NOT have a nearCacheConfig
         assertNull(simpleMapConfig.getNearCacheConfig());
 
         MapConfig testMapConfig3 = config.getMapConfig("testMap3");
@@ -383,17 +386,19 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertEquals(CacheDeserializedValues.INDEX_ONLY, mapWithDefaultOptimizedQueriesConfig.getCacheDeserializedValues());
 
         MapConfig testMapWithPartitionLostListenerConfig = config.getMapConfig("mapWithPartitionLostListener");
-        List<MapPartitionLostListenerConfig> partitionLostListenerConfigs = testMapWithPartitionLostListenerConfig.getPartitionLostListenerConfigs();
+        List<MapPartitionLostListenerConfig> partitionLostListenerConfigs
+                = testMapWithPartitionLostListenerConfig.getPartitionLostListenerConfigs();
         assertEquals(1, partitionLostListenerConfigs.size());
         assertEquals("DummyMapPartitionLostListenerImpl", partitionLostListenerConfigs.get(0).getClassName());
 
         MapConfig testMapWithPartitionStrategyConfig = config.getMapConfig("mapWithPartitionStrategy");
-        assertEquals("com.hazelcast.spring.DummyPartitionStrategy", testMapWithPartitionStrategyConfig.getPartitioningStrategyConfig().getPartitioningStrategyClass());
+        assertEquals("com.hazelcast.spring.DummyPartitionStrategy",
+                testMapWithPartitionStrategyConfig.getPartitioningStrategyConfig().getPartitioningStrategyClass());
     }
 
     @Test
     public void testQueueConfig() {
-        final QueueConfig testQConfig = config.getQueueConfig("testQ");
+        QueueConfig testQConfig = config.getQueueConfig("testQ");
         assertNotNull(testQConfig);
         assertEquals("testQ", testQConfig.getName());
         assertEquals(1000, testQConfig.getMaxSize());
@@ -403,7 +408,7 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertEquals("com.hazelcast.spring.DummyItemListener", listenerConfig.getClassName());
         assertTrue(listenerConfig.isIncludeValue());
 
-        final QueueConfig qConfig = config.getQueueConfig("q");
+        QueueConfig qConfig = config.getQueueConfig("q");
         assertNotNull(qConfig);
         assertEquals("q", qConfig.getName());
         assertEquals(2500, qConfig.getMaxSize());
@@ -411,34 +416,34 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertEquals(100, qConfig.getEmptyQueueTtl());
         assertEquals("my-quorum", qConfig.getQuorumName());
 
-        final QueueConfig queueWithStore1 = config.getQueueConfig("queueWithStore1");
+        QueueConfig queueWithStore1 = config.getQueueConfig("queueWithStore1");
         assertNotNull(queueWithStore1);
-        final QueueStoreConfig storeConfig1 = queueWithStore1.getQueueStoreConfig();
+        QueueStoreConfig storeConfig1 = queueWithStore1.getQueueStoreConfig();
         assertNotNull(storeConfig1);
         assertEquals(DummyQueueStore.class.getName(), storeConfig1.getClassName());
 
-        final QueueConfig queueWithStore2 = config.getQueueConfig("queueWithStore2");
+        QueueConfig queueWithStore2 = config.getQueueConfig("queueWithStore2");
         assertNotNull(queueWithStore2);
-        final QueueStoreConfig storeConfig2 = queueWithStore2.getQueueStoreConfig();
+        QueueStoreConfig storeConfig2 = queueWithStore2.getQueueStoreConfig();
         assertNotNull(storeConfig2);
         assertEquals(DummyQueueStoreFactory.class.getName(), storeConfig2.getFactoryClassName());
 
-        final QueueConfig queueWithStore3 = config.getQueueConfig("queueWithStore3");
+        QueueConfig queueWithStore3 = config.getQueueConfig("queueWithStore3");
         assertNotNull(queueWithStore3);
-        final QueueStoreConfig storeConfig3 = queueWithStore3.getQueueStoreConfig();
+        QueueStoreConfig storeConfig3 = queueWithStore3.getQueueStoreConfig();
         assertNotNull(storeConfig3);
         assertEquals(dummyQueueStore, storeConfig3.getStoreImplementation());
 
-        final QueueConfig queueWithStore4 = config.getQueueConfig("queueWithStore4");
+        QueueConfig queueWithStore4 = config.getQueueConfig("queueWithStore4");
         assertNotNull(queueWithStore4);
-        final QueueStoreConfig storeConfig4 = queueWithStore4.getQueueStoreConfig();
+        QueueStoreConfig storeConfig4 = queueWithStore4.getQueueStoreConfig();
         assertNotNull(storeConfig4);
         assertEquals(dummyQueueStoreFactory, storeConfig4.getFactoryImplementation());
     }
 
     @Test
     public void testLockConfig() {
-        final LockConfig lockConfig = config.getLockConfig("lock");
+        LockConfig lockConfig = config.getLockConfig("lock");
         assertNotNull(lockConfig);
         assertEquals("lock", lockConfig.getName());
         assertEquals("my-quorum", lockConfig.getQuorumName());
@@ -446,7 +451,7 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
 
     @Test
     public void testRingbufferConfig() {
-        final RingbufferConfig testRingbuffer = config.getRingbufferConfig("testRingbuffer");
+        RingbufferConfig testRingbuffer = config.getRingbufferConfig("testRingbuffer");
         assertNotNull(testRingbuffer);
         assertEquals("testRingbuffer", testRingbuffer.getName());
         assertEquals(InMemoryFormat.OBJECT, testRingbuffer.getInMemoryFormat());
@@ -454,32 +459,32 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertEquals(1, testRingbuffer.getBackupCount());
         assertEquals(1, testRingbuffer.getAsyncBackupCount());
         assertEquals(20, testRingbuffer.getTimeToLiveSeconds());
-        final RingbufferStoreConfig store1 = testRingbuffer.getRingbufferStoreConfig();
+        RingbufferStoreConfig store1 = testRingbuffer.getRingbufferStoreConfig();
         assertNotNull(store1);
         assertEquals(DummyRingbufferStore.class.getName(), store1.getClassName());
 
-        final RingbufferConfig testRingbuffer2 = config.getRingbufferConfig("testRingbuffer2");
+        RingbufferConfig testRingbuffer2 = config.getRingbufferConfig("testRingbuffer2");
         assertNotNull(testRingbuffer2);
-        final RingbufferStoreConfig store2 = testRingbuffer2.getRingbufferStoreConfig();
+        RingbufferStoreConfig store2 = testRingbuffer2.getRingbufferStoreConfig();
         assertNotNull(store2);
         assertEquals(DummyRingbufferStoreFactory.class.getName(), store2.getFactoryClassName());
 
-        final RingbufferConfig testRingbuffer3 = config.getRingbufferConfig("testRingbuffer3");
+        RingbufferConfig testRingbuffer3 = config.getRingbufferConfig("testRingbuffer3");
         assertNotNull(testRingbuffer3);
-        final RingbufferStoreConfig store3 = testRingbuffer3.getRingbufferStoreConfig();
+        RingbufferStoreConfig store3 = testRingbuffer3.getRingbufferStoreConfig();
         assertNotNull(store3);
         assertEquals(dummyRingbufferStore, store3.getStoreImplementation());
 
-        final RingbufferConfig testRingbuffer4 = config.getRingbufferConfig("testRingbuffer4");
+        RingbufferConfig testRingbuffer4 = config.getRingbufferConfig("testRingbuffer4");
         assertNotNull(testRingbuffer4);
-        final RingbufferStoreConfig store4 = testRingbuffer4.getRingbufferStoreConfig();
+        RingbufferStoreConfig store4 = testRingbuffer4.getRingbufferStoreConfig();
         assertNotNull(store4);
         assertEquals(dummyRingbufferStoreFactory, store4.getFactoryImplementation());
     }
 
     @Test
     public void testSemaphoreConfig() {
-        final SemaphoreConfig testSemaphore = config.getSemaphoreConfig("testSemaphore");
+        SemaphoreConfig testSemaphore = config.getSemaphoreConfig("testSemaphore");
         assertNotNull(testSemaphore);
         assertEquals("testSemaphore", testSemaphore.getName());
         assertEquals(1, testSemaphore.getBackupCount());
@@ -489,12 +494,12 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
 
     @Test
     public void testReliableTopicConfig() {
-        final ReliableTopicConfig testReliableTopic = config.getReliableTopicConfig("testReliableTopic");
+        ReliableTopicConfig testReliableTopic = config.getReliableTopicConfig("testReliableTopic");
         assertNotNull(testReliableTopic);
         assertEquals("testReliableTopic", testReliableTopic.getName());
         assertEquals(1, testReliableTopic.getMessageListenerConfigs().size());
-        assertEquals(false, testReliableTopic.isStatisticsEnabled());
-        final ListenerConfig listenerConfig = testReliableTopic.getMessageListenerConfigs().get(0);
+        assertFalse(testReliableTopic.isStatisticsEnabled());
+        ListenerConfig listenerConfig = testReliableTopic.getMessageListenerConfigs().get(0);
         assertEquals("com.hazelcast.spring.DummyMessageListener", listenerConfig.getClassName());
         assertEquals(10, testReliableTopic.getReadBatchSize());
         assertEquals(TopicOverloadPolicy.BLOCK, testReliableTopic.getTopicOverloadPolicy());
@@ -549,8 +554,8 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertNotNull(testTopicConfig);
         assertEquals("testTopic", testTopicConfig.getName());
         assertEquals(1, testTopicConfig.getMessageListenerConfigs().size());
-        assertEquals(true, testTopicConfig.isGlobalOrderingEnabled());
-        assertEquals(false, testTopicConfig.isStatisticsEnabled());
+        assertTrue(testTopicConfig.isGlobalOrderingEnabled());
+        assertFalse(testTopicConfig.isStatisticsEnabled());
         ListenerConfig listenerConfig = testTopicConfig.getMessageListenerConfigs().get(0);
         assertEquals("com.hazelcast.spring.DummyMessageListener", listenerConfig.getClassName());
     }
@@ -586,18 +591,18 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertEquals("testExec", testExecConfig.getName());
         assertEquals(2, testExecConfig.getPoolSize());
         assertEquals(100, testExecConfig.getQueueCapacity());
-        assertEquals(true, testExecConfig.isStatisticsEnabled());
+        assertTrue(testExecConfig.isStatisticsEnabled());
         ExecutorConfig testExec2Config = config.getExecutorConfig("testExec2");
         assertNotNull(testExec2Config);
         assertEquals("testExec2", testExec2Config.getName());
         assertEquals(5, testExec2Config.getPoolSize());
         assertEquals(300, testExec2Config.getQueueCapacity());
-        assertEquals(false, testExec2Config.isStatisticsEnabled());
+        assertFalse(testExec2Config.isStatisticsEnabled());
     }
 
     @Test
     public void testDurableExecutorConfig() {
-        final DurableExecutorConfig testExecConfig = config.getDurableExecutorConfig("durableExec");
+        DurableExecutorConfig testExecConfig = config.getDurableExecutorConfig("durableExec");
         assertNotNull(testExecConfig);
         assertEquals("durableExec", testExecConfig.getName());
         assertEquals(10, testExecConfig.getPoolSize());
@@ -607,7 +612,7 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
 
     @Test
     public void testScheduledExecutorConfig() {
-        final ScheduledExecutorConfig testExecConfig = config.getScheduledExecutorConfig("scheduledExec");
+        ScheduledExecutorConfig testExecConfig = config.getScheduledExecutorConfig("scheduledExec");
         assertNotNull(testExecConfig);
         assertEquals("scheduledExec", testExecConfig.getName());
         assertEquals(10, testExecConfig.getPoolSize());
@@ -620,7 +625,8 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertNotNull(networkConfig);
         assertEquals(5700, networkConfig.getPort());
         assertFalse(networkConfig.isPortAutoIncrement());
-        final Collection<String> allowedPorts = networkConfig.getOutboundPortDefinitions();
+
+        Collection<String> allowedPorts = networkConfig.getOutboundPortDefinitions();
         assertEquals(2, allowedPorts.size());
         Iterator portIter = allowedPorts.iterator();
         assertEquals("35000-35100", portIter.next());
@@ -628,7 +634,7 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertFalse(networkConfig.getJoin().getMulticastConfig().isEnabled());
         assertEquals(networkConfig.getJoin().getMulticastConfig().getMulticastTimeoutSeconds(), 8);
         assertEquals(networkConfig.getJoin().getMulticastConfig().getMulticastTimeToLive(), 16);
-        assertEquals(false, networkConfig.getJoin().getMulticastConfig().isLoopbackModeEnabled());
+        assertFalse(networkConfig.getJoin().getMulticastConfig().isLoopbackModeEnabled());
         Set<String> tis = networkConfig.getJoin().getMulticastConfig().getTrustedInterfaces();
         assertEquals(1, tis.size());
         assertEquals("10.10.10.*", tis.iterator().next());
@@ -639,24 +645,32 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertNotNull(tcp);
         assertTrue(tcp.isEnabled());
         assertTrue(networkConfig.getSymmetricEncryptionConfig().isEnabled());
-        final List<String> members = tcp.getMembers();
+
+        List<String> members = tcp.getMembers();
         assertEquals(members.toString(), 2, members.size());
         assertEquals("127.0.0.1:5700", members.get(0));
         assertEquals("127.0.0.1:5701", members.get(1));
         assertEquals("127.0.0.1:5700", tcp.getRequiredMember());
-        AwsConfig aws = networkConfig.getJoin().getAwsConfig();
+        assertAwsConfig(networkConfig.getJoin().getAwsConfig());
+
+        assertTrue("reuse-address", networkConfig.isReuseAddress());
+
+        assertDiscoveryConfig(networkConfig.getJoin().getDiscoveryConfig());
+    }
+
+    private void assertAwsConfig(AwsConfig aws) {
         assertFalse(aws.isEnabled());
         assertEquals("sample-access-key", aws.getAccessKey());
         assertEquals("sample-secret-key", aws.getSecretKey());
         assertEquals("sample-region", aws.getRegion());
+        assertEquals("sample-header", aws.getHostHeader());
         assertEquals("sample-group", aws.getSecurityGroupName());
         assertEquals("sample-tag-key", aws.getTagKey());
         assertEquals("sample-tag-value", aws.getTagValue());
         assertEquals("sample-role", aws.getIamRole());
+    }
 
-        assertTrue("reuse-address", networkConfig.isReuseAddress());
-
-        DiscoveryConfig discoveryConfig = networkConfig.getJoin().getDiscoveryConfig();
+    private void assertDiscoveryConfig(DiscoveryConfig discoveryConfig) {
         assertTrue(discoveryConfig.getDiscoveryServiceProvider() instanceof DummyDiscoveryServiceProvider);
         assertTrue(discoveryConfig.getNodeFilter() instanceof DummyNodeFilter);
         List<DiscoveryStrategyConfig> discoveryStrategyConfigs
@@ -675,15 +689,6 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertEquals("foo2", discoveryStrategyConfig2.getProperties().get("key-string"));
     }
 
-//    @Test
-//    public void testSemaphoreConfig() {
-//        SemaphoreConfig testSemaphoreConfig = config.getSemaphoreConfig("testSemaphore");
-//        assertNotNull(testSemaphoreConfig);
-//        assertEquals(testSemaphoreConfig.getInitialPermits(), 0);
-//        assertEquals(testSemaphoreConfig.isFactoryEnabled(), false);
-//        assertNull(testSemaphoreConfig.getFactoryClassName());
-//    }
-
     @Test
     public void testProperties() {
         Properties properties = config.getProperties();
@@ -701,10 +706,10 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
     @Test
     public void testInstance() {
         assertNotNull(instance);
-        final Set<Member> members = instance.getCluster().getMembers();
+        Set<Member> members = instance.getCluster().getMembers();
         assertEquals(1, members.size());
-        final Member member = members.iterator().next();
-        final InetSocketAddress inetSocketAddress = member.getSocketAddress();
+        Member member = members.iterator().next();
+        InetSocketAddress inetSocketAddress = member.getSocketAddress();
         assertEquals(5700, inetSocketAddress.getPort());
         assertEquals("test-instance", config.getInstanceName());
         assertEquals("HAZELCAST_ENTERPRISE_LICENSE_KEY", config.getLicenseKey());
@@ -766,6 +771,10 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertEquals(WANQueueFullBehavior.THROW_EXCEPTION_ONLY_IF_REPLICATION_ACTIVE, customPublisher.getQueueFullBehavior());
         Map<String, Comparable> customPublisherProps = customPublisher.getProperties();
         assertEquals("prop.publisher", customPublisherProps.get("custom.prop.publisher"));
+        assertEquals("5", customPublisherProps.get("discovery.period"));
+        assertEquals("2", customPublisherProps.get("maxEndpoints"));
+        assertAwsConfig(customPublisher.getAwsConfig());
+        assertDiscoveryConfig(customPublisher.getDiscoveryConfig());
 
         WanConsumerConfig consumerConfig = wcfg.getWanConsumerConfig();
         assertEquals("com.hazelcast.wan.custom.WanConsumer", consumerConfig.getClassName());
@@ -801,9 +810,7 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertTrue(pgc.isEnabled());
         assertEquals(PartitionGroupConfig.MemberGroupType.CUSTOM, pgc.getGroupType());
         assertEquals(2, pgc.getMemberGroupConfigs().size());
-        Iterator<MemberGroupConfig> iter = pgc.getMemberGroupConfigs().iterator();
-        while (iter.hasNext()) {
-            MemberGroupConfig mgc = iter.next();
+        for (MemberGroupConfig mgc : pgc.getMemberGroupConfigs()) {
             assertEquals(2, mgc.getInterfaces().size());
         }
     }
@@ -832,7 +839,10 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertNotNull(managementCenterConfig);
         assertTrue(managementCenterConfig.isEnabled());
         assertEquals("myserver:80", managementCenterConfig.getUrl());
-        assertEquals(4, managementCenterConfig.getUpdateInterval());
+        assertEquals(2, managementCenterConfig.getUpdateInterval());
+        assertTrue(managementCenterConfig.getMutualAuthConfig().isEnabled());
+        assertEquals(1, managementCenterConfig.getMutualAuthConfig().getProperties().size());
+        assertEquals("who.let.the.cat.out.class", managementCenterConfig.getMutualAuthConfig().getFactoryClassName());
     }
 
     @Test
@@ -853,16 +863,16 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
     public void testSerializationConfig() {
         SerializationConfig serializationConfig = config.getSerializationConfig();
         assertEquals(ByteOrder.BIG_ENDIAN, serializationConfig.getByteOrder());
-        assertEquals(false, serializationConfig.isCheckClassDefErrors());
+        assertFalse(serializationConfig.isCheckClassDefErrors());
         assertEquals(13, serializationConfig.getPortableVersion());
 
-        Map<Integer, String> dataSerializableFactoryClasses = serializationConfig
-                .getDataSerializableFactoryClasses();
+        Map<Integer, String> dataSerializableFactoryClasses
+                = serializationConfig.getDataSerializableFactoryClasses();
         assertFalse(dataSerializableFactoryClasses.isEmpty());
         assertEquals(DummyDataSerializableFactory.class.getName(), dataSerializableFactoryClasses.get(1));
 
-        Map<Integer, DataSerializableFactory> dataSerializableFactories = serializationConfig
-                .getDataSerializableFactories();
+        Map<Integer, DataSerializableFactory> dataSerializableFactories
+                = serializationConfig.getDataSerializableFactories();
         assertFalse(dataSerializableFactories.isEmpty());
         assertEquals(DummyDataSerializableFactory.class, dataSerializableFactories.get(2).getClass());
 
@@ -924,14 +934,14 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
     }
 
     @Test
-    public void testQuorumConfig() throws Exception {
+    public void testQuorumConfig() {
         assertNotNull(config);
         assertEquals(1, config.getQuorumConfigs().size());
         QuorumConfig quorumConfig = config.getQuorumConfig("my-quorum");
         assertNotNull(quorumConfig);
         assertEquals("my-quorum", quorumConfig.getName());
         assertEquals("com.hazelcast.spring.DummyQuorumFunction", quorumConfig.getQuorumFunctionClassName());
-        assertEquals(true, quorumConfig.isEnabled());
+        assertTrue(quorumConfig.isEnabled());
         assertEquals(2, quorumConfig.getSize());
         assertEquals(2, quorumConfig.getListenerConfigs().size());
         assertEquals(QuorumType.READ, quorumConfig.getType());
@@ -940,7 +950,7 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
     }
 
     @Test
-    public void testFullQueryCacheConfig() throws Exception {
+    public void testFullQueryCacheConfig() {
         MapConfig mapConfig = config.getMapConfig("map-with-query-cache");
         QueryCacheConfig queryCacheConfig = mapConfig.getQueryCacheConfigs().get(0);
         EntryListenerConfig entryListenerConfig = queryCacheConfig.getEntryListenerConfigs().get(0);
@@ -966,9 +976,7 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
     }
 
     private void assertIndexesEqual(QueryCacheConfig queryCacheConfig) {
-        Iterator<MapIndexConfig> iterator = queryCacheConfig.getIndexConfigs().iterator();
-        while (iterator.hasNext()) {
-            MapIndexConfig mapIndexConfig = iterator.next();
+        for (MapIndexConfig mapIndexConfig : queryCacheConfig.getIndexConfigs()) {
             assertEquals("name", mapIndexConfig.getAttribute());
             assertFalse(mapIndexConfig.isOrdered());
         }
@@ -984,15 +992,36 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
 
     @Test
     public void testHotRestart() {
-        final File dir = new File("/mnt/hot-restart/");
-        final File hotBackupDir = new File("/mnt/hot-backup/");
-        final HotRestartPersistenceConfig hotRestartPersistenceConfig = config.getHotRestartPersistenceConfig();
+        File dir = new File("/mnt/hot-restart/");
+        File hotBackupDir = new File("/mnt/hot-backup/");
+        HotRestartPersistenceConfig hotRestartPersistenceConfig = config.getHotRestartPersistenceConfig();
+
         assertTrue(hotRestartPersistenceConfig.isEnabled());
         assertEquals(dir.getAbsolutePath(), hotRestartPersistenceConfig.getBaseDir().getAbsolutePath());
         assertEquals(hotBackupDir.getAbsolutePath(), hotRestartPersistenceConfig.getBackupDir().getAbsolutePath());
         assertEquals(1111, hotRestartPersistenceConfig.getValidationTimeoutSeconds());
         assertEquals(2222, hotRestartPersistenceConfig.getDataLoadTimeoutSeconds());
         assertEquals(PARTIAL_RECOVERY_MOST_COMPLETE, hotRestartPersistenceConfig.getClusterDataRecoveryPolicy());
+    }
+
+    @Test
+    public void testMapEvictionPolicies() {
+        assertEquals(EvictionPolicy.LFU, config.getMapConfig("lfuEvictionMap").getEvictionPolicy());
+        assertEquals(EvictionPolicy.LRU, config.getMapConfig("lruEvictionMap").getEvictionPolicy());
+        assertEquals(EvictionPolicy.NONE, config.getMapConfig("noneEvictionMap").getEvictionPolicy());
+        assertEquals(EvictionPolicy.RANDOM, config.getMapConfig("randomEvictionMap").getEvictionPolicy());
+    }
+
+    @Test
+    public void testMemberNearCacheEvictionPolicies() {
+        assertEquals(EvictionPolicy.LFU, getNearCacheEvictionPolicy("lfuNearCacheEvictionMap", config));
+        assertEquals(EvictionPolicy.LRU, getNearCacheEvictionPolicy("lruNearCacheEvictionMap", config));
+        assertEquals(EvictionPolicy.NONE, getNearCacheEvictionPolicy("noneNearCacheEvictionMap", config));
+        assertEquals(EvictionPolicy.RANDOM, getNearCacheEvictionPolicy("randomNearCacheEvictionMap", config));
+    }
+
+    private EvictionPolicy getNearCacheEvictionPolicy(String mapName, Config config) {
+        return config.getMapConfig(mapName).getNearCacheConfig().getEvictionConfig().getEvictionPolicy();
     }
 
     @Test
@@ -1018,6 +1047,22 @@ public class TestFullApplicationContext extends HazelcastTestSupport {
         assertEquals(expectedComparatorClassName, mapConfig.getMapEvictionPolicy().getClass().getName());
     }
 
+    @Test
+    public void testMapEventJournalConfigIsWellParsed() {
+        final EventJournalConfig journalConfig = config.getMapEventJournalConfig("mapName");
 
+        assertTrue(journalConfig.isEnabled());
+        assertEquals(123, journalConfig.getCapacity());
+        assertEquals(321, journalConfig.getTimeToLiveSeconds());
+    }
+
+    @Test
+    public void testCacheEventJournalConfigIsWellParsed() {
+        final EventJournalConfig journalConfig = config.getCacheEventJournalConfig("cacheName");
+
+        assertTrue(journalConfig.isEnabled());
+        assertEquals(123, journalConfig.getCapacity());
+        assertEquals(321, journalConfig.getTimeToLiveSeconds());
+    }
 
 }
